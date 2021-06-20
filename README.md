@@ -1,8 +1,10 @@
 # ZUI [WORK IN PROGRESS]
 <br/>
-<br/>
-Immediade-mode graphical interface.
+Immediade-mode graphical interface. 
 
+It's public because I'm applying for a job, please don't use this library (yet)!! :-)
+
+## Examples
 ```zig
 const Interface = @import("zui");
 const Font = @import("font");
@@ -32,6 +34,17 @@ const graph_data = [_]f32{ 200, 5, 10, 20, 30 };
 
 // Game loop.
 while (true) {
+
+  // Updates the UI state.
+  ui.reset();
+  ui.send_scroll_offset(0);
+  ui.send_cursor_position(50, 20);
+  try ui.send_input_key(.Cursor, is_down(.MouseLeft));
+  try ui.send_input_key(.Bspc, is_down(.Bspc));
+  try ui.send_input_key(.Esc, is_down(.Esc));
+  try ui.send_codepoint(unicode);
+
+  // Build the interface.
   // Create new floating panel.
   if (ui.panel("My Panel!", 25, 25, 400, 700)) {
     try ui.label_alloc("Framerates: {d:.2}", .{60.3456}, .Left);
@@ -60,20 +73,21 @@ while (true) {
     // Create graph
     ui.graph(&graph_data, 200);
   }
-
+  
+  //
+  // Process and draw the interface.
+  //
+  
   // Get all vertices and indices.
   const data = ui.process_ui();
   send_data_to_your_gpu(&data.vertex, &data.indices);
 
   for (ui.draw()) |d, i| {
+    // Fake gl functions, just for the README.
     glScissor(clip.x, clip.y, clip.w, clip.h);
-    // Fake gl function, just for the README.
     glDrawElements(GL_TRIANGLES, d.vertex_count, GL_UNSIGNED_INT, d.offset);
-
-    for (d.texts) |text| {
-      render_your_text(text.content, text.x, text.y, text.color);
-    }
-
+    
+    for (d.texts) |text| render_your_text(text.content, text.x, text.y, text.color);
   }
 }
 
