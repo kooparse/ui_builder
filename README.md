@@ -1,4 +1,4 @@
-# ZUI [WORK IN PROGRESS]
+# UI Builder [WORK IN PROGRESS]
 <br/>
 Immediade-mode graphical interface. 
 
@@ -6,7 +6,7 @@ It's public because I'm applying for a job, please don't use this library (yet)!
 
 ## Examples
 ```zig
-const Interface = @import("zui");
+const Interface = @import("ui_builder");
 const Font = @import("font");
 
 const alloc = std.heap.page_allocator;
