@@ -2,9 +2,17 @@
 <br/>
 Immediade-mode graphical interface. 
 
-It's public because I'm applying for a job, please don't use this library (yet)!! :-)
+I'm currently using it for my projects and will continue to update it as new needs are coming.
 
-## Examples
+It's public because I'm applying for a job, please don't use this library! :-)<br/>
+To see a very quick demo in high resolution: https://youtu.be/jrIUniO0ODU ~
+
+## Screenshot
+
+<img src="https://i.imgur.com/0WuGOAl.png" alt="preview" width="70%" />
+<br/>
+
+## API
 ```zig
 const Interface = @import("ui_builder");
 const Font = @import("font");
