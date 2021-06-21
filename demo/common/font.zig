@@ -1,11 +1,14 @@
 const std = @import("std");
-usingnamespace @import("../utils.zig");
-usingnamespace @import("./renderer.zig");
+usingnamespace @import("utils.zig");
+
+const stb = @import("c.zig").stb;
+usingnamespace @import("c.zig").gl;
 
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const json = std.json;
 const print = std.debug.print;
+const panic = std.debug.panic;
 const page_alloc = std.heap.page_allocator;
 const StringHashMap = std.StringHashMap;
 const ValueTree = json.ValueTree;
@@ -14,12 +17,12 @@ pub const Font = struct {
     name: []const u8,
     size: f32,
     is_bold: bool,
-    // It's in pixel, but we're gonna cast them anyway. 
+    // It's in pixel, but we're gonna cast them anyway.
     atlas_width: f32,
     atlas_height: f32,
     characters: StringBufSet(CharacterInfo),
 
-    font_atlas: Image,
+    texture_id: u32,
 
     /// Also in pixels.
     const CharacterInfo = struct {
@@ -42,11 +45,23 @@ pub const Font = struct {
 
         const root = tree.root.Object;
 
-        font.font_atlas = Image.load_from_disk(
-            "assets/fonts/helvetica/helvetica_atlas.png",
-            false,
+        const fonts_folder = "demo/assets/fonts";
+        const atlas_path = try mem.join(
+            page_alloc,
+            "",
+            &[_][]const u8{
+                fonts_folder,
+                "/",
+                font_name,
+                "/",
+                font_name,
+                "_atlas",
+                ".png",
+            },
         );
-        font.font_atlas.load_to_gpu(.Text);
+        defer page_alloc.free(atlas_path);
+
+        font.texture_id = load_to_gpu(atlas_path);
 
         font.name = try Allocator.dupe(page_alloc, u8, root.get("name").?.String);
         font.size = @intToFloat(f32, root.get("size").?.Integer);
@@ -76,17 +91,66 @@ pub const Font = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        glDeleteTextures(1, &[_]u32{self.texture_id});
         page_alloc.free(self.name);
-        self.font_atlas.deinit();
         self.characters.deinit();
     }
 };
 
+fn load_to_gpu(font_path: []const u8) u32 {
+    var width: i32 = undefined;
+    var height: i32 = undefined;
+    var channels: i32 = undefined;
+
+    const should_flip = @boolToInt(false);
+    stb.stbi_set_flip_vertically_on_load(should_flip);
+
+    const data = stb.stbi_load(font_path.ptr, &width, &height, &channels, 0);
+    defer stb.stbi_image_free(data);
+
+    if (data == 0) {
+        panic("STB crashed while loading image '{s}'!\n", .{font_path});
+    }
+
+    var texture_id: u32 = undefined;
+    glGenTextures(1, &texture_id);
+    glBindTexture(GL_TEXTURE_2D, texture_id);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    // Should be always RGBA for SDF fonts.
+    const format: c_int = switch (channels) {
+        1 => GL_RED,
+        3 => GL_RGB,
+        4 => GL_RGBA,
+        else => panic("Provided channels currently not supported!\n", .{}),
+    };
+
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        format,
+        width,
+        height,
+        0,
+        @intCast(c_uint, format),
+        GL_UNSIGNED_BYTE,
+        data,
+    );
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    return texture_id;
+}
+
 fn parse_font_descriptor(font_name: []const u8) !ValueTree {
+    const fonts_folder = "demo/assets/fonts";
     const path = try mem.join(
         page_alloc,
         "",
-        &[_][]const u8{ "assets/fonts", "/", font_name, "/", font_name, ".json" },
+        &[_][]const u8{ fonts_folder, "/", font_name, "/", font_name, ".json" },
     );
     defer page_alloc.free(path);
 

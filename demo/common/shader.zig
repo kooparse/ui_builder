@@ -1,4 +1,5 @@
 const std = @import("std");
+usingnamespace @import("zalgebra");
 
 const gl = @import("c.zig").gl;
 const c_allocator = std.heap.c_allocator;
@@ -82,10 +83,10 @@ pub const Shader = struct {
         return sp;
     }
 
-    // pub fn setMat4(sp: Shader, name: [*gl]const u8, value: *const mat4) void {
-    //     const id = gl.glGetUniformLocation(sp.program_id, name);
-    //     gl.glUniformMatrix4fv(id, 1, gl.GL_FALSE, value.get_data());
-    // }
+    pub fn setMat4(sp: Shader, name: [*c]const u8, value: *const mat4) void {
+        const id = gl.glGetUniformLocation(sp.program_id, name);
+        gl.glUniformMatrix4fv(id, 1, gl.GL_FALSE, value.get_data());
+    }
 
     // pub fn setBool(sp: Shader, name: [*gl]const u8, value: bool) void {
     //     const id = gl.glGetUniformLocation(sp.program_id, name);

@@ -20,6 +20,9 @@ pub fn build(b: *Builder) void {
         var exe = b.addExecutable("glfw_opengl3", "demo/glfw_gl3.zig");
         exe.setBuildMode(mode);
 
+        exe.addPackage(.{ .name = "ui_builder", .path = "src/ui.zig" });
+        exe.addPackage(.{ .name = "zalgebra", .path = "demo/common/libs/zalgebra/src/main.zig" });
+
         switch (builtin.os.tag) {
             .macos => {
                 exe.addFrameworkDir("/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks");

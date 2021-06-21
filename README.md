@@ -17,7 +17,7 @@ To see a very quick demo in high resolution: https://youtu.be/jrIUniO0ODU ~
 const Interface = @import("ui_builder");
 const Font = @import("font");
 
-const alloc = std.heap.page_allocator;
+const allocator = std.heap.page_allocator;
 const myFont = Font.get("helvetica");
 
 // Function to compute width of given text width.
@@ -27,7 +27,7 @@ pub fn calc_text_size(font: *Font, size: f32, text: []const u8) f32 {
 }
 
 const ui = try Interface(Font).init(.{
-  .allocator = &alloc,
+  .allocator = &allocator,
   .font = &myFont,
   .font_size = 16,
   // Function pointer.
@@ -39,6 +39,10 @@ var modes = [_][]u8{ "Forward", "Deferred" };
 var mode_selected: usize = 0;
 var slider_value: f32 = 55;
 const graph_data = [_]f32{ 200, 5, 10, 20, 30 };
+var incr_value: f32 = 2.5;
+
+var string_to_edit = try allocator.alloc(u8, 64);
+defer allocator.free(string_to_edit);
 
 // Game loop.
 while (true) {
@@ -55,8 +59,13 @@ while (true) {
   // Build the interface.
   // Create new floating panel.
   if (ui.panel("My Panel!", 25, 25, 400, 700)) {
+
     try ui.label_alloc("Framerates: {d:.2}", .{60.3456}, .Left);
     ui.checkbox_label("Activate shadows", &shadows);
+
+    ui.alloc_incr_value(f32, &incr_value, 0.5, 0, 50);
+
+    ui.edit_string(&string_to_edit);
 
     // Update the layout mode by creating rows of two columns.
     ui.row_array_static(&[_]f32{ 50, 150 }, 0);
