@@ -42,38 +42,8 @@ pub fn main() !void {
     var helvetica = try Font.init("helvetica");
     defer helvetica.deinit();
 
-    var render_obj = blk: {
-        var r: RenderObject = undefined;
-
-        glGenVertexArrays(1, &r.vao);
-        glGenBuffers(1, &r.vbo);
-
-        r.ebo = 0;
-        glGenBuffers(1, &r.ebo.?);
-
-        glBindVertexArray(r.vao);
-        glBindBuffer(GL_ARRAY_BUFFER, r.vbo);
-
-        const stride = 8 * @sizeOf(f32);
-
-        // Vertex.
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, null);
-        glEnableVertexAttribArray(0);
-
-        // UV.
-        const uv_ptr = @intToPtr(*c_void, 2 * @sizeOf(f32));
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, uv_ptr);
-        glEnableVertexAttribArray(1);
-
-        // Color.
-        const color_ptr = @intToPtr(*c_void, 4 * @sizeOf(f32));
-        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, color_ptr);
-        glEnableVertexAttribArray(2);
-
-        glBindVertexArray(0);
-
-        break :blk r;
-    };
+    var shape_render_obj = create_render_object();
+    var text_render_obj = create_render_object();
 
     const quad_vert = @embedFile("assets/shaders/quad.vert");
     const quad_frag = @embedFile("assets/shaders/quad.fs");
@@ -94,6 +64,11 @@ pub fn main() !void {
 
     var should_close = false;
     var counter: i32 = 0;
+    var checkbox_value = false;
+    var value_to_incr: f32 = 0.5;
+    var options = [_][]const u8{ "Option A", "Option B", "Option C" };
+    var selected_opt: usize = 0;
+    var slider_value: f32 = 50;
 
     while (!should_close) {
         glfw.glfwPollEvents();
@@ -116,14 +91,39 @@ pub fn main() !void {
         try ui.send_input_key(.Cursor, mouse_left_down);
 
         if (ui.panel("Debug Panel", 25, 25, 400, 700)) {
-            // try ui.label_alloc("counter: {}\n", .{counter}, .Left);
-            if (ui.button("Kill this program!")) should_close = true;
-            if (ui.button("Click to incremente the counter")) counter += 1;
+            try ui.label_alloc("counter: {}", .{counter}, .Left);
+            try ui.alloc_incr_value(i32, &counter, 1, 0, 100);
+
+            ui.padding_space(25);
+
+            if (ui.tree_begin("Widgets", true, .Collapser)) {
+                ui.row_flex(0, 3);
+                if (ui.button("btn_1")) {}
+                if (ui.button("btn_2")) {}
+                if (ui.button("btn_3")) {}
+
+                ui.row_array_static(&[_]f32{ 50, 150 }, 0);
+                ui.label("Select: ", .Left);
+                selected_opt = ui.select(&options, selected_opt);
+                ui.label("Slider: ", .Left);
+                slider_value = ui.slider(0, 100, slider_value, 1);
+
+                ui.row_flex(0, 1);
+                ui.checkbox_label("Checkbox!", &checkbox_value);
+                try ui.alloc_incr_value(f32, &value_to_incr, 2.5, 0, 50);
+
+                ui.tree_end();
+            }
+
+            var data = [_]f32{ 0.5, 10, 23, 35, 70, 10, 22, 33, 0.4, 3 };
+            ui.graph(&data, 70);
+
+            if (ui.button("Close")) should_close = true;
         }
 
         // Send shapes to GPU.
         const data = ui.process_ui();
-        send_data_to_gpu(&render_obj, data.vertices, data.indices);
+        send_data_to_gpu(&shape_render_obj, data.vertices, data.indices);
 
         // Draw eveything
         {
@@ -171,9 +171,9 @@ pub fn main() !void {
                     const proj = orthographic(0, size.width, size.height, 0, -1, 1);
                     glUseProgram(quad_shader.program_id);
                     quad_shader.setMat4("projection", &proj);
-                    glBindVertexArray(render_obj.vao);
+                    glBindVertexArray(shape_render_obj.vao);
 
-                    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, render_obj.ebo.?);
+                    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, shape_render_obj.ebo.?);
                     glDrawElements(
                         GL_TRIANGLES,
                         @intCast(c_int, d.vertex_count),
@@ -200,7 +200,7 @@ pub fn main() !void {
                         .pos_x = text.x,
                         .pos_y = size.height - text.y,
                         .size = ui.cfg.font_size,
-                    }, &helvetica, &render_obj);
+                    }, &helvetica, &text_render_obj);
 
                     glBindVertexArray(0);
                 }
@@ -227,9 +227,10 @@ fn calc_text_size(font: *Font, size: f32, text: []const u8) f32 {
     var text_cursor: f32 = 0;
 
     for (text) |letter, i| {
-        const c = font.characters.get(&[_]u8{letter}).?;
-        const x = text_cursor - (c.origin_x * ratio_size);
-        text_cursor += c.advance * ratio_size;
+        if (font.characters.get(&[_]u8{letter})) |c| {
+            const x = text_cursor - (c.origin_x * ratio_size);
+            text_cursor += c.advance * ratio_size;
+        }
     }
 
     return text_cursor;
@@ -262,4 +263,37 @@ pub fn send_data_to_gpu(
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
+}
+
+pub fn create_render_object() RenderObject {
+    var r: RenderObject = undefined;
+
+    glGenVertexArrays(1, &r.vao);
+    glGenBuffers(1, &r.vbo);
+
+    r.ebo = 0;
+    glGenBuffers(1, &r.ebo.?);
+
+    glBindVertexArray(r.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, r.vbo);
+
+    const stride = 8 * @sizeOf(f32);
+
+    // Vertex.
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, null);
+    glEnableVertexAttribArray(0);
+
+    // UV.
+    const uv_ptr = @intToPtr(*c_void, 2 * @sizeOf(f32));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, uv_ptr);
+    glEnableVertexAttribArray(1);
+
+    // Color.
+    const color_ptr = @intToPtr(*c_void, 4 * @sizeOf(f32));
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, color_ptr);
+    glEnableVertexAttribArray(2);
+
+    glBindVertexArray(0);
+
+    return r;
 }

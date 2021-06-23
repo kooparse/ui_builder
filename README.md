@@ -90,11 +90,11 @@ while (true) {
     // Create graph
     ui.graph(&graph_data, 200);
   }
-  
+
   //
   // Process and draw the interface.
   //
-  
+
   // Get all vertices and indices.
   const data = ui.process_ui();
   send_data_to_your_gpu(&data.vertex, &data.indices);
