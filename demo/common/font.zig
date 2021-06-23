@@ -1,5 +1,9 @@
 const std = @import("std");
+usingnamespace @import("zalgebra");
 usingnamespace @import("utils.zig");
+usingnamespace @import("shader.zig");
+
+usingnamespace @import("../glfw_gl3.zig");
 
 const stb = @import("c.zig").stb;
 usingnamespace @import("c.zig").gl;
@@ -8,6 +12,7 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const json = std.json;
 const print = std.debug.print;
+const ArrayList = std.ArrayList;
 const panic = std.debug.panic;
 const page_alloc = std.heap.page_allocator;
 const StringHashMap = std.StringHashMap;
@@ -162,4 +167,101 @@ fn parse_font_descriptor(font_name: []const u8) !ValueTree {
     defer parser.deinit();
 
     return parser.parse(buf);
+}
+
+pub fn immediate_draw_text(
+    args: struct {
+        text: []const u8,
+        size: f32 = 42,
+        color: vec3 = vec3.new(1, 0, 1),
+        pos_x: f32,
+        pos_y: f32,
+    },
+    font: *const Font,
+    render_obj: *RenderObject
+) void {
+    const ratio_size = args.size / font.size;
+
+    // Color alpha value.
+    const a: f32 = 1;
+
+    var text_vertex_buffer = ArrayList(f32).init(page_alloc);
+    defer text_vertex_buffer.deinit();
+
+    var text_element_buffer = ArrayList(u32).init(page_alloc);
+    defer text_element_buffer.deinit();
+
+    const color = args.color;
+    // Render each glyph.
+    var text_cursor: f32 = 0;
+    var count: u32 = 0;
+    for (args.text) |letter, i| {
+        if (!font.characters.contains(&[_]u8{letter})) continue;
+        var c = font.characters.get(&[_]u8{letter}).?;
+
+        const top_left_x = c.x / font.atlas_width;
+        const top_left_y = c.y / font.atlas_height;
+
+        const top_right_x = top_left_x + (c.width / font.atlas_width);
+        const top_right_y = top_left_y;
+
+        const bottom_left_x = top_left_x;
+        const bottom_left_y = top_left_y + (c.height / font.atlas_height);
+
+        const bottom_right_x = top_right_x;
+        const bottom_right_y = bottom_left_y;
+
+        const x = args.pos_x + text_cursor - (c.origin_x * ratio_size);
+        const y = args.pos_y + 0 - (c.height - c.origin_y) * ratio_size;
+        const w = c.width * ratio_size;
+        const h = c.height * ratio_size;
+
+        // Quad graph, you're welcome!
+        //
+        // A----B
+        // |    |
+        // |    |
+        // C----D
+        //
+        //
+        const glyph_data = [_]f32{
+            x, y + h,       top_left_x, top_left_y, color.x, color.y, color.z, a,         // A
+            x, y,           bottom_left_x, bottom_left_y, color.x, color.y, color.z, a,   // C
+            x + w, y,       bottom_right_x, bottom_right_y, color.x, color.y, color.z, a, // D
+
+            x + w, y + h,   top_right_x, top_right_y, color.x, color.y, color.z, a,      // B
+        };
+
+        text_vertex_buffer.appendSlice(&glyph_data) catch unreachable;
+
+        text_element_buffer.appendSlice(&[_]u32{
+            0 + count, 1 + count, 2 + count, 
+            0 + count, 2 + count, 3 + count
+        }) catch unreachable;
+
+        text_cursor += c.advance * ratio_size;
+        count += 4;
+    }
+
+
+    send_data_to_gpu(
+        render_obj, 
+        text_vertex_buffer.items, 
+        text_element_buffer.items
+    );
+
+    {
+        glBindVertexArray(render_obj.vao);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, render_obj.ebo.?);
+        glDrawElements(
+            GL_TRIANGLES,
+            @intCast(c_int, text_element_buffer.items.len),
+            GL_UNSIGNED_INT,
+            @intToPtr(*allowzero c_void, 0),
+        );
+
+        glBindVertexArray(0);
+
+    }
+
 }

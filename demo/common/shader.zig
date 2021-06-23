@@ -88,6 +88,11 @@ pub const Shader = struct {
         gl.glUniformMatrix4fv(id, 1, gl.GL_FALSE, value.get_data());
     }
 
+    pub fn setInteger(sp: Shader, name: [*c]const u8, value: i32) void {
+        const id = gl.glGetUniformLocation(sp.program_id, name);
+        gl.glUniform1i(id, value);
+    }
+
     // pub fn setBool(sp: Shader, name: [*gl]const u8, value: bool) void {
     //     const id = gl.glGetUniformLocation(sp.program_id, name);
     //     gl.glUniform1i(id, @boolToInt(value));

@@ -1,6 +1,6 @@
 const std = @import("std");
-const Shader = @import("common/shader.zig").Shader;
-const Font = @import("common/font.zig").Font;
+usingnamespace @import("common/shader.zig");
+usingnamespace @import("common/font.zig");
 usingnamespace @import("ui_builder");
 usingnamespace @import("zalgebra");
 
@@ -14,31 +14,7 @@ const print = std.debug.print;
 
 const WINDOW_WIDTH: i32 = 1200;
 const WINDOW_HEIGHT: i32 = 800;
-const WINDOW_DPI: i32 = 2;
 const WINDOW_NAME = "UI Builder";
-
-// Render object identifier.
-pub const RenderObject = struct {
-    vao: u32,
-    vbo: u32,
-    ebo: ?u32,
-    triangle_count: i32,
-    indice_type: enum { u16, u32 },
-    // textures: ArrayList(u32),
-};
-
-pub fn calc_text_size(font: *Font, size: f32, text: []const u8) f32 {
-    const ratio_size = size / font.size;
-    var text_cursor: f32 = 0;
-
-    for (text) |letter, i| {
-        const c = font.characters.get(&[_]u8{letter}).?;
-        const x = text_cursor - (c.origin_x * ratio_size);
-        text_cursor += c.advance * ratio_size;
-    }
-
-    return text_cursor;
-}
 
 pub fn main() !void {
     if (glfw.glfwInit() == glfw.GL_FALSE) {
@@ -65,7 +41,6 @@ pub fn main() !void {
 
     var helvetica = try Font.init("helvetica");
     defer helvetica.deinit();
-
 
     var render_obj = blk: {
         var r: RenderObject = undefined;
@@ -142,59 +117,60 @@ pub fn main() !void {
 
         if (ui.panel("Debug Panel", 25, 25, 400, 700)) {
             // try ui.label_alloc("counter: {}\n", .{counter}, .Left);
-            if(ui.button("Kill this program!")) should_close = true;
-            if(ui.button("Click to incremente the counter")) counter += 1;
+            if (ui.button("Kill this program!")) should_close = true;
+            if (ui.button("Click to incremente the counter")) counter += 1;
         }
 
         // Send shapes to GPU.
-        {
-            const data = ui.process_ui();
-            var vertices = data.vertices;
-            var indices = data.indices;
-            glBindVertexArray(render_obj.vao);
-            glBindBuffer(GL_ARRAY_BUFFER, render_obj.vbo);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, render_obj.ebo.?);
+        const data = ui.process_ui();
+        send_data_to_gpu(&render_obj, data.vertices, data.indices);
 
-            const vertex_size = @intCast(c_long, vertices.len * @sizeOf(f32));
-            const element_size = @intCast(c_uint, indices.len * @sizeOf(u32));
-            const max_vertex_size: c_long = 512 * 1024;
-            const max_element_size: c_long = 256 * 1024;
-
-            std.debug.assert(vertex_size <= max_vertex_size);
-
-            glBufferData(GL_ARRAY_BUFFER, max_vertex_size, null, GL_STREAM_DRAW);
-            glBufferData(GL_ARRAY_BUFFER, vertex_size, vertices.ptr, GL_STREAM_DRAW);
-
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, max_element_size, null, GL_STREAM_DRAW);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, element_size, indices.ptr, GL_STREAM_DRAW);
-
-            render_obj.triangle_count = @intCast(i32, indices.len);
-
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-            glBindBuffer(GL_ARRAY_BUFFER, 0);
-            glBindVertexArray(0);
-        }
-
-        // Draw
+        // Draw eveything
         {
             glDisable(GL_DEPTH_TEST);
             glEnable(GL_SCISSOR_TEST);
             defer glDisable(GL_SCISSOR_TEST);
 
+            const size = blk: {
+                var x: c_int = 0;
+                var y: c_int = 0;
+                var fx: c_int = 0;
+                var fy: c_int = 0;
+                glfw.glfwGetFramebufferSize(window, &fx, &fy);
+                glfw.glfwGetWindowSize(window, &x, &y);
+
+                break :blk .{
+                    .width = @intToFloat(f32, x),
+                    .height = @intToFloat(f32, y),
+                    .frame_width = @intToFloat(f32, fx),
+                    .frame_height = @intToFloat(f32, fy),
+                };
+            };
+
             for (ui.draw()) |d, i| {
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+                const clip = d.clip;
+
+                const fb_scale_x = size.frame_width / size.width;
+                const fb_scale_y = size.frame_height / size.height;
+
+                glScissor(
+                    @floatToInt(c_int, clip.x * fb_scale_x),
+                    @floatToInt(
+                        c_int,
+                        (size.height - (clip.y + clip.h)) * fb_scale_y,
+                    ),
+                    @floatToInt(c_int, clip.w * fb_scale_x),
+                    @floatToInt(c_int, clip.h * fb_scale_y),
+                );
 
                 // Draw shapes
                 {
-                    glEnable(GL_BLEND);
-                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
+                    const proj = orthographic(0, size.width, size.height, 0, -1, 1);
                     glUseProgram(quad_shader.program_id);
-                    const frame_width = @intToFloat(f32, WINDOW_WIDTH);
-                    const frame_height = @intToFloat(f32, WINDOW_HEIGHT);
-                    const proj = orthographic(0, frame_width, frame_height, 0, -1, 1);
-
                     quad_shader.setMat4("projection", &proj);
-
                     glBindVertexArray(render_obj.vao);
 
                     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, render_obj.ebo.?);
@@ -206,16 +182,84 @@ pub fn main() !void {
                     );
 
                     glBindVertexArray(0);
-                    glDisable(GL_BLEND);
                 }
-
 
                 for (d.texts) |text| {
-                    // TODO: Should draw text...
+                    glUseProgram(text_shader.program_id);
+
+                    const proj = orthographic(0, size.width, 0, size.height, -1, 1);
+                    text_shader.setMat4("projection", &proj);
+
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_2D, helvetica.texture_id);
+                    text_shader.setInteger("glyph", @as(i32, 1));
+
+                    immediate_draw_text(.{
+                        .text = text.content,
+                        .color = vec3.from_slice(&text.color.to_array()),
+                        .pos_x = text.x,
+                        .pos_y = size.height - text.y,
+                        .size = ui.cfg.font_size,
+                    }, &helvetica, &render_obj);
+
+                    glBindVertexArray(0);
                 }
             }
+
+            glDisable(GL_BLEND);
         }
 
         glfw.glfwSwapBuffers(window);
     }
+}
+
+// Render object identifier.
+pub const RenderObject = struct {
+    vao: u32,
+    vbo: u32,
+    ebo: ?u32,
+    triangle_count: i32,
+    indice_type: enum { u16, u32 },
+};
+
+fn calc_text_size(font: *Font, size: f32, text: []const u8) f32 {
+    const ratio_size = size / font.size;
+    var text_cursor: f32 = 0;
+
+    for (text) |letter, i| {
+        const c = font.characters.get(&[_]u8{letter}).?;
+        const x = text_cursor - (c.origin_x * ratio_size);
+        text_cursor += c.advance * ratio_size;
+    }
+
+    return text_cursor;
+}
+
+pub fn send_data_to_gpu(
+    render_obj: *RenderObject,
+    vertices: []const f32,
+    indices: []const u32,
+) void {
+    glBindVertexArray(render_obj.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, render_obj.vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, render_obj.ebo.?);
+
+    const vertex_size = @intCast(c_long, vertices.len * @sizeOf(f32));
+    const element_size = @intCast(c_uint, indices.len * @sizeOf(u32));
+    const max_vertex_size: c_long = 512 * 1024;
+    const max_element_size: c_long = 256 * 1024;
+
+    std.debug.assert(vertex_size <= max_vertex_size);
+
+    glBufferData(GL_ARRAY_BUFFER, max_vertex_size, null, GL_STREAM_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, vertex_size, vertices.ptr, GL_STREAM_DRAW);
+
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, max_element_size, null, GL_STREAM_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, element_size, indices.ptr, GL_STREAM_DRAW);
+
+    render_obj.triangle_count = @intCast(i32, indices.len);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
 }
