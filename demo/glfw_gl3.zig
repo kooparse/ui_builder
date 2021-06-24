@@ -109,6 +109,10 @@ pub fn main() !void {
             try ui.label_alloc("floating value: {d}", .{value_to_edit}, .Left);
             try ui.edit_value(f32, &value_to_edit);
 
+            if (try ui.edit_string("test")) |str|{
+                print("String updated: {s}\n", .{str});
+            }
+
             ui.padding_space(25);
 
             if (ui.tree_begin("Widgets", true, .Collapser)) {

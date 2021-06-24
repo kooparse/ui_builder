@@ -976,39 +976,57 @@ pub fn Interface(comptime F: anytype) type {
             self.states.put(input_id, .{ .Input = input }) catch unreachable;
         }
 
-        pub fn edit_string(self: *Self, buf: [:0]u8) !void {
+        pub fn edit_string(self: *Self, starter: []const u8) !?[]const u8{
+            const input_id = @intCast(u64, self.gen_id());
             const id = self.gen_id();
+
             var is_focus = false;
-            var value = mem.spanZ(buf);
 
             const rect = self.current_layout().allocate_space(null);
             const state = self.bounds_state(rect, true);
+
+            var input = blk: {
+                if (self.states.get(input_id)) |cached| {
+                    break :blk cached.Input;
+                } else {
+                    // For now, we're using the arena allocator 
+                    // because the input lifetime is equal to the UI.
+                    const allocator = self._arena.child_allocator;
+                    const buf = try allocator.alloc(u8, 512);
+                    break :blk Input{
+                        .buf = buf,
+                        .slice = try fmt.bufPrintZ(buf, "{s}", .{starter}),
+                    };
+                }
+            };
 
             // Bring the current input to focus if nothing is focused.
             if (self.focus_item == null and state.is_clicked) {
                 self.focus_item = id;
             }
 
-            // Now, if the focus item is equal to our input item,
-            // we start the editing.
+            var str: ?[]const u8 = null;
+            const to_append = self.string_buffer.items;
+
             if (self.focus_item) |item_id| {
                 is_focus = item_id == id;
                 const is_delete = self.get_key(.Bspc).is_down;
 
                 if (is_focus) {
-                    const text_buf = self.string_buffer.items;
-                    if (text_buf.len > 0 and !is_delete) {
-                        _ = fmt.bufPrintZ(buf, "{s}{s}", .{
-                            value,
-                            text_buf,
-                        }) catch |err| {
-                            // If no space is left, we do nothing.
-                        };
+                    if (to_append.len > 0 and !is_delete) {
+                        input.slice =
+                            try fmt.bufPrintZ(input.buf, "{s}{s}", .{
+                                input.slice,
+                                to_append,
+                            });
                     }
 
-                    if (is_delete and value.len > 0) {
-                        value[value.len - 1] = '\x00';
+                    if (is_delete and input.slice.len > 0) {
+                        input.slice[input.slice.len - 1] = '\x00';
+                        input.slice.len = input.slice.len - 1;
                     }
+
+                    if (to_append.len > 0 or is_delete) str = input.slice;
                 }
 
                 if (is_focus and state.is_missed) {
@@ -1037,11 +1055,14 @@ pub fn Interface(comptime F: anytype) type {
                 self.drawer.push_borders(bounds, 2, color.border_color);
                 self.push_text(
                     bounds.add_padding(5, 0),
-                    value,
+                    input.slice,
                     .Left,
                     color.text_color,
                 );
             }
+
+            self.states.put(input_id, .{ .Input = input }) catch unreachable;
+            return str;
         }
 
         pub fn label_alloc(
