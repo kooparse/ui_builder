@@ -40,6 +40,7 @@ var mode_selected: usize = 0;
 var slider_value: f32 = 55;
 const graph_data = [_]f32{ 200, 5, 10, 20, 30 };
 var incr_value: f32 = 2.5;
+var value_to_edit: f32 = 55.4;
 
 var string_to_edit = try allocator.alloc(u8, 64);
 defer allocator.free(string_to_edit);
@@ -65,6 +66,9 @@ while (true) {
 
     ui.alloc_incr_value(f32, &incr_value, 0.5, 0, 50);
 
+    // Input for updating a floating number.
+    ui.edit_value(f32, &value_to_edit);
+    // Input for updating a string.
     ui.edit_string(&string_to_edit);
 
     // Update the layout mode by creating rows of two columns.

@@ -365,9 +365,15 @@ pub const Overlay = struct {
 
 const Tree = struct { is_expanded: bool };
 
+const Input = struct {
+    buf: []u8,
+    slice: [:0]u8,
+};
+
 const CachedValue = union(enum) {
     Overlay: Overlay,
     Tree: Tree,
+    Input: Input,
 };
 
 pub const Id = u64;
@@ -839,65 +845,106 @@ pub fn Interface(comptime F: anytype) type {
         }
 
         pub fn edit_value(self: *Self, comptime T: type, value: *T) !void {
-            const id = self.gen_id();
+            const input_id = @intCast(u64, self.gen_id());
+            const focus_id = self.gen_id();
+
+            var is_valid = true;
             var is_focus = false;
 
             const rect = self.current_layout().allocate_space(null);
             const state = self.bounds_state(rect, true);
 
+            var input = blk: {
+                if (self.states.get(input_id)) |cached| {
+                    break :blk cached.Input;
+                } else {
+                    // For now, we're using the arena allocator 
+                    // because the input lifetime is equal to the UI.
+                    const allocator = self._arena.child_allocator;
+                    const buf = try allocator.alloc(u8, 128);
+                    break :blk Input{
+                        .buf = buf,
+                        .slice = try fmt.bufPrintZ(buf, "{d}", .{value.*}),
+                    };
+                }
+            };
+
+            const to_append = self.string_buffer.items;
+
             // Bring the current input to focus if nothing is focused.
             if (self.focus_item == null and state.is_clicked) {
-                self.focus_item = id;
+                self.focus_item = focus_id;
             }
 
-            const text_buf = self.string_buffer.items;
-            
-            if (text_buf.len > 0) {
-                _ = fmt.parseFloat(T, text_buf) catch |_| {
-                    return;
-                };
-            }
+            switch (@typeInfo(T)) {
+                .Float => {
+                    var has_decimal_point = false;
 
-            const allocator = self.cfg.allocator;
-            const string = try fmt.allocPrintZ(
-                allocator,
-                "{d:.3}{s}",
-                .{value.*, text_buf},
-            );
-
-            // Now, if the focus item is equal to our input item,
-            // we start the editing.
-            if (self.focus_item) |item_id| {
-                is_focus = item_id == id;
-                const is_delete = self.get_key(.Bspc).is_down;
-
-                if (is_focus) {
-
-                    if (text_buf.len > 0 and !is_delete) {
-
-                        // fmt.parseFloat(T, string)
-                        // try self.string_storage.append(string);
-
-                        // _ = fmt.bufPrintZ(buf, "{s}{s}", .{
-                        //     value,
-                        //     text_buf,
-                        // }) catch |err| {
-                        //     // If no space is left, we do nothing.
-                        // };
+                    for (input.slice) |c| {
+                        if (c == '.') has_decimal_point = true;
                     }
 
-                    if (is_delete and string.len > 0) {
-                        string[string.len - 1] = '\x00';
+                    for (to_append) |c| {
+                        const isPoint = c == '.';
+                        const two_deci_point = has_decimal_point and isPoint;
+                        const isNotDigit = !ascii.isDigit(c) and !isPoint;
+
+                        if (two_deci_point or isNotDigit) {
+                            is_valid = false;
+                            break;
+                        }
+
+                        if (c == '.') has_decimal_point = true;
+                    }
+                },
+                .Int => {
+                    for (to_append) |c| {
+                        if (!ascii.isDigit(c)) {
+                            is_valid = false;
+                            break;
+                        }
+                    }
+                },
+                else => {
+                    @panic("Value type not impl.\n");
+                },
+            }
+
+            if (is_valid) {
+                if (self.focus_item) |item_id| {
+                    is_focus = item_id == focus_id;
+                    const is_delete = self.get_key(.Bspc).is_down;
+
+                    if (is_focus) {
+                        if (to_append.len > 0 and !is_delete) {
+                            input.slice =
+                                try fmt.bufPrintZ(input.buf, "{s}{s}", .{
+                                input.slice,
+                                to_append,
+                            });
+                        }
+
+                        if (is_delete and input.slice.len > 0) {
+                            input.slice[input.slice.len - 1] = '\x00';
+                            input.slice.len = input.slice.len - 1;
+                        }
+                    }
+
+                    if (is_focus and state.is_missed) {
+                        self.focus_item = null;
                     }
                 }
 
-                if (is_focus and state.is_missed) {
-                    self.focus_item = null;
+                if (input.slice.len > 0) {
+                    value.* = switch (@typeInfo(T)) {
+                        .Float => try fmt.parseFloat(T, input.slice),
+                        .Int => try fmt.parseInt(T, input.slice, 0),
+                        else => {},
+                    };
+                } else {
+                    value.* = 0;
                 }
             }
-
-            const new_val = try fmt.parseFloat(T, string);
-            value.* = new_val;
 
             // Draw instructions.
             {
@@ -920,11 +967,13 @@ pub fn Interface(comptime F: anytype) type {
                 self.drawer.push_borders(bounds, 2, color.border_color);
                 self.push_text(
                     bounds.add_padding(5, 0),
-                    string,
+                    input.slice,
                     .Left,
                     color.text_color,
                 );
             }
+
+            self.states.put(input_id, .{ .Input = input }) catch unreachable;
         }
 
         pub fn edit_string(self: *Self, buf: [:0]u8) !void {
@@ -1047,8 +1096,13 @@ pub fn Interface(comptime F: anytype) type {
             );
         }
 
-        pub fn select(self: *Self, items: [][]const u8, selected: anytype) @TypeOf(selected) {
+        pub fn select(
+            self: *Self,
+            items: [][]const u8,
+            selected: anytype,
+        ) @TypeOf(selected) {
             const T = @TypeOf(selected);
+
             var currently_selected = selected;
             var old_current = self.current_overlay;
             var input_bounds = self.current_layout().allocate_space(null);

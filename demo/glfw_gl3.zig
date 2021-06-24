@@ -16,6 +16,8 @@ const WINDOW_WIDTH: i32 = 1200;
 const WINDOW_HEIGHT: i32 = 800;
 const WINDOW_NAME = "UI Builder";
 
+var codepoint: ?u21 = null;
+
 pub fn main() !void {
     if (glfw.glfwInit() == glfw.GL_FALSE) {
         panic("Failed to intialize GLFW.\n", .{});
@@ -35,6 +37,8 @@ pub fn main() !void {
 
     glfw.glfwSwapBuffers(window);
     glfw.glfwPollEvents();
+
+    _ = glfw.glfwSetCharCallback(window, char_callback);
 
     defer glfw.glfwDestroyWindow(window);
     defer glfw.glfwTerminate();
@@ -69,6 +73,7 @@ pub fn main() !void {
     var options = [_][]const u8{ "Option A", "Option B", "Option C" };
     var selected_opt: usize = 0;
     var slider_value: f32 = 50;
+    var value_to_edit: f32 = 23;
 
     while (!should_close) {
         glfw.glfwPollEvents();
@@ -89,10 +94,20 @@ pub fn main() !void {
         const mouse_left_down = glfw.glfwGetMouseButton(window, 0) == 1;
         const mouse_right_down = glfw.glfwGetMouseButton(window, 1) == 1;
         try ui.send_input_key(.Cursor, mouse_left_down);
+        try ui.send_input_key(.Bspc, glfw.glfwGetKey(window, 259) == 1);
+        if (codepoint) |c| {
+            try ui.send_codepoint(c);
+            codepoint = null;
+        }
+
+        // if (ui.panel("Graph Panel", 450, 50, 250, 400)) {}
 
         if (ui.panel("Debug Panel", 25, 25, 400, 700)) {
             try ui.label_alloc("counter: {}", .{counter}, .Left);
             try ui.alloc_incr_value(i32, &counter, 1, 0, 100);
+
+            try ui.label_alloc("floating value: {d}", .{value_to_edit}, .Left);
+            try ui.edit_value(f32, &value_to_edit);
 
             ui.padding_space(25);
 
@@ -115,7 +130,7 @@ pub fn main() !void {
                 ui.tree_end();
             }
 
-            var data = [_]f32{ 0.5, 10, 23, 35, 70, 10, 22, 33, 0.4, 3 };
+            var data = [_]f32{ 0.5, 10, 23, 35, 70, 10 };
             ui.graph(&data, 70);
 
             if (ui.button("Close")) should_close = true;
@@ -234,6 +249,10 @@ fn calc_text_size(font: *Font, size: f32, text: []const u8) f32 {
     }
 
     return text_cursor;
+}
+
+pub fn char_callback(window: ?*glfw.GLFWwindow, c: c_uint) callconv(.C) void {
+    codepoint = @intCast(u21, c);
 }
 
 pub fn send_data_to_gpu(
