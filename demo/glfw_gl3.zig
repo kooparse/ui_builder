@@ -106,9 +106,13 @@ pub fn main() !void {
             try ui.label_alloc("counter: {}", .{counter}, .Left);
             try ui.alloc_incr_value(i32, &counter, 1, 0, 100);
 
-            try ui.label_alloc("floating value: {d}", .{value_to_edit}, .Left);
+            ui.row_array_static(&[_]f32{ 100, 150 }, 0);
             try ui.edit_value(f32, &value_to_edit);
+            try ui.label_alloc("floating value: {d}", .{value_to_edit}, .Left);
 
+            ui.padding_space(5);
+
+            ui.label("Editing String: ", .Left);
             if (try ui.edit_string("test")) |str|{
                 print("String updated: {s}\n", .{str});
             }
@@ -229,6 +233,9 @@ pub fn main() !void {
         }
 
         glfw.glfwSwapBuffers(window);
+        // TODO: Understand this shit. WTF?
+        glfw.glFlush();
+        glfw.glFinish();
     }
 }
 
