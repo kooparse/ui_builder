@@ -100,7 +100,12 @@ pub fn main() !void {
             codepoint = null;
         }
 
-        // if (ui.panel("Graph Panel", 450, 50, 250, 400)) {}
+        if (ui.panel("Graph Panel", 450, 50, 250, 400)) {
+            ui.label("Beautiful graph:", .Left);
+
+            var data = [_]f32{ 0.5, 10, 23, 35, 70, 10, 2.4, 34.5, 40.5 };
+            ui.graph(&data, 70);
+        }
 
         if (ui.panel("Debug Panel", 25, 25, 400, 700)) {
             try ui.label_alloc("counter: {}", .{counter}, .Left);
@@ -113,7 +118,7 @@ pub fn main() !void {
             ui.padding_space(5);
 
             ui.label("Editing String: ", .Left);
-            if (try ui.edit_string("test")) |str|{
+            if (try ui.edit_string("test")) |str| {
                 print("String updated: {s}\n", .{str});
             }
 
@@ -137,9 +142,6 @@ pub fn main() !void {
 
                 ui.tree_end();
             }
-
-            var data = [_]f32{ 0.5, 10, 23, 35, 70, 10 };
-            ui.graph(&data, 70);
 
             if (ui.button("Close")) should_close = true;
         }

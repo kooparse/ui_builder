@@ -48,13 +48,16 @@ pub const Drawer = struct {
 
     const Self = @This();
 
+    // TODO: USE THE ARENA ALLOCATOR FOR THE _TEXTS
+    // ANS FIX THE BUG.
     pub fn init(arena_alloc: *Allocator) Self {
         return .{
             .commands       = DrawCommands.init(arena_alloc),
             .draw_list      = ArrayList(DrawSlice).init(arena_alloc),
             ._vertices      = ArrayList(f32).init(arena_alloc),
             ._indices       = ArrayList(u32).init(arena_alloc),
-            ._texts         = ArrayList(Text).init(arena_alloc),
+            // Temporary hack!
+            ._texts         = ArrayList(Text).init(std.heap.page_allocator),
             .allocator      = arena_alloc,
         };
     }
@@ -156,6 +159,7 @@ pub const Drawer = struct {
                     .offset = offset,
                     .clip = clip,
                 }) catch unreachable;
+
 
                 if (drawer._texts.items.len > 0) {
                     text_offset = drawer._texts.items.len;
