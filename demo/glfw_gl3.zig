@@ -73,7 +73,7 @@ pub fn main() !void {
     var options = [_][]const u8{ "Option A", "Option B", "Option C" };
     var selected_opt: usize = 0;
     var slider_value: f32 = 50;
-    var value_to_edit: f32 = 23;
+    var value_to_edit: f32 = 23.3214345345;
 
     while (!should_close) {
         glfw.glfwPollEvents();
@@ -112,7 +112,7 @@ pub fn main() !void {
             try ui.alloc_incr_value(i32, &counter, 1, 0, 100);
 
             ui.row_array_static(&[_]f32{ 100, 150 }, 0);
-            try ui.edit_value(f32, &value_to_edit);
+            try ui.edit_value(f32, &value_to_edit, "{d:.3}");
             try ui.label_alloc("floating value: {d}", .{value_to_edit}, .Left);
 
             ui.padding_space(5);

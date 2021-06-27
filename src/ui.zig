@@ -366,6 +366,7 @@ pub const Overlay = struct {
 const Tree = struct { is_expanded: bool };
 
 const Input = struct {
+    val: f128,
     buf: []u8,
     slice: [:0]u8,
 };
@@ -844,10 +845,20 @@ pub fn Interface(comptime F: anytype) type {
             self.row_flex(0, 1);
         }
 
-        pub fn edit_value(self: *Self, comptime T: type, value: *T) !void {
+        /// Edit given value (up to f128).
+        /// If the given value changed outside the input, 
+        /// we reflect the changement.
+        pub fn edit_value(
+            self: *Self,
+            comptime T: type,
+            value: *T,
+            comptime _fmt: []const u8,
+        ) !void {
+            const info = @typeInfo(T);
             const input_id = @intCast(u64, self.gen_id());
             const focus_id = self.gen_id();
 
+            var initialized = false;
             var is_valid = true;
             var is_focus = false;
 
@@ -858,16 +869,32 @@ pub fn Interface(comptime F: anytype) type {
                 if (self.states.get(input_id)) |cached| {
                     break :blk cached.Input;
                 } else {
-                    // For now, we're using the arena allocator 
+                    initialized = true;
+                    // For now, we're using the arena allocator
                     // because the input lifetime is equal to the UI.
                     const allocator = self._arena.child_allocator;
                     const buf = try allocator.alloc(u8, 128);
                     break :blk Input{
                         .buf = buf,
-                        .slice = try fmt.bufPrintZ(buf, "{d}", .{value.*}),
+                        .val = undefined,
+                        .slice = try fmt.bufPrintZ(buf, _fmt, .{value.*}),
                     };
                 }
             };
+
+            // If value changed outside the input.
+            const has_changed = blk: {
+                if (initialized) break :blk false;
+                break :blk switch (info) {
+                    .Float => @floatCast(f128, value.*) != input.val,
+                    .Int => @intToFloat(f128, value.*) != input.val,
+                    else => false,
+                };
+            };
+
+            if (has_changed) {
+                input.slice = try fmt.bufPrintZ(input.buf, _fmt, .{value.*});
+            }
 
             const to_append = self.string_buffer.items;
 
@@ -876,7 +903,7 @@ pub fn Interface(comptime F: anytype) type {
                 self.focus_item = focus_id;
             }
 
-            switch (@typeInfo(T)) {
+            switch (info) {
                 .Float => {
                     var has_decimal_point = false;
 
@@ -936,10 +963,20 @@ pub fn Interface(comptime F: anytype) type {
                 }
 
                 if (input.slice.len > 0) {
-                    value.* = switch (@typeInfo(T)) {
-                        .Float => try fmt.parseFloat(T, input.slice),
-                        .Int => try fmt.parseInt(T, input.slice, 0),
-                        else => {},
+                    value.* = blk: {
+                        switch (info) {
+                            .Float => {
+                                const val = try fmt.parseFloat(T, input.slice);
+                                input.val = @floatCast(f128, val);
+                                break :blk val;
+                            },
+                            .Int => {
+                                const val = try fmt.parseInt(T, input.slice, 0);
+                                input.val = @intToFloat(f128, val);
+                                break :blk val;
+                            },
+                            else => {},
+                        }
                     };
                 } else {
                     value.* = 0;
@@ -976,7 +1013,7 @@ pub fn Interface(comptime F: anytype) type {
             self.states.put(input_id, .{ .Input = input }) catch unreachable;
         }
 
-        pub fn edit_string(self: *Self, starter: []const u8) !?[]const u8{
+        pub fn edit_string(self: *Self, starter: []const u8) !?[]const u8 {
             const input_id = @intCast(u64, self.gen_id());
             const id = self.gen_id();
 
@@ -989,12 +1026,13 @@ pub fn Interface(comptime F: anytype) type {
                 if (self.states.get(input_id)) |cached| {
                     break :blk cached.Input;
                 } else {
-                    // For now, we're using the arena allocator 
+                    // For now, we're using the arena allocator
                     // because the input lifetime is equal to the UI.
                     const allocator = self._arena.child_allocator;
                     const buf = try allocator.alloc(u8, 512);
                     break :blk Input{
                         .buf = buf,
+                        .val = undefined,
                         .slice = try fmt.bufPrintZ(buf, "{s}", .{starter}),
                     };
                 }
@@ -1016,9 +1054,9 @@ pub fn Interface(comptime F: anytype) type {
                     if (to_append.len > 0 and !is_delete) {
                         input.slice =
                             try fmt.bufPrintZ(input.buf, "{s}{s}", .{
-                                input.slice,
-                                to_append,
-                            });
+                            input.slice,
+                            to_append,
+                        });
                     }
 
                     if (is_delete and input.slice.len > 0) {
