@@ -884,7 +884,7 @@ pub fn Interface(comptime F: anytype) type {
 
             // If value changed outside the input.
             const has_changed = blk: {
-                if (initialized) break :blk false;
+                if (initialized or input.slice.len == 0) break :blk false;
                 break :blk switch (info) {
                     .Float => @floatCast(f128, value.*) != input.val,
                     .Int => @intToFloat(f128, value.*) != input.val,
