@@ -1,6 +1,5 @@
 const std = @import("std");
 const Builder = std.build.Builder;
-const FileSource = std.build.FileSource;
 const Pkg = std.build.Pkg;
 const builtin = @import("builtin");
 
@@ -23,11 +22,11 @@ pub fn build(b: *Builder) void {
 
         exe.addPackage(.{
             .name = "ui_builder",
-            .path = FileSource.relative("src/ui.zig"),
+            .path = "src/ui.zig",
         });
         exe.addPackage(.{
             .name = "zalgebra",
-            .path = FileSource.relative("demo/common/libs/zalgebra/src/main.zig"),
+            .path = "demo/common/libs/zalgebra/src/main.zig",
         });
 
         switch (builtin.os.tag) {
