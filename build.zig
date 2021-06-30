@@ -1,5 +1,6 @@
 const std = @import("std");
 const Builder = std.build.Builder;
+const FileSource = std.build.FileSource;
 const Pkg = std.build.Pkg;
 const builtin = @import("builtin");
 
@@ -20,8 +21,14 @@ pub fn build(b: *Builder) void {
         var exe = b.addExecutable("glfw_opengl3", "demo/glfw_gl3.zig");
         exe.setBuildMode(mode);
 
-        exe.addPackage(.{ .name = "ui_builder", .path = "src/ui.zig" });
-        exe.addPackage(.{ .name = "zalgebra", .path = "demo/common/libs/zalgebra/src/main.zig" });
+        exe.addPackage(.{
+            .name = "ui_builder",
+            .path = FileSource.relative("src/ui.zig"),
+        });
+        exe.addPackage(.{
+            .name = "zalgebra",
+            .path = FileSource.relative("demo/common/libs/zalgebra/src/main.zig"),
+        });
 
         switch (builtin.os.tag) {
             .macos => {
@@ -35,8 +42,10 @@ pub fn build(b: *Builder) void {
 
         exe.addIncludeDir("demo/common/libs");
         exe.addCSourceFiles(
-            &[_][]const u8{ "demo/common/libs/impl.c", }, 
-            &[_][]const u8{ "-std=c99" },
+            &[_][]const u8{
+                "demo/common/libs/impl.c",
+            },
+            &[_][]const u8{"-std=c99"},
         );
 
         exe.linkSystemLibrary("glfw");
@@ -48,6 +57,5 @@ pub fn build(b: *Builder) void {
         run.step.dependOn(b.getInstallStep());
 
         play.dependOn(&run.step);
-
     }
 }

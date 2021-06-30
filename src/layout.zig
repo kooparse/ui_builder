@@ -76,7 +76,7 @@ pub const Layout = struct {
             const percent = math.max(0, w);
 
             const total_width = self.layout_width();
-            const remaining_width = total_width - self.cursor.x;
+            // const remaining_width = total_width - self.cursor.x;
             var width = total_width * percent;
 
             // const count = self.column_threshold - self.column_filled;

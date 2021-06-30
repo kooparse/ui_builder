@@ -195,7 +195,7 @@ pub fn immediate_draw_text(
     // Render each glyph.
     var text_cursor: f32 = 0;
     var count: u32 = 0;
-    for (args.text) |letter, i| {
+    for (args.text) |letter| {
         if (!font.characters.contains(&[_]u8{letter})) continue;
         var c = font.characters.get(&[_]u8{letter}).?;
 

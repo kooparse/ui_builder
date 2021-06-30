@@ -185,13 +185,12 @@ pub const Drawer = struct {
     pub fn push_triangle(
         drawer: *Self, 
         region: Rect,
-        size: f32,
+        _: f32,
         color: Color,
         direction: TriangleDir,
     ) void {
         const id = drawer.command_id;
         if (drawer.commands.getEntry(id)) |*entry| {
-            const rect = region.y_center(size, size);
             const triangle = Triangle.new(region, color, direction);
             entry.value_ptr.append(.{ .Triangle = triangle }) catch unreachable;
         }

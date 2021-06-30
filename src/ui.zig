@@ -822,7 +822,7 @@ pub fn Interface(comptime F: anytype) type {
             const ref_max = height / max;
 
             var x = bounds.x;
-            for (data) |d, i| {
+            for (data) |d| {
                 const min = max * 0.1;
                 const value = math.clamp(d * ref_max, min, height);
 
@@ -1692,7 +1692,7 @@ pub fn Interface(comptime F: anytype) type {
 }
 
 const TestFont = struct {};
-fn calc_text_size(font: *TestFont, size: f32, text: []const u8) f32 {
+fn calc_text_size(_: *TestFont, _: f32, _: []const u8) f32 {
     return 150;
 }
 

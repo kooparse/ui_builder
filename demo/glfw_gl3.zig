@@ -92,7 +92,7 @@ pub fn main() !void {
             @floatCast(f32, cursor_y),
         );
         const mouse_left_down = glfw.glfwGetMouseButton(window, 0) == 1;
-        const mouse_right_down = glfw.glfwGetMouseButton(window, 1) == 1;
+        // const mouse_right_down = glfw.glfwGetMouseButton(window, 1) == 1;
         try ui.send_input_key(.Cursor, mouse_left_down);
         try ui.send_input_key(.Bspc, glfw.glfwGetKey(window, 259) == 1);
         if (codepoint) |c| {
@@ -129,6 +129,8 @@ pub fn main() !void {
                 if (ui.button("btn_1")) {}
                 if (ui.button("btn_2")) {}
                 if (ui.button("btn_3")) {}
+                ui.row_flex(0, 1);
+                if (ui.button("btn_4")) {}
 
                 ui.row_array_static(&[_]f32{ 50, 150 }, 0);
                 ui.label("Select: ", .Left);
@@ -139,6 +141,10 @@ pub fn main() !void {
                 ui.row_flex(0, 1);
                 ui.checkbox_label("Checkbox!", &checkbox_value);
                 try ui.alloc_incr_value(f32, &value_to_incr, 2.5, 0, 50);
+
+                ui.label("Left", .Left);
+                ui.label("Center", .Center);
+                ui.label("Right", .Right);
 
                 ui.tree_end();
             }
@@ -172,7 +178,7 @@ pub fn main() !void {
                 };
             };
 
-            for (ui.draw()) |d, i| {
+            for (ui.draw()) |d| {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -254,9 +260,8 @@ fn calc_text_size(font: *Font, size: f32, text: []const u8) f32 {
     const ratio_size = size / font.size;
     var text_cursor: f32 = 0;
 
-    for (text) |letter, i| {
+    for (text) |letter| {
         if (font.characters.get(&[_]u8{letter})) |c| {
-            const x = text_cursor - (c.origin_x * ratio_size);
             text_cursor += c.advance * ratio_size;
         }
     }
@@ -264,7 +269,7 @@ fn calc_text_size(font: *Font, size: f32, text: []const u8) f32 {
     return text_cursor;
 }
 
-pub fn char_callback(window: ?*glfw.GLFWwindow, c: c_uint) callconv(.C) void {
+pub fn char_callback(_: ?*glfw.GLFWwindow, c: c_uint) callconv(.C) void {
     codepoint = @intCast(u21, c);
 }
 
