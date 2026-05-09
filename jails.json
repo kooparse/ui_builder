@@ -1,0 +1,6 @@
+{
+  "local_modules": ["../oleg/modules"],
+  "roots": ["example.jai"]
+}
+
+
