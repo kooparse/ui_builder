@@ -1,7 +1,18 @@
-// 1) make SDL not required in Pixel_Maker (it's just the type window)
-// 2) make load_shaders in its own module.
-// 3) put everything in exemple.
-// 4) do better for text... it's rather pretty messy.
+
+
+
+/*
+
+    1) make SDL not required in Pixel_Maker (it's just the type window)
+    2) make load_shaders in its own module.
+    3) put everything in exemple.
+    4) do better for text... it's rather pretty messy.
+    5) should get max frame in gflight from Pixel_Maker.
+
+
+    Advice that we want to capture mouse as far as possible.
+
+*/
 
 quit   := false;
 window : *SDL_Window;
@@ -12,13 +23,17 @@ Frame_Info :: struct {
     ortho : Matrix4;
 };
 
-vertex_buffer         : GFX_Buffer;
+MAX_FRAME_IN_FLIGHT :: 2; // it's enough.
+
+vertex_buffers        : [MAX_FRAME_IN_FLIGHT] GFX_Buffer;
 frame_info_buffer     : GFX_Buffer;
 
-window_width    :: 800;
-window_height   :: 600;
+window_width    :: 1200;
+window_height   :: 800;
 
-left_down : bool;
+left_down   : bool;
+
+wheel_delta : Vector2;
 
 main :: () {
     window := SDL_CreateWindow("Demo", SDL_WINDOWPOS_UNDEFINED , SDL_WINDOWPOS_UNDEFINED,
@@ -32,12 +47,18 @@ main :: () {
     load_all_shaders();
     init_gfx_buffers();
 
+    _ := bake_font("cascadia_mono", "./cascadia_mono.ttf");
 
     while !quit {
         event: SDL_Event;
 
+        wheel_delta = .{};
+
         while SDL_PollEvent(*event) {
             if event.type == {
+                case SDL_MOUSEWHEEL;
+                    wheel_delta.x = xx event.wheel.x;
+                    wheel_delta.y = xx event.wheel.y;
                 case SDL_MOUSEBUTTONUP;
                     if event.button.button == SDL_BUTTON_LEFT {
                         left_down = false;
@@ -51,9 +72,10 @@ main :: () {
             }
         }
 
-        vertices := draw_ui();
+        draw_list := make_ui();
+        do_gpu_stuff(draw_list);
 
-        do_gpu_stuff(vertices);
+        // log("%", get_last_frame_gpu_time() * 1000);
     }
 
     if quit {
@@ -61,7 +83,7 @@ main :: () {
     }
 }
 
-draw_ui :: () -> [] UI_Vertex {
+make_ui :: () -> UI_Draw_List {
     ui_begin();
 
     mouse_x, mouse_y: s32;
@@ -69,75 +91,114 @@ draw_ui :: () -> [] UI_Vertex {
 
     ui_set_mouse_press(left_down);
     ui_set_mouse(xx mouse_x, xx mouse_y);
+    ui_set_wheel(wheel_delta.x, wheel_delta.y);
 
     r := Rect.{ 0, 0, window_width, window_height };
 
     r.x += 10;
     r.y += 10;
 
-    ui_begin_panel(Rect.{ 600, r.y, 150, 400 }, "menu");
+    begin_window(Rect.{ r.x, r.y, 450, 400 }, "menu 2");
 
-    ui_spread();
-
-    if ui_button("button") {
-        log("click! 0");
+    for 0..30 {
+        if ui_button(tprint("button %", it)) {
+            log("click! %", it);
+        }
     }
 
-    ui_end_panel();
+    end_window();
 
-    ui_begin_panel(Rect.{ r.x, r.y, 450, 400 }, "menu");
+    begin_window(Rect.{ 600, r.y, 150, 400 }, "menu 1");
 
-    if ui_button("button") {
-        log("click! 1");
+    if ui_button("stack 1") {
+        log("click! 3");
     }
 
-    if ui_button("button") {
-        log("click 2");
+    if ui_button("stack 2") {
+        log("click! 4");
     }
 
-    if ui_button("button") {
-        log("click 3");
+    set_layout_order(.INLINE);
+
+    if ui_button("inline") {
+        log("click! 5");
     }
 
-    ui_set_layout(.INLINE);
+    set_layout_order(.COLUMNS, 3);
 
-    ui_spread();
-
-    if ui_button("button") {
-        log("click 4");
+    if ui_button("col") {
+        log("click! col 1");
     }
 
-    ui_set_layout(.COLUMNS, 3);
-
-    if ui_button("button") {
-        log("click 5");
+    if ui_button("col") {
+        log("click! col 2");
     }
 
-    if ui_button("button") {
-        log("click 6");
+    if ui_button("col") {
+        log("click! col 3");
     }
 
-    if ui_button("button") {
-        log("click 7");
+    if ui_button("col") {
+        log("click! col 4");
     }
 
-    if ui_button("button") {
-        log("click 8");
+    if ui_button("col") {
+        log("click! col 5");
     }
 
-    if ui_button("button") {
-        log("click 9");
-    }
+    end_window();
 
-    if ui_button("button") {
-        log("click 10");
-    }
-
-    ui_end_panel();
+    // if ui_button("button") {
+    //     log("click! 1");
+    // }
+    //
+    // if ui_button("button") {
+    //     log("click 2");
+    // }
+    //
+    // if ui_button("button") {
+    //     log("click 3");
+    // }
+    //
+    // ui_set_layout(.INLINE);
+    //
+    // ui_spread();
+    //
+    // if ui_button("button") {
+    //     log("click 4");
+    // }
+    //
+    // ui_set_layout(.COLUMNS, 3);
+    //
+    // if ui_button("button") {
+    //     log("click 5");
+    // }
+    //
+    // if ui_button("button") {
+    //     log("click 6");
+    // }
+    //
+    // if ui_button("button") {
+    //     log("click 7");
+    // }
+    //
+    // if ui_button("button") {
+    //     log("click 8");
+    // }
+    //
+    // if ui_button("button") {
+    //     log("click 9");
+    // }
+    //
+    // if ui_button("button") {
+    //     log("click 10");
+    // }
+    //
+    // ui_end_panel();
 
     ui_end();
     // Make UI.
-    return get_vertices();
+    return get_draw_list();
 }
 
 
@@ -154,13 +215,13 @@ draw_ui :: () -> [] UI_Vertex {
 
 
 
-do_gpu_stuff:: (vertices: [] UI_Vertex) {
+do_gpu_stuff:: (draw_list: UI_Draw_List) {
     begin_gfx_frame();
 
     command_buffer := create_gfx_command_buffer("Frame");
     screen_texture := get_swapchain_texture();
 
-    update_gfx_buffers(vertices);
+    update_gfx_buffers(draw_list.vertices);
 
     // pass...
     {
@@ -181,7 +242,8 @@ do_gpu_stuff:: (vertices: [] UI_Vertex) {
 
             set_cull_face(.NONE);
 
-            set_vertex_buffer(*pass, 10, *vertex_buffer, 0, vertex_buffer.size, size_of(UI_Vertex));
+            vertex_buffer := *vertex_buffers[get_backbuffer_index()];
+            set_vertex_buffer(*pass, 10, vertex_buffer, 0, vertex_buffer.size, size_of(UI_Vertex));
 
             Shader_Params :: struct {
                 frame_info : GFX_Pipeline_Binding;
@@ -195,7 +257,11 @@ do_gpu_stuff:: (vertices: [] UI_Vertex) {
             // set_texture(*pass, pixel_params.immediate_2d_texture, *immediate_2d_resolve_texture);
             // set_sampler_state(*pass, pixel_params.default_sampler, *default_sampler);
 
-            draw_primitives(*pass, xx vertices.count, 1);
+            for draw_list.draw_calls {
+                set_scissor(true, .{ xx it.scissor.x, xx it.scissor.y, xx it.scissor.w, xx it.scissor.h });
+                draw_primitives(*pass, xx it.vertex_count, 1, base_vertex = xx it.vertex_start);
+            }
+
         }
         end_gfx_render_pass(*pass);
 
@@ -205,22 +271,33 @@ do_gpu_stuff:: (vertices: [] UI_Vertex) {
     submit_gfx_frame();
 }
 
+get_vertex_buffer :: () {
+
+}
 
 init_gfx_buffers :: () {
     stride       := size_of(UI_Vertex);
-    capacity     := cast(u64, stride * 12000);
-    vertex_buffer   = create_gfx_buffer("UI Vertices", capacity, xx stride, null, .CPU_WRITE, .VERTEX_BUFFER);
+    capacity     := cast(u64, stride * 24000);
+
+    for 0..MAX_FRAME_IN_FLIGHT - 1 {
+        vertex_buffers[it] = create_gfx_buffer("UI Vertices", capacity, xx stride, null, .CPU_WRITE, .VERTEX_BUFFER);
+    }
 
     frame_info_buffer = create_gfx_buffer("Frame Info", size_of(Frame_Info), size_of(Frame_Info), null, .CPU_WRITE, .CONSTANT_BUFFER);
 }
 
 update_gfx_buffers :: (vertices: [] UI_Vertex) {
     vertices_size  := size_of(UI_Vertex) * vertices.count;
+
+    index := get_backbuffer_index();
+
+    vertex_buffer := *vertex_buffers[index];
+
     // Copy vertex data to GPU.
     {
-        lock_buffer(*vertex_buffer, .WRITE_AND_FLUSH);
+        lock_buffer(vertex_buffer, .WRITE_AND_FLUSH);
         memcpy(vertex_buffer.data_ptr, vertices.data, xx vertices_size);
-        unlock_buffer(*vertex_buffer);
+        unlock_buffer(vertex_buffer);
     }
 
     // Copy frame data to GPU.
@@ -240,12 +317,11 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
 #import "Math";
 #import "Hash_Table";
 #import "Hash";
-#import "Pixel_Maker";
+#import "Pixel_Maker"(MAX_FRAME_IN_FLIGHT = MAX_FRAME_IN_FLIGHT);
 
 using, except(NO) SDL :: #import "SDL";
 
 #load "shader.jai";
-#load "text.jai";
 #load "src/module.jai";
 
 // @incomplete: this is not correct for all cases, but works for most

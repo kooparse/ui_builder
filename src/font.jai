@@ -1,12 +1,11 @@
 /*
 
-@todo:
-- Should implement kerning.
-*/
+        @todo:
 
-// @todo (stefan): find_or_add_glyph takes a pixel size but most of the other
-// functions will scale the size you pass by the DPI scale factor. This is error prone
-// and inconsistent, we should fix this.
+        - Should implement kerning.
+        - Should store texture packer on heap.
+        - texture_atlas is GFX_Texture, it should be backend agnostic.
+*/
 
 #scope_file;
 
@@ -34,7 +33,7 @@ Glyph_Info :: struct {
     pos_in_atlas: Rect_Pos;
 }
 
-add_font :: (font_name: string, ttf_filepath: string) -> *Font {
+bake_font :: (font_name: string, ttf_filepath: string) -> *Font {
     content := read_entire_file(ttf_filepath);
     count32 := cast,trunc(s32) content.count;
 
