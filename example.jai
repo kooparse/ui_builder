@@ -47,6 +47,7 @@ main :: () {
     load_all_shaders();
     init_gfx_buffers();
 
+
     _ := bake_font("cascadia_mono", "./cascadia_mono.ttf");
 
     while !quit {
@@ -83,7 +84,7 @@ main :: () {
     }
 }
 
-open_window := false;
+should_open := false;
 
 make_ui :: () -> UI_Draw_List {
     ui_begin();
@@ -104,11 +105,11 @@ make_ui :: () -> UI_Draw_List {
 
     ui_select();
 
-    for 0..30 {
-        if ui_button("but") {
-            open_window = !open_window;
-        }
+    if ui_button("OPEN") {
+        should_open = !should_open;
+    }
 
+    for 0..15 {
         if ui_button(tprint("button %", it)) {
             log("click! %", it);
         }
@@ -116,7 +117,8 @@ make_ui :: () -> UI_Draw_List {
 
     end_window();
 
-    if open_window {
+
+    if should_open {
         begin_window(Rect.{ 600, r.y, 150, 400 }, "menu 1");
 
         if ui_button("stack 1") {
@@ -282,10 +284,6 @@ do_gpu_stuff:: (draw_list: UI_Draw_List) {
     submit_gfx_frame();
 }
 
-get_vertex_buffer :: () {
-
-}
-
 init_gfx_buffers :: () {
     stride       := size_of(UI_Vertex);
     capacity     := cast(u64, stride * 24000);
@@ -339,7 +337,7 @@ using, except(NO) SDL :: #import "SDL";
 round_pixel :: inline (x : float) -> float {
     if x < 0 {
         return cast(float) cast(int) (x - 0.5);
+    } else {
+        return cast(float) cast(int) (x + 0.5);
     }
-
-    return cast(float) cast(int) (x + 0.5);
 }

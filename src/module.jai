@@ -21,7 +21,7 @@
 UI_ID :: int;
 
 // Context.
-theme               := Theme.{};
+theme            := Theme.{};
 
 prev_layer_list  : [..] Layer;
 curr_layer_list  : [..] Layer;
@@ -33,9 +33,8 @@ drag_offset     : Vector2;
 
 widget_states   : Table(UI_ID, Widget_State);
 
-active_widget   : *Widget_State;
-hot_widget      : *Widget_State;
-dragging_widget : UI_ID = -1;
+active_widget   : UI_ID = -1; // I want a pointer to the state directly....
+hot_widget      : UI_ID = -1;
 
 draw_list       : UI_Draw_List;
 
@@ -47,7 +46,7 @@ delta_y  : float;
 wheel_x  : float;
 wheel_y  : float;
 
-z_index := 0;
+current_depth := 0;
 
 // @todo: rename those vartiables.
 left_pressed  : bool;
@@ -62,10 +61,11 @@ Draw_Marker :: struct {
 UI_Layout :: struct {
     content_rect : Rect;
     cursor       : Vector2; //@todo: explain that.
+    prev_cursor  : Vector2;
 
     order      := Layout_Order.STACK;
     align      := Layout_Align.PIXEL_LEFT;
-    columns    := 0; //  0 = grow = true instead?
+    columns    := 0;
 
     scroll      : Vector2;
     max_scroll  : float;
@@ -73,30 +73,28 @@ UI_Layout :: struct {
     // For auto layout.
     curr_column      := 0;
     prev_widget_size : Vector2;
-
-    prev_cursor  : Vector2;
 };
 
 /*
+
     The UI is made of a stack of layers.
     A Layer represent a rectangular surface where widgets are drawn on it.
-
-
 
 */
 
 Layer :: struct {
-    widget_id : UI_ID;
+    widget_id    : UI_ID;
 
     // Depth is used to sort the layer stack,
     // biggest depth is on top.
-    depth     : int;
-    rect      : Rect;
+    depth        : int;
+    rect         : Rect;
+    next_rect    : Rect; // Rect to swap with before next frame.
 
-    layout    : UI_Layout;
+    layout       : UI_Layout;
 
-    vertices        : [..] UI_Vertex;
-    draw_markers    : [..] Draw_Marker;
+    vertices     : [..] UI_Vertex;
+    draw_markers : [..] Draw_Marker;
     clip_stack   : [..] Rect;
 };
 
@@ -114,11 +112,10 @@ Widget_State :: struct {
 #scope_export;
 
 
-
 UI_Draw_Call :: struct {
-    vertex_start   : int;
-    vertex_count   : int;
-    clip        : Rect; // rename clip?
+    vertex_start : int;
+    vertex_count : int;
+    clip         : Rect; // rename clip?
 };
 
 UI_Draw_List  :: struct {
@@ -205,7 +202,7 @@ Theme :: struct {
         },
     };
 
-    content_padding := 4.;
+    content_padding         := 4.;
     window_title_bar_height := 70.;
     window_resizer_size     := 16.;
 
@@ -231,19 +228,6 @@ Theme :: struct {
         },
     };
 };
-
-UI_Flags :: enum_flags {
-    CLICKABLE           :: (1 << 0);
-    SCROLLABLE          :: (1 << 1);
-    DRAW_TEXT           :: (1 << 2);
-    DRAW_BACKGROUND     :: (1 << 3);
-    DRAW_BORDER         :: (1 << 4);
-
-    MOVEABLE            :: (1 << 5);
-    RESIZEABLE          :: (1 << 6);
-    MINIMIZABLE         :: (1 << 7);
-};
-
 
 UI_State :: struct {
     pressed : bool;
@@ -314,6 +298,7 @@ ui_end :: () {
     global_index := 0;
 
     for curr_layer_list {
+
         for marker, index: it.draw_markers {
             vertex_end   := ifx index == it.draw_markers.count - 1 it.vertices.count else it.draw_markers[index + 1].vertex_start;
             vertex_count := vertex_end - marker.vertex_start;
@@ -321,7 +306,7 @@ ui_end :: () {
             array_add(*draw_list.draw_calls, UI_Draw_Call.{
                 vertex_start = global_index + marker.vertex_start,
                 vertex_count = vertex_count,
-                clip      = marker.clip_rect,
+                clip         = marker.clip_rect,
             });
         }
 
@@ -495,16 +480,13 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) {
     content_rect.h -= (theme.window_title_bar_height + theme.content_padding);
 
     {
-        flags := UI_Flags.DRAW_TEXT | .DRAW_BACKGROUND | .DRAW_BORDER | .MOVEABLE;
-
         push_layer(id, full_rect, content_rect);
-        push_clip(full_rect);
 
         ui_set_state(id, state, full_rect);
 
         is_active  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
-        want_raise := !is_active && state.once && dragging_widget == -1;
-        if want_raise then raise_window(id);
+        want_raise := !is_active && state.once && active_widget == -1;
+        if want_raise then raise_layer(id);
 
         window_theme := ifx is_active then theme.window_content.focused else theme.window_content.normal;
         draw_rect(full_rect, window_theme.bg_color, .ROUND_ALL);
@@ -530,18 +512,11 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) {
 // rename window_end().
 end_window :: () {
     pop_clip(current_layer.layout.content_rect);
-    pop_clip(current_layer.rect);
-
     pop_layer();
 }
 
 alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
     using layout  := *current_layer.layout;
-    // cursor      := *layer.cursor;
-    // layout      := *layer.layout;
-    //
-    // scroll       := current_layer.scroll;
-    // content_rect := current_layer.content_rect;
 
     // If has a scrollbar.
     // @todo: remove this... there's a better way.
@@ -556,7 +531,6 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
     if prev_widget_size.x > 0 || prev_widget_size.y > 0 {
         if order == {
             case .STACK;
-                // cursor.x  = theme.padding.x;
                 cursor.y += prev_widget_size.y + padding.y;
             case .INLINE;
                 cursor.x += prev_widget_size.x + padding.x;
@@ -718,25 +692,36 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
 //     }
 // }
 
-
 ui_select :: (size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) {
-    // id      := ui_id(loc);
-    // state   := find_or_add(*widget_states, id);
-    //
-    // rect := alloc_space(size, theme.button.normal.padding);
-    // ui_set_state(id, state, rect);
-    //
-    // color := ui_theme(state.*, theme.button).bg_color;
-    // draw_rect(rect, color, .ROUND_ALL);
+    id      := ui_id(loc);
+    state   := find_or_add(*widget_states, id);
 
-    // {
-    //     dropdown_rect := Rect.{ rect.x, rect.y + rect.w, rect.w, 300 };
-    //     push_layer(id, dropdown_rect, dropdown_rect);
-    //
-    //     draw_rect(rect, Vector4.{0.1, 0.4, 1, 1}, .ROUND_ALL);
-    //
-    //     pop_layer();
-    // }
+    rect := alloc_space(size, theme.button.normal.padding);
+    ui_set_state(id, state, rect);
+
+    color := Vector4.{ 0.2, 0.4, 1, 1 };
+    draw_rect(rect, color, .ROUND_ALL);
+
+    if state.once {
+        state.open = !state.open;
+    }
+
+    if state.open {
+        dropdown_rect := Rect.{ rect.x, rect.y + rect.h, rect.w, 100 };
+        push_layer(id, dropdown_rect, dropdown_rect);
+
+        draw_rect(current_layer.rect, Vector4.{ 0.1, 0.4, 1, 1 });
+
+        size := Vector2.{ 100, 20 };
+
+        ui_button("asjkhd", size);
+        ui_button("asjkhd", size);
+        ui_button("asjkhd", size);
+
+        // handle_scroll(*current_layer.layout, loc);
+
+        pop_layer();
+    }
 }
 
 // @todo: remove "ui".
@@ -761,7 +746,7 @@ ui_theme :: (state: Widget_State, theme_state: Theme_State) -> UI_Theme {
 }
 
 ui_set_state :: (id: UI_ID, state: *Widget_State, rect: Rect) {
-    if dragging_widget > -1 && dragging_widget != id {
+    if active_widget > -1 && active_widget != id {
         return;
     }
 
@@ -783,22 +768,22 @@ ui_set_state :: (id: UI_ID, state: *Widget_State, rect: Rect) {
 }
 
 handle_dragging :: (id: UI_ID, pressed: bool, rect: Rect, x: *float, y: *float) {
-    if dragging_widget > -1 && dragging_widget != id return;
+    if active_widget > -1 && active_widget != id return;
 
     hit := point_vs_rect(mouse_x, mouse_y, rect) && pressed;
 
     want_drag   := hit && (abs(delta_x) > 0 || abs(delta_y) > 0);
-    is_dragging := dragging_widget > -1 && dragging_widget == id;
+    is_dragging := active_widget > -1 && active_widget == id;
 
     if want_drag && !is_dragging {
         drag_offset       = xy(mouse_x, mouse_y) - xy(x.*, y.*);
-        dragging_widget   = id;
+        active_widget   = id;
         log("start drag!");
         return;
     }
 
     if is_dragging && !left_pressed {
-        dragging_widget = -1;
+        active_widget = -1;
         log("stop drag!");
         return;
     }
@@ -832,13 +817,13 @@ handle_scroll :: (using layout: *UI_Layout, loc := #caller_location) {
 
     ui_set_state(scrollbar_id, state, handle);
 
-    if dragging_widget == -1 || dragging_widget == scrollbar_id {
+    if active_widget == -1 || active_widget == scrollbar_id {
 
-        is_dragging := dragging_widget == scrollbar_id;
+        is_dragging := active_widget == scrollbar_id;
         hit         := point_vs_rect(mouse_x, mouse_y, handle) && left_pressed;
 
-        if hit && !is_dragging && abs(delta_y) > 0  dragging_widget = scrollbar_id;
-        if is_dragging && !left_pressed             dragging_widget = -1;
+        if hit && !is_dragging && abs(delta_y) > 0  active_widget = scrollbar_id;
+        if is_dragging && !left_pressed             active_widget = -1;
         if is_dragging && travel > 0 {
             scroll.y += delta_y * (max_scroll / travel);
         }
@@ -858,7 +843,7 @@ set_layout_order:: (order: Layout_Order, columns := 0) {
 #scope_file;
 
 is_occluded :: (id: UI_ID, rect: Rect) -> bool {
-    if dragging_widget == id {
+    if active_widget == id {
         return false;
     }
 
@@ -890,7 +875,7 @@ push_layer :: (id: UI_ID, occlusion_rect: Rect, content_rect: Rect) {
     // Find old z order.
     for prev_layer_list {
         if it.widget_id == id {
-            depth     = it.depth;
+            depth       = it.depth;
             scroll      = it.layout.scroll;
             prev_cursor = it.layout.cursor + it.layout.prev_widget_size;
             break;
@@ -902,7 +887,7 @@ push_layer :: (id: UI_ID, occlusion_rect: Rect, content_rect: Rect) {
 
     max_scroll := max(0.0, content_h - visible_h);
 
-    if point_vs_rect(mouse_x, mouse_y, content_rect) && max_scroll > 0 && dragging_widget == -1 {
+    if point_vs_rect(mouse_x, mouse_y, content_rect) && max_scroll > 0 && active_widget == -1 {
         scroll.y += xx wheel_y;
     }
 
@@ -910,15 +895,15 @@ push_layer :: (id: UI_ID, occlusion_rect: Rect, content_rect: Rect) {
 
     // If old z not found, it's a new layer, let's init its z order.
     if depth == -1 {
-        depth  = z_index;
-        z_index += 1;
+        depth          = current_depth;
+        current_depth += 1;
     }
 
     index := curr_layer_list.count;
 
     array_add(*curr_layer_list, .{
-        widget_id    = id,
-        rect         = occlusion_rect,
+        widget_id  = id,
+        rect       = occlusion_rect,
         depth      = depth,
         layout = .{
             scroll       = scroll,
@@ -930,13 +915,16 @@ push_layer :: (id: UI_ID, occlusion_rect: Rect, content_rect: Rect) {
 
     array_add(*layer_stack, index);
     current_layer = *curr_layer_list[index];
+
+    push_clip(occlusion_rect);
 }
 
 // todo: some asserts could be cool to put there.
 pop_layer :: () {
+    pop_clip(current_layer.rect);
+
     _ := pop(*layer_stack); // @todo: assert bunch of stuff.
     // Not correct, but somehow ok.
-    // current_layer = ifx curr_layer_list then peek_pointer(curr_layer_list);
     current_layer = ifx layer_stack then *curr_layer_list[peek(layer_stack)];
 }
 
@@ -959,8 +947,8 @@ push_triangle :: (p0: Vector2, p1: Vector2, p2: Vector2, color: Vector4, uv0: Ve
 
 ui_id :: (loc: Source_Code_Location, extra := "") -> u32 {
     h := sdbm_hash(loc.fully_pathed_filename.data, loc.fully_pathed_filename.count);
-    h = sdbm_hash(*loc.line_number, size_of(type_of(loc.line_number)), h);
-    h = sdbm_hash(*loc.character_number, size_of(type_of(loc.character_number)), h);
+    h  = sdbm_hash(*loc.line_number, size_of(type_of(loc.line_number)), h);
+    h  = sdbm_hash(*loc.character_number, size_of(type_of(loc.character_number)), h);
 
     if extra != "" {
         h = sdbm_hash(extra.data, size_of(u8) * extra.count, h);
@@ -1013,9 +1001,9 @@ record_draw_marker :: (rect: Rect) {
     array_add(*current_layer.draw_markers, .{ clip_rect = rect, vertex_start = current_layer.vertices.count });
 }
 
-raise_window :: (id: UI_ID) {
-    current_layer.depth = z_index;
-    z_index += 1;
+raise_layer :: (id: UI_ID) {
+    current_layer.depth = current_depth;
+    current_depth += 1;
 
     assert(current_layer.widget_id == id);
     log("Want to raise window : % :: %", id, current_layer.depth);
