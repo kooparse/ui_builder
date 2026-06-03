@@ -269,7 +269,7 @@ do_gpu_stuff:: (draw_list: UI_Draw_List) {
             // set_sampler_state(*pass, pixel_params.default_sampler, *default_sampler);
 
             for draw_list.draw_calls {
-                set_scissor(true, .{ xx it.scissor.x, xx it.scissor.y, xx it.scissor.w, xx it.scissor.h });
+                set_scissor(true, .{ xx it.clip.x, xx it.clip.y, xx it.clip.w, xx it.clip.h });
                 draw_primitives(*pass, xx it.vertex_count, 1, base_vertex = xx it.vertex_start);
             }
 

@@ -55,7 +55,7 @@ right_pressed : bool;
 
 // @todo I don't like the name here...
 Draw_Marker :: struct {
-    scissor_rect : Rect;
+    clip_rect : Rect;
     vertex_start : int;
 };
 
@@ -97,7 +97,7 @@ Layer :: struct {
 
     vertices        : [..] UI_Vertex;
     draw_markers    : [..] Draw_Marker;
-    scissor_stack   : [..] Rect;
+    clip_stack   : [..] Rect;
 };
 
 Widget_State :: struct {
@@ -118,12 +118,7 @@ Widget_State :: struct {
 UI_Draw_Call :: struct {
     vertex_start   : int;
     vertex_count   : int;
-
-    scissor        : Rect; // rename clip?
-
-    use_texture    : bool;
-
-    texture        : GFX_Texture;
+    clip        : Rect; // rename clip?
 };
 
 UI_Draw_List  :: struct {
@@ -299,7 +294,7 @@ ui_begin :: () {
         for * curr_layer_list {
             array_reset(*it.vertices);
             array_reset(*it.draw_markers);
-            array_reset(*it.scissor_stack);
+            array_reset(*it.clip_stack);
         }
 
         array_reset_keeping_memory(*curr_layer_list);
@@ -326,7 +321,7 @@ ui_end :: () {
             array_add(*draw_list.draw_calls, UI_Draw_Call.{
                 vertex_start = global_index + marker.vertex_start,
                 vertex_count = vertex_count,
-                scissor      = marker.scissor_rect,
+                clip      = marker.clip_rect,
             });
         }
 
@@ -503,7 +498,7 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) {
         flags := UI_Flags.DRAW_TEXT | .DRAW_BACKGROUND | .DRAW_BORDER | .MOVEABLE;
 
         push_layer(id, full_rect, content_rect);
-        push_scissor(full_rect);
+        push_clip(full_rect);
 
         ui_set_state(id, state, full_rect);
 
@@ -529,13 +524,13 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) {
         content_rect.w -= theme.scrollbar_width;
     }
 
-    push_scissor(content_rect);
+    push_clip(content_rect);
 }
 
 // rename window_end().
 end_window :: () {
-    pop_scissor(current_layer.layout.content_rect);
-    pop_scissor(current_layer.rect);
+    pop_clip(current_layer.layout.content_rect);
+    pop_clip(current_layer.rect);
 
     pop_layer();
 }
@@ -987,7 +982,7 @@ get_vertices :: () -> *[..] UI_Vertex {
     return *current_layer.vertices;
 }
 
-push_scissor :: (rect: Rect) {
+push_clip :: (rect: Rect) {
     safe_rect := rect;
 
     // @todo: Let's the user declare some viewport, and make sure our rects are viewport bounds.
@@ -996,13 +991,13 @@ push_scissor :: (rect: Rect) {
     safe_rect.w = max(0.0, rect.w);
     safe_rect.h = max(0.0, rect.h);
 
-    array_add(*current_layer.scissor_stack, safe_rect);
+    array_add(*current_layer.clip_stack, safe_rect);
     record_draw_marker(safe_rect);
 }
 
 // @todo: make proper assert.
-pop_scissor :: (rect: Rect) {
-    old_rect := pop(*current_layer.scissor_stack);
+pop_clip :: (rect: Rect) {
+    old_rect := pop(*current_layer.clip_stack);
     record_draw_marker(old_rect);
 }
 
@@ -1012,10 +1007,10 @@ record_draw_marker :: (rect: Rect) {
 
     if draw_markers.count > 0 {
         last := peek(draw_markers.*);
-        if last.scissor_rect == rect return;
+        if last.clip_rect == rect return;
     }
 
-    array_add(*current_layer.draw_markers, .{ scissor_rect = rect, vertex_start = current_layer.vertices.count });
+    array_add(*current_layer.draw_markers, .{ clip_rect = rect, vertex_start = current_layer.vertices.count });
 }
 
 raise_window :: (id: UI_ID) {
