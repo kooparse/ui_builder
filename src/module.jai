@@ -23,10 +23,10 @@ UI_ID :: int;
 // Context.
 theme               := Theme.{};
 
-prev_occluder_list  : [..] Occluder;
-curr_occluder_list  : [..] Occluder;
-occluder_stack      : [..] int; // Index of item in the occluder list.
-current_occluder    : *Occluder;
+prev_layer_list  : [..] Layer;
+curr_layer_list  : [..] Layer;
+layer_stack      : [..] int; // Index of item in the layer list.
+current_layer    : *Layer;
 
 dragging        : bool;
 drag_offset     : Vector2;
@@ -59,11 +59,13 @@ Draw_Marker :: struct {
     vertex_start : int;
 };
 
-Occluder :: struct {
-    widget_id   : UI_ID;
+UI_Layout :: struct {
+    content_rect : Rect;
+    cursor       : Vector2; //@todo: explain that.
 
-    z_value     : int; // z order.
-    rect        : Rect;
+    order      := Layout_Order.STACK;
+    align      := Layout_Align.PIXEL_LEFT;
+    columns    := 0; //  0 = grow = true instead?
 
     scroll      : Vector2;
     max_scroll  : float;
@@ -72,11 +74,26 @@ Occluder :: struct {
     curr_column      := 0;
     prev_widget_size : Vector2;
 
-    content_rect : Rect;
-    cursor       : Vector2; //@todo: explain that.
     prev_cursor  : Vector2;
+};
 
-    layout      : UI_Layout;
+/*
+    The UI is made of a stack of layers.
+    A Layer represent a rectangular surface where widgets are drawn on it.
+
+
+
+*/
+
+Layer :: struct {
+    widget_id : UI_ID;
+
+    // Depth is used to sort the layer stack,
+    // biggest depth is on top.
+    depth     : int;
+    rect      : Rect;
+
+    layout    : UI_Layout;
 
     vertices        : [..] UI_Vertex;
     draw_markers    : [..] Draw_Marker;
@@ -90,6 +107,8 @@ Widget_State :: struct {
     pressed : bool;
     hovered : bool;
     once    : bool;
+
+    open    : bool;
 };
 
 #scope_export;
@@ -118,12 +137,6 @@ Layout_Align :: enum {
     PIXEL_LEFT;
     PIXEL_CENTER;
     PIXEL_RIGHT;
-};
-
-UI_Layout :: struct {
-    order           := Layout_Order.STACK;
-    align           := Layout_Align.PIXEL_LEFT;
-    column_count    := 0; //  0 = grow = true instead?
 };
 
 UI_Theme :: struct {
@@ -251,7 +264,7 @@ UI_Vertex :: struct {
 Rect :: struct { x: float; y: float; w: float; h: float; };
 
 operator== :: (a: Rect, b: Rect) -> bool {
-    return a.x == b.x && a.y == b.y && a.w == b.w && a.h && b.h;
+    return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
 ui_set_theme :: () {}
@@ -280,19 +293,19 @@ ui_begin :: () {
     array_reset_keeping_memory(*draw_list.draw_calls);
 
     {
-        swap(*prev_occluder_list, *curr_occluder_list);
+        swap(*prev_layer_list, *curr_layer_list);
 
         // Reset occlusion and widget list.
-        for * curr_occluder_list {
+        for * curr_layer_list {
             array_reset(*it.vertices);
             array_reset(*it.draw_markers);
             array_reset(*it.scissor_stack);
         }
 
-        array_reset_keeping_memory(*curr_occluder_list);
-        array_reset_keeping_memory(*occluder_stack);
+        array_reset_keeping_memory(*curr_layer_list);
+        array_reset_keeping_memory(*layer_stack);
 
-        current_occluder = null;
+        current_layer = null;
     }
 
 }
@@ -300,12 +313,12 @@ ui_begin :: () {
 ui_end :: () {
     assert(draw_list.vertices.count == 0, "WTF DUDE");
 
-    quick_sort(curr_occluder_list, (a, b) => a.z_value - b.z_value);
+    quick_sort(curr_layer_list, (a, b) => a.depth - b.depth);
 
 
     global_index := 0;
 
-    for curr_occluder_list {
+    for curr_layer_list {
         for marker, index: it.draw_markers {
             vertex_end   := ifx index == it.draw_markers.count - 1 it.vertices.count else it.draw_markers[index + 1].vertex_start;
             vertex_count := vertex_end - marker.vertex_start;
@@ -489,12 +502,12 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) {
     {
         flags := UI_Flags.DRAW_TEXT | .DRAW_BACKGROUND | .DRAW_BORDER | .MOVEABLE;
 
-        push_occluder(id, full_rect, content_rect);
+        push_layer(id, full_rect, content_rect);
         push_scissor(full_rect);
 
         ui_set_state(id, state, full_rect);
 
-        is_active  := ifx prev_occluder_list peek(prev_occluder_list).widget_id == id;
+        is_active  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
         want_raise := !is_active && state.once && dragging_widget == -1;
         if want_raise then raise_window(id);
 
@@ -511,8 +524,8 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) {
     color  = theme.resizer.normal.bg_color;
     draw_rect(.{ full_rect.x + full_rect.w - size, full_rect.y + full_rect.h - size, size, size }, color, .ROUND_ALL);
 
-    if current_occluder.max_scroll > 0 {
-        handle_scroll(content_rect, loc);
+    if current_layer.layout.max_scroll > 0 {
+        handle_scroll(*current_layer.layout, loc);
         content_rect.w -= theme.scrollbar_width;
     }
 
@@ -521,61 +534,57 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) {
 
 // rename window_end().
 end_window :: () {
-    pop_scissor(current_occluder.content_rect);
-    pop_scissor(current_occluder.rect);
+    pop_scissor(current_layer.layout.content_rect);
+    pop_scissor(current_layer.rect);
 
-    pop_occluder();
+    pop_layer();
 }
 
 alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
-    occluder    := current_occluder;
-    cursor      := *occluder.cursor;
-    layout      := *occluder.layout;
-
-    scroll       := current_occluder.scroll;
-    content_rect := current_occluder.content_rect;
+    using layout  := *current_layer.layout;
+    // cursor      := *layer.cursor;
+    // layout      := *layer.layout;
+    //
+    // scroll       := current_layer.scroll;
+    // content_rect := current_layer.content_rect;
 
     // If has a scrollbar.
     // @todo: remove this... there's a better way.
-    if current_occluder.max_scroll > 0 {
+    if max_scroll > 0 {
         content_rect.w -= theme.scrollbar_width;
     }
 
     size := widget_size;
 
-    if layout.order != .COLUMNS then occluder.curr_column = 0;
+    if order != .COLUMNS then curr_column = 0;
 
-    if occluder.prev_widget_size.x > 0 || occluder.prev_widget_size.y > 0 {
-        if layout.order == {
+    if prev_widget_size.x > 0 || prev_widget_size.y > 0 {
+        if order == {
             case .STACK;
                 // cursor.x  = theme.padding.x;
-                cursor.y += occluder.prev_widget_size.y + padding.y;
+                cursor.y += prev_widget_size.y + padding.y;
             case .INLINE;
-                cursor.x += occluder.prev_widget_size.x + padding.x;
+                cursor.x += prev_widget_size.x + padding.x;
             case .COLUMNS;
-                col_width := (content_rect.w) / max(1, layout.column_count);
+                col_width := (content_rect.w) / max(1, columns);
                 size.x     = col_width - padding.x;
 
                 // @todo: Here we have to take into account the padding.
 
-                if occluder.curr_column == 0 {
+                if curr_column == 0 {
                     cursor.x  = 0;
-                    cursor.y += occluder.prev_widget_size.y + padding.y;
-                    occluder.curr_column += 1;
+                    cursor.y += prev_widget_size.y + padding.y;
+                    curr_column += 1;
                 } else {
-                    cursor.x  += ifx occluder.curr_column > 0 col_width else 0;
-                    occluder.curr_column += 1;
+                    cursor.x  += ifx curr_column > 0 col_width else 0;
+                    curr_column += 1;
                 }
 
-                if occluder.curr_column >= layout.column_count {
-                    occluder.curr_column = 0;
+                if curr_column >= columns {
+                    curr_column = 0;
                 }
         }
-    } else {
-        // cursor.x += theme.padding.x;
-        // cursor.y += theme.padding.y;
     }
-
 
     base_x := content_rect.x - scroll.x;
     base_y := content_rect.y - scroll.y;
@@ -587,7 +596,7 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
     rect.w = round_pixel(rect.w);
     rect.h = round_pixel(rect.h);
 
-    occluder.prev_widget_size = Vector2.{ size.x, size.y };
+    prev_widget_size = Vector2.{ size.x, size.y };
 
     return rect;
 }
@@ -714,12 +723,31 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
 //     }
 // }
 
+
+ui_select :: (size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) {
+    // id      := ui_id(loc);
+    // state   := find_or_add(*widget_states, id);
+    //
+    // rect := alloc_space(size, theme.button.normal.padding);
+    // ui_set_state(id, state, rect);
+    //
+    // color := ui_theme(state.*, theme.button).bg_color;
+    // draw_rect(rect, color, .ROUND_ALL);
+
+    // {
+    //     dropdown_rect := Rect.{ rect.x, rect.y + rect.w, rect.w, 300 };
+    //     push_layer(id, dropdown_rect, dropdown_rect);
+    //
+    //     draw_rect(rect, Vector4.{0.1, 0.4, 1, 1}, .ROUND_ALL);
+    //
+    //     pop_layer();
+    // }
+}
+
 // @todo: remove "ui".
 ui_button :: (label: string, size := Vector2.{ 100, 40 }, loc := #caller_location) -> bool {
     id      := ui_id(loc, label);
     state   := find_or_add(*widget_states, id);
-
-    flags := UI_Flags.CLICKABLE | .DRAW_TEXT | .DRAW_BACKGROUND | .DRAW_BORDER;
 
     rect := alloc_space(size, theme.button.normal.padding);
     ui_set_state(id, state, rect);
@@ -746,10 +774,11 @@ ui_set_state :: (id: UI_ID, state: *Widget_State, rect: Rect) {
         return;
     }
 
-    // @todo: it's a fucking hack.
+    // @todo: it's a fucking hack, we don't want to do this check for the layer itself,
+    // cause the dragging won't work then, because it's above the content_rect....
     within_content := true;
-    if current_occluder.widget_id != id {
-        within_content = point_vs_rect(mouse_x, mouse_y, current_occluder.content_rect);
+    if current_layer.widget_id != id {
+        within_content = point_vs_rect(mouse_x, mouse_y, current_layer.layout.content_rect);
     }
 
     was_pressed        := state.pressed;
@@ -785,11 +814,11 @@ handle_dragging :: (id: UI_ID, pressed: bool, rect: Rect, x: *float, y: *float) 
     }
 }
 
-handle_scroll :: (content_rect: Rect, loc := #caller_location) {
+handle_scroll :: (using layout: *UI_Layout, loc := #caller_location) {
     scrollbar_id := ui_id(loc, "_scroll_bar");
     state        := find_or_add(*widget_states, scrollbar_id);
 
-    content_h := current_occluder.prev_cursor.y;
+    content_h := prev_cursor.y;
     visible_h := content_rect.h;
     track_h   := content_rect.h;
 
@@ -797,7 +826,7 @@ handle_scroll :: (content_rect: Rect, loc := #caller_location) {
     // @todo, set min size in theme.
     handle_h := max(20., track_h * ratio);
     travel   := track_h - handle_h;
-    scroll_t := current_occluder.scroll.y / current_occluder.max_scroll;
+    scroll_t := scroll.y / max_scroll;
 
     handle := Rect.{
         content_rect.x + content_rect.w - theme.scrollbar_width,
@@ -816,19 +845,19 @@ handle_scroll :: (content_rect: Rect, loc := #caller_location) {
         if hit && !is_dragging && abs(delta_y) > 0  dragging_widget = scrollbar_id;
         if is_dragging && !left_pressed             dragging_widget = -1;
         if is_dragging && travel > 0 {
-            current_occluder.scroll.y += delta_y * (current_occluder.max_scroll / travel);
+            scroll.y += delta_y * (max_scroll / travel);
         }
 
     }
 
-    current_occluder.scroll.y = clamp(current_occluder.scroll.y, 0.0, current_occluder.max_scroll);
+    scroll.y = clamp(scroll.y, 0.0, max_scroll);
 
     draw_rect(handle, theme.window_scroll_bar.normal.bg_color, .ROUND_ALL);
 }
 
 set_layout_order:: (order: Layout_Order, columns := 0) {
-    current_occluder.layout.order        = order;
-    current_occluder.layout.column_count = columns;
+    current_layer.layout.order   = order;
+    current_layer.layout.columns = columns;
 }
 
 #scope_file;
@@ -838,13 +867,13 @@ is_occluded :: (id: UI_ID, rect: Rect) -> bool {
         return false;
     }
 
-    if current_occluder {
+    if current_layer {
 
-        for prev_occluder_list {
+        for prev_layer_list {
             // Don't test on itself.
-            if it.widget_id == current_occluder.widget_id continue;
+            if it.widget_id == current_layer.widget_id continue;
 
-            if current_occluder.z_value < it.z_value {
+            if current_layer.depth < it.depth {
                 if point_vs_rect(mouse_x, mouse_y, it.rect) {
                     return true;
                 }
@@ -855,26 +884,20 @@ is_occluded :: (id: UI_ID, rect: Rect) -> bool {
     return false;
 }
 
-get_cursor :: () -> *Vector2 {
-    return *current_occluder.cursor;
-}
-
-set_cursor :: (cursor: Vector2) {
-    current_occluder.cursor = cursor;
-}
-
-push_occluder :: (id: UI_ID, occlusion_rect: Rect, content_rect: Rect) {
-    z_value := -1;
+push_layer :: (id: UI_ID, occlusion_rect: Rect, content_rect: Rect) {
+    depth := -1;
 
     prev_cursor : Vector2;
     scroll      : Vector2;
 
+    layout      : UI_Layout;
+
     // Find old z order.
-    for prev_occluder_list {
+    for prev_layer_list {
         if it.widget_id == id {
-            z_value     = it.z_value;
-            scroll      = it.scroll;
-            prev_cursor = it.cursor + it.prev_widget_size;
+            depth     = it.depth;
+            scroll      = it.layout.scroll;
+            prev_cursor = it.layout.cursor + it.layout.prev_widget_size;
             break;
         }
     }
@@ -890,33 +913,36 @@ push_occluder :: (id: UI_ID, occlusion_rect: Rect, content_rect: Rect) {
 
     scroll.y = clamp(scroll.y, 0.0, max_scroll);
 
-    // If old z not found, it's a new occluder, let's init its z order.
-    if z_value == -1 {
-        z_value  = z_index;
+    // If old z not found, it's a new layer, let's init its z order.
+    if depth == -1 {
+        depth  = z_index;
         z_index += 1;
     }
 
-    index := curr_occluder_list.count;
+    index := curr_layer_list.count;
 
-    array_add(*curr_occluder_list, .{
-        z_value      = z_value,
+    array_add(*curr_layer_list, .{
         widget_id    = id,
-        scroll       = scroll,
-        max_scroll   = max_scroll,
         rect         = occlusion_rect,
-        content_rect = content_rect,
-        prev_cursor  = prev_cursor,
+        depth      = depth,
+        layout = .{
+            scroll       = scroll,
+            max_scroll   = max_scroll,
+            content_rect = content_rect,
+            prev_cursor  = prev_cursor,
+        }
     });
 
-    array_add(*occluder_stack, index);
-    current_occluder = *curr_occluder_list[index];
+    array_add(*layer_stack, index);
+    current_layer = *curr_layer_list[index];
 }
 
 // todo: some asserts could be cool to put there.
-pop_occluder :: () {
-    _ := pop(*occluder_stack); // @todo: assert bunch of stuff.
+pop_layer :: () {
+    _ := pop(*layer_stack); // @todo: assert bunch of stuff.
     // Not correct, but somehow ok.
-    current_occluder = ifx curr_occluder_list then peek_pointer(curr_occluder_list);
+    // current_layer = ifx curr_layer_list then peek_pointer(curr_layer_list);
+    current_layer = ifx layer_stack then *curr_layer_list[peek(layer_stack)];
 }
 
 point_vs_rect :: (x: float, y: float, rect: Rect) -> bool {
@@ -949,7 +975,7 @@ ui_id :: (loc: Source_Code_Location, extra := "") -> u32 {
 }
 
 get_layout :: () -> UI_Layout {
-    return current_occluder.layout;
+    return current_layer.layout;
 }
 
 get_state :: (id: UI_ID) -> *Widget_State {
@@ -957,8 +983,8 @@ get_state :: (id: UI_ID) -> *Widget_State {
 }
 
 get_vertices :: () -> *[..] UI_Vertex {
-    assert(current_occluder != null);
-    return *current_occluder.vertices;
+    assert(current_layer != null);
+    return *current_layer.vertices;
 }
 
 push_scissor :: (rect: Rect) {
@@ -970,33 +996,33 @@ push_scissor :: (rect: Rect) {
     safe_rect.w = max(0.0, rect.w);
     safe_rect.h = max(0.0, rect.h);
 
-    array_add(*current_occluder.scissor_stack, safe_rect);
+    array_add(*current_layer.scissor_stack, safe_rect);
     record_draw_marker(safe_rect);
 }
 
 // @todo: make proper assert.
 pop_scissor :: (rect: Rect) {
-    old_rect := pop(*current_occluder.scissor_stack);
+    old_rect := pop(*current_layer.scissor_stack);
     record_draw_marker(old_rect);
 }
 
 // change the name.
 record_draw_marker :: (rect: Rect) {
-    draw_markers := *current_occluder.draw_markers;
+    draw_markers := *current_layer.draw_markers;
 
     if draw_markers.count > 0 {
         last := peek(draw_markers.*);
         if last.scissor_rect == rect return;
     }
 
-    array_add(*current_occluder.draw_markers, .{ scissor_rect = rect, vertex_start = current_occluder.vertices.count });
+    array_add(*current_layer.draw_markers, .{ scissor_rect = rect, vertex_start = current_layer.vertices.count });
 }
 
 raise_window :: (id: UI_ID) {
-    current_occluder.z_value = z_index;
+    current_layer.depth = z_index;
     z_index += 1;
 
-    assert(current_occluder.widget_id == id);
-    log("Want to raise window : % :: %", id, current_occluder.z_value);
+    assert(current_layer.widget_id == id);
+    log("Want to raise window : % :: %", id, current_layer.depth);
 }
 

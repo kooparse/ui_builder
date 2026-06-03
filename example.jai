@@ -83,6 +83,8 @@ main :: () {
     }
 }
 
+open_window := false;
+
 make_ui :: () -> UI_Draw_List {
     ui_begin();
 
@@ -100,7 +102,13 @@ make_ui :: () -> UI_Draw_List {
 
     begin_window(Rect.{ r.x, r.y, 450, 400 }, "menu 2");
 
+    ui_select();
+
     for 0..30 {
+        if ui_button("but") {
+            open_window = !open_window;
+        }
+
         if ui_button(tprint("button %", it)) {
             log("click! %", it);
         }
@@ -108,45 +116,48 @@ make_ui :: () -> UI_Draw_List {
 
     end_window();
 
-    begin_window(Rect.{ 600, r.y, 150, 400 }, "menu 1");
+    if open_window {
+        begin_window(Rect.{ 600, r.y, 150, 400 }, "menu 1");
 
-    if ui_button("stack 1") {
-        log("click! 3");
+        if ui_button("stack 1") {
+            log("click! 3");
+        }
+
+        if ui_button("stack 2") {
+            log("click! 4");
+        }
+
+        set_layout_order(.INLINE);
+
+        if ui_button("inline") {
+            log("click! 5");
+        }
+
+        set_layout_order(.COLUMNS, 3);
+
+        if ui_button("col") {
+            log("click! col 1");
+        }
+
+        if ui_button("col") {
+            log("click! col 2");
+        }
+
+        if ui_button("col") {
+            log("click! col 3");
+        }
+
+        if ui_button("col") {
+            log("click! col 4");
+        }
+
+        if ui_button("col") {
+            log("click! col 5");
+        }
+
+        end_window();
+
     }
-
-    if ui_button("stack 2") {
-        log("click! 4");
-    }
-
-    set_layout_order(.INLINE);
-
-    if ui_button("inline") {
-        log("click! 5");
-    }
-
-    set_layout_order(.COLUMNS, 3);
-
-    if ui_button("col") {
-        log("click! col 1");
-    }
-
-    if ui_button("col") {
-        log("click! col 2");
-    }
-
-    if ui_button("col") {
-        log("click! col 3");
-    }
-
-    if ui_button("col") {
-        log("click! col 4");
-    }
-
-    if ui_button("col") {
-        log("click! col 5");
-    }
-
-    end_window();
 
     // if ui_button("button") {
     //     log("click! 1");
