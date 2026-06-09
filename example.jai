@@ -96,118 +96,74 @@ make_ui :: () -> UI_Draw_List {
     ui_set_mouse(xx mouse_x, xx mouse_y);
     ui_set_wheel(wheel_delta.x, wheel_delta.y);
 
-    r := Rect.{ 0, 0, window_width, window_height };
+    r := Rect.{ 10, 10, window_width, window_height };
 
-    r.x += 10;
-    r.y += 10;
+    if begin_window(Rect.{ r.x, r.y, 450, 400 }, "menu 2") {
 
-    begin_window(Rect.{ r.x, r.y, 450, 400 }, "menu 2");
-
-    ui_select();
-
-    if ui_button("OPEN") {
-        should_open = !should_open;
-    }
-
-    for 0..15 {
-        if ui_button(tprint("button %", it)) {
-            log("click! %", it);
+        for 1..15 {
+            if ui_button(tprint("button %", it)) {
+                log("click! %", it);
+            }
         }
+
+        end_window();
     }
 
-    end_window();
+    // ui_select();
 
 
-    if should_open {
-        begin_window(Rect.{ 600, r.y, 150, 400 }, "menu 1");
 
+    if begin_window(Rect.{ 600, r.y, 150, 400 }, "menu 1") {
         if ui_button("stack 1") {
             log("click! 3");
         }
 
-        if ui_button("stack 2") {
-            log("click! 4");
-        }
-
-        set_layout_order(.INLINE);
-
-        if ui_button("inline") {
-            log("click! 5");
-        }
-
-        set_layout_order(.COLUMNS, 3);
-
-        if ui_button("col") {
-            log("click! col 1");
-        }
-
-        if ui_button("col") {
-            log("click! col 2");
-        }
-
-        if ui_button("col") {
-            log("click! col 3");
-        }
-
-        if ui_button("col") {
-            log("click! col 4");
-        }
-
-        if ui_button("col") {
-            log("click! col 5");
-        }
-
         end_window();
-
     }
 
-    // if ui_button("button") {
-    //     log("click! 1");
+
+    // if should_open {
+    //     begin_window(Rect.{ 600, r.y, 150, 400 }, "menu 1");
+    //
+    //     if ui_button("stack 1") {
+    //         log("click! 3");
+    //     }
+    //
+    //     if ui_button("stack 2") {
+    //         log("click! 4");
+    //     }
+    //
+    //     set_layout_order(.INLINE);
+    //
+    //     if ui_button("inline") {
+    //         log("click! 5");
+    //     }
+    //
+    //     set_layout_order(.COLUMNS, 3);
+    //
+    //     if ui_button("col") {
+    //         log("click! col 1");
+    //     }
+    //
+    //     if ui_button("col") {
+    //         log("click! col 2");
+    //     }
+    //
+    //     if ui_button("col") {
+    //         log("click! col 3");
+    //     }
+    //
+    //     if ui_button("col") {
+    //         log("click! col 4");
+    //     }
+    //
+    //     if ui_button("col") {
+    //         log("click! col 5");
+    //     }
+    //
+    //     end_window();
+    //
     // }
-    //
-    // if ui_button("button") {
-    //     log("click 2");
-    // }
-    //
-    // if ui_button("button") {
-    //     log("click 3");
-    // }
-    //
-    // ui_set_layout(.INLINE);
-    //
-    // ui_spread();
-    //
-    // if ui_button("button") {
-    //     log("click 4");
-    // }
-    //
-    // ui_set_layout(.COLUMNS, 3);
-    //
-    // if ui_button("button") {
-    //     log("click 5");
-    // }
-    //
-    // if ui_button("button") {
-    //     log("click 6");
-    // }
-    //
-    // if ui_button("button") {
-    //     log("click 7");
-    // }
-    //
-    // if ui_button("button") {
-    //     log("click 8");
-    // }
-    //
-    // if ui_button("button") {
-    //     log("click 9");
-    // }
-    //
-    // if ui_button("button") {
-    //     log("click 10");
-    // }
-    //
-    // ui_end_panel();
 
     ui_end();
     // Make UI.

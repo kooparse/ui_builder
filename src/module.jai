@@ -11,8 +11,9 @@
     - better understanding for roudned corner.
 */
 
-// @todo: should import.
+// @todo: should import font.
 #load "font.jai";
+#load "theme.jai";
 
 #scope_file;
 
@@ -25,13 +26,10 @@ theme            := Theme.{};
 
 prev_layer_list  : [..] Layer;
 curr_layer_list  : [..] Layer;
-layer_stack      : [..] int; // Index of item in the layer list.
+layer_stack      : [..] int; // Index of layers from our current layer list.
 current_layer    : *Layer;
 
-dragging        : bool;
-drag_offset     : Vector2;
-
-widget_states   : Table(UI_ID, Widget_State);
+widget_states   : Table(UI_ID, *Widget_State);
 
 active_widget   : UI_ID = -1; // I want a pointer to the state directly....
 hot_widget      : UI_ID = -1;
@@ -48,50 +46,48 @@ wheel_y  : float;
 
 current_depth := 0;
 
-// @todo: rename those vartiables.
+// @todo: rename those variables.
 left_pressed  : bool;
 right_pressed : bool;
 
 // @todo I don't like the name here...
 Draw_Marker :: struct {
-    clip_rect : Rect;
+    clip_rect    : Rect;
     vertex_start : int;
 };
 
 UI_Layout :: struct {
-    content_rect : Rect;
-    cursor       : Vector2; //@todo: explain that.
+    rect         : Rect;
+
+    cursor       : Vector2; // @todo: explain that.
     prev_cursor  : Vector2;
 
     order      := Layout_Order.STACK;
     align      := Layout_Align.PIXEL_LEFT;
     columns    := 0;
 
-    scroll      : Vector2;
-    max_scroll  : float;
+    scroll     : Vector2;
 
     // For auto layout.
     curr_column      := 0;
     prev_widget_size : Vector2;
 };
 
+
 /*
 
-    The UI is made of a stack of layers.
-    A Layer represent a rectangular surface where widgets are drawn on it.
+    A Layer represent a surface where widgets are drawn on top of it.
 
 */
 
 Layer :: struct {
-    widget_id    : UI_ID;
-
-    // Depth is used to sort the layer stack,
-    // biggest depth is on top.
-    depth        : int;
     rect         : Rect;
-    next_rect    : Rect; // Rect to swap with before next frame.
+
+    widget_id    : UI_ID;
+    depth        : int; // Used to sort the layer list.
 
     layout       : UI_Layout;
+    prev_layout  : UI_Layout;
 
     vertices     : [..] UI_Vertex;
     draw_markers : [..] Draw_Marker;
@@ -100,17 +96,27 @@ Layer :: struct {
 
 Widget_State :: struct {
     id      : UI_ID = -1;
+    kind    : Type;
     rect    : Rect;
 
     pressed : bool;
     hovered : bool;
     once    : bool;
+};
 
-    open    : bool;
+Window_State :: struct {
+    #as using state : Widget_State;
+
+    open     := true;
+    dragging : enum { NONE; MOVE_WINDOW; RESIZE_WINDOW; }
+};
+
+Dropdown_State :: struct {
+    #as using state : Widget_State;
+    open            : bool;
 };
 
 #scope_export;
-
 
 UI_Draw_Call :: struct {
     vertex_start : int;
@@ -131,104 +137,6 @@ Layout_Align :: enum {
     PIXEL_RIGHT;
 };
 
-UI_Theme :: struct {
-    text_size    := 16.0;
-    text_color   := Vector4.{ 0, 0, 0, 1 };
-    bg_color     := Vector4.{ 1, 1, 1, 1 };
-    border_color := Vector4.{ 0, 0, 0, 1 };
-
-    padding      := Vector2.{ 2.5, 2.5 };
-};
-
-Theme_State :: struct {
-    normal   : UI_Theme;
-    hovered  : UI_Theme;
-    focused  : UI_Theme;
-    disabled : UI_Theme;
-};
-
-Theme :: struct {
-    button := Theme_State.{
-        normal = UI_Theme.{
-            bg_color = Vector4.{ 1, 0, 0, 1 },
-        },
-
-        hovered = UI_Theme.{
-            bg_color = Vector4.{ 0.8, 0, 0, 1 },
-        },
-
-        focused = UI_Theme.{
-            bg_color = Vector4.{ 0.7, 0, 0, 1 },
-        },
-
-        disabled = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-    };
-
-    window_scroll_bar := Theme_State.{
-        normal = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-
-        hovered = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-
-        focused = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-
-        disabled = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-    };
-
-    window_title_bar := Theme_State.{
-        normal = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-
-        hovered = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-
-        focused = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-
-        disabled = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-    };
-
-    content_padding         := 4.;
-    window_title_bar_height := 70.;
-    window_resizer_size     := 16.;
-
-    scrollbar_width := 12.;
-
-    window_content := Theme_State.{};
-
-    resizer := Theme_State.{
-        normal = UI_Theme.{
-            bg_color = Vector4.{ 0.8, 0.8, 0.8, 1 },
-        },
-
-        hovered = UI_Theme.{
-            bg_color = Vector4.{ 0.8, 0.8, 0.8, 1 },
-        },
-
-        focused = UI_Theme.{
-            bg_color = Vector4.{ 0.8, 0.8, 0.8, 1 },
-        },
-
-        disabled = UI_Theme.{
-            bg_color = Vector4.{ 0.5, 0.5, 0.5, 1 },
-        },
-    };
-};
-
 UI_State :: struct {
     pressed : bool;
     hovered : bool;
@@ -240,9 +148,17 @@ UI_Vertex :: struct {
     color    : Vector4;
 };
 
-Rect :: struct { x: float; y: float; w: float; h: float; };
+Rect :: struct {
+    x: float;
+    y: float;
+    w: float;
+    h: float;
 
-operator== :: (a: Rect, b: Rect) -> bool {
+    #overlay (x) position   : Vector2;
+    #overlay (w) size       : Vector2;
+};
+
+operator == :: (a: Rect, b: Rect) -> bool {
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
@@ -290,17 +206,27 @@ ui_begin :: () {
 }
 
 ui_end :: () {
-    assert(draw_list.vertices.count == 0, "WTF DUDE");
-
+    // @todo: Add comment.
     quick_sort(curr_layer_list, (a, b) => a.depth - b.depth);
 
+    /*
 
-    global_index := 0;
+        We want an easy way to send the data on the GPU, so we construct a flat
+        array with all vertices of the current frame.
+
+        And each draw call is a slice of this big buffer, with specific clip
+        region and texture pointer.
+
+    */
+
+    global_index := 0; // Base index on the flat vertices buffer.
 
     for curr_layer_list {
 
         for marker, index: it.draw_markers {
-            vertex_end   := ifx index == it.draw_markers.count - 1 it.vertices.count else it.draw_markers[index + 1].vertex_start;
+            vertex_end   := ifx  index == it.draw_markers.count - 1 it.vertices.count
+                            else it.draw_markers[index + 1].vertex_start;
+
             vertex_count := vertex_end - marker.vertex_start;
 
             array_add(*draw_list.draw_calls, UI_Draw_Call.{
@@ -310,7 +236,9 @@ ui_end :: () {
             });
         }
 
+        // Append the local layer vertices to the flat one.
         array_add(*draw_list.vertices, ..it.vertices);
+
         global_index += it.vertices.count;
     }
 }
@@ -326,7 +254,10 @@ Rect_Flags :: enum_flags u32 {
     ROUND_BOTTOM_LEFT_CORNER    :: (1 << 2);
     ROUND_BOTTOM_RIGHT_CORNER   :: (1 << 3);
 
-    ROUND_ALL :: ROUND_TOP_LEFT_CORNER | ROUND_TOP_RIGHT_CORNER | ROUND_BOTTOM_LEFT_CORNER | ROUND_BOTTOM_RIGHT_CORNER;
+    ROUND_ALL :: ROUND_TOP_LEFT_CORNER      |
+                 ROUND_TOP_RIGHT_CORNER     |
+                 ROUND_BOTTOM_LEFT_CORNER   |
+                 ROUND_BOTTOM_RIGHT_CORNER;
 };
 
 draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
@@ -447,71 +378,118 @@ Region_Status :: struct {
     clicked : bool;
 };
 
+begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
+    id    := ui_id(loc, "_full_region");
+    state := get_widget_state(Window_State, id, default_rect = region);
 
-begin_window :: (region: Rect, title: string, loc := #caller_location) {
-    id         := ui_id(loc, "_full_region");
-    state, new := find_or_add(*widget_states, id);
+    push_layer(id, state.rect);
 
-    if new {
-        state.rect = region;
+    // If its layer was the topmost one of the last frame, we consider it as
+    // "active".
+    is_topmost  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
+
+    update_rect_state(id, state, state.rect);
+    // If we click somewhere on the layer, we want to raise it to the top of
+    // the stack.
+    want_raise := !is_topmost && state.once && active_widget == -1;
+    if want_raise then raise_layer(id);
+
+
+    title_rect     := state.rect;
+    title_rect.h    = theme.window_title_bar_height;
+
+    resizer_rect   := state.rect;
+    resizer_rect.x += state.rect.w - theme.resize_size;
+    resizer_rect.y += state.rect.h - theme.resize_size;
+    resizer_rect.w  = theme.resize_size;
+    resizer_rect.h  = theme.resize_size;
+
+    dragging_allowed := active_widget == -1 && is_topmost && state.dragging == .NONE && left_pressed;
+
+    // Start title bar dragging.
+    if dragging_allowed && !is_occluded(title_rect) && cursor_vs_rect(title_rect) {
+        // Prevent to mix clicking and dragging behavior.
+        if (abs(delta_x) > 0 || abs(delta_y) > 0) {
+            active_widget   = id;
+            state.dragging  = .MOVE_WINDOW;
+            log("Start moving!");
+        }
     }
 
-    full_rect := state.rect;
-
-    title_id      := ui_id(loc, "_title");
-    title_rect    := full_rect;
-    title_rect.h   = theme.window_title_bar_height;
-    handle_dragging(title_id, state.pressed, title_rect, *full_rect.x, *full_rect.y);
-
-    resizer_id := ui_id(loc, "_resizer_id");
-    size       := theme.window_resizer_size;
-    handle_dragging(resizer_id, state.pressed, .{
-        full_rect.x + full_rect.w - size,
-        full_rect.y + full_rect.h - size,
-        size, size
-    }, *full_rect.w, *full_rect.h);
-
-    state.rect = full_rect;
-
-    content_rect   := full_rect;
-    content_rect.x += theme.content_padding;
-    content_rect.y += theme.window_title_bar_height + theme.content_padding;
-    content_rect.w -= (theme.scrollbar_width - theme.content_padding);
-    content_rect.h -= (theme.window_title_bar_height + theme.content_padding);
-
-    {
-        push_layer(id, full_rect, content_rect);
-
-        ui_set_state(id, state, full_rect);
-
-        is_active  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
-        want_raise := !is_active && state.once && active_widget == -1;
-        if want_raise then raise_layer(id);
-
-        window_theme := ifx is_active then theme.window_content.focused else theme.window_content.normal;
-        draw_rect(full_rect, window_theme.bg_color, .ROUND_ALL);
+    // Start resizer dragging.
+    if dragging_allowed && !is_occluded(resizer_rect) && cursor_vs_rect(resizer_rect) {
+        // Prevent to mix clicking and dragging behavior.
+        if (abs(delta_x) > 0 || abs(delta_y) > 0) {
+            active_widget   = id;
+            state.dragging  = .RESIZE_WINDOW;
+            log("Start resizer!");
+        }
     }
 
+    if state.dragging != .NONE && !left_pressed {
+        active_widget   = -1;
+        state.dragging  = .NONE;
+        log("Stop moving/resizer!");
+    }
 
-    flags := Rect_Flags.ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER;
+    if state.dragging == .MOVE_WINDOW {
+        log("moving!");
+        state.rect.x += delta_x;
+        state.rect.y += delta_y;
+    }
 
+    if state.dragging == .RESIZE_WINDOW {
+        log("resizing !");
+        state.rect.w += delta_x;
+        state.rect.h += delta_y;
+    }
+
+    // Once dragging is done, and we updated the window rect state, we make our
+    // layer clip area.
+    push_clip(state.rect);
+
+    // Now, we recompute the title and resizer region, to get the latest
+    // position/size.
+
+    title_rect     = state.rect;
+    title_rect.h    = theme.window_title_bar_height;
+
+    resizer_rect    = state.rect;
+    resizer_rect.x += state.rect.w - theme.resize_size;
+    resizer_rect.y += state.rect.h - theme.resize_size;
+    resizer_rect.w  = theme.resize_size;
+    resizer_rect.h  = theme.resize_size;
+
+    // Draw window background.
+    window_theme := ifx is_topmost then theme.window_content.focused else theme.window_content.normal;
+    draw_rect(state.rect, window_theme.bg_color, .ROUND_ALL);
+
+    // Draw title bar.
     color := theme.window_title_bar.normal.bg_color;
-    draw_rect(.{ full_rect.x, full_rect.y, full_rect.w, theme.window_title_bar_height }, color, flags);
+    draw_rect(title_rect, color, .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER);
 
+    // Draw resizer.
     color  = theme.resizer.normal.bg_color;
-    draw_rect(.{ full_rect.x + full_rect.w - size, full_rect.y + full_rect.h - size, size, size }, color, .ROUND_ALL);
+    draw_rect(resizer_rect, theme.resizer.normal.bg_color, .ROUND_ALL);
 
-    if current_layer.layout.max_scroll > 0 {
-        handle_scroll(*current_layer.layout, loc);
-        content_rect.w -= theme.scrollbar_width;
-    }
 
-    push_clip(content_rect);
+    layer_rect   := state.rect;
+    layer_rect.x += theme.content_padding;
+    layer_rect.y += theme.window_title_bar_height + theme.content_padding;
+    layer_rect.w -= (theme.scrollbar_width - theme.content_padding);
+    layer_rect.h -= (theme.window_title_bar_height + theme.content_padding);
+
+    current_layer.layout.rect = layer_rect;
+    update_scrollbar(loc);
+
+    push_clip(layer_rect);
+
+    return state.open;
 }
 
 // rename window_end().
 end_window :: () {
-    pop_clip(current_layer.layout.content_rect);
+    pop_clip();
     pop_layer();
 }
 
@@ -520,9 +498,9 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
 
     // If has a scrollbar.
     // @todo: remove this... there's a better way.
-    if max_scroll > 0 {
-        content_rect.w -= theme.scrollbar_width;
-    }
+    // if max_scroll > 0 {
+    //     content_rect.w -= theme.scrollbar_width;
+    // }
 
     size := widget_size;
 
@@ -535,7 +513,7 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
             case .INLINE;
                 cursor.x += prev_widget_size.x + padding.x;
             case .COLUMNS;
-                col_width := (content_rect.w) / max(1, columns);
+                col_width := (layout.rect.w) / max(1, columns);
                 size.x     = col_width - padding.x;
 
                 // @todo: Here we have to take into account the padding.
@@ -553,21 +531,27 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
                     curr_column = 0;
                 }
         }
+    } else {
+        // I don't like this tho....
+        if order == .COLUMNS {
+            col_width := (layout.rect.w) / max(1, columns);
+            size.x     = col_width - padding.x;
+        }
     }
 
-    base_x := content_rect.x - scroll.x;
-    base_y := content_rect.y - scroll.y;
+    base_x := layout.rect.x - scroll.x;
+    base_y := layout.rect.y - scroll.y;
 
-    rect := Rect.{ base_x + cursor.x, base_y + cursor.y, size.x, size.y };
+    r := Rect.{ base_x + cursor.x, base_y + cursor.y, size.x, size.y };
 
-    rect.x = round_pixel(rect.x);
-    rect.y = round_pixel(rect.y);
-    rect.w = round_pixel(rect.w);
-    rect.h = round_pixel(rect.h);
+    r.x = round_pixel(r.x);
+    r.y = round_pixel(r.y);
+    r.w = round_pixel(r.w);
+    r.h = round_pixel(r.h);
 
     prev_widget_size = Vector2.{ size.x, size.y };
 
-    return rect;
+    return r;
 }
 
 // draw_text :: (
@@ -694,10 +678,10 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
 
 ui_select :: (size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) {
     id      := ui_id(loc);
-    state   := find_or_add(*widget_states, id);
+    state   := get_widget_state(Dropdown_State, id);
 
     rect := alloc_space(size, theme.button.normal.padding);
-    ui_set_state(id, state, rect);
+    update_rect_state(id, state, rect);
 
     color := Vector4.{ 0.2, 0.4, 1, 1 };
     draw_rect(rect, color, .ROUND_ALL);
@@ -708,29 +692,40 @@ ui_select :: (size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_loc
 
     if state.open {
         dropdown_rect := Rect.{ rect.x, rect.y + rect.h, rect.w, 100 };
-        push_layer(id, dropdown_rect, dropdown_rect);
+        content := dropdown_rect;
 
-        draw_rect(current_layer.rect, Vector4.{ 0.1, 0.4, 1, 1 });
+        content.x += theme.content_padding;
+        content.y += theme.content_padding;
+        content.w -= theme.content_padding;
+        content.h -= theme.content_padding;
 
-        size := Vector2.{ 100, 20 };
+        push_layer(id, dropdown_rect);
+        defer pop_layer();
+
+        push_clip(dropdown_rect);
+        defer pop_clip();
+
+        draw_rect(dropdown_rect, Vector4.{ 0.1, 0.4, 1, 1 });
+
+        size := Vector2.{ 80, 20 };
+
+        set_layout_order(.COLUMNS, 1);
 
         ui_button("asjkhd", size);
         ui_button("asjkhd", size);
         ui_button("asjkhd", size);
 
         // handle_scroll(*current_layer.layout, loc);
-
-        pop_layer();
     }
 }
 
 // @todo: remove "ui".
 ui_button :: (label: string, size := Vector2.{ 100, 40 }, loc := #caller_location) -> bool {
     id      := ui_id(loc, label);
-    state   := find_or_add(*widget_states, id);
+    state   := get_widget_state(Widget_State, id);
 
     rect := alloc_space(size, theme.button.normal.padding);
-    ui_set_state(id, state, rect);
+    update_rect_state(id, state, rect);
 
     color := ui_theme(state.*, theme.button).bg_color;
     draw_rect(rect, color, .ROUND_ALL);
@@ -745,95 +740,6 @@ ui_theme :: (state: Widget_State, theme_state: Theme_State) -> UI_Theme {
     return theme_state.normal;
 }
 
-ui_set_state :: (id: UI_ID, state: *Widget_State, rect: Rect) {
-    if active_widget > -1 && active_widget != id {
-        return;
-    }
-
-    if is_occluded(id, rect) {
-        return;
-    }
-
-    // @todo: it's a fucking hack, we don't want to do this check for the layer itself,
-    // cause the dragging won't work then, because it's above the content_rect....
-    within_content := true;
-    if current_layer.widget_id != id {
-        within_content = point_vs_rect(mouse_x, mouse_y, current_layer.layout.content_rect);
-    }
-
-    was_pressed        := state.pressed;
-    state.hovered       = point_vs_rect(mouse_x, mouse_y, rect) && within_content;
-    state.pressed       = state.hovered && left_pressed;
-    state.once          = !was_pressed && state.pressed;
-}
-
-handle_dragging :: (id: UI_ID, pressed: bool, rect: Rect, x: *float, y: *float) {
-    if active_widget > -1 && active_widget != id return;
-
-    hit := point_vs_rect(mouse_x, mouse_y, rect) && pressed;
-
-    want_drag   := hit && (abs(delta_x) > 0 || abs(delta_y) > 0);
-    is_dragging := active_widget > -1 && active_widget == id;
-
-    if want_drag && !is_dragging {
-        drag_offset       = xy(mouse_x, mouse_y) - xy(x.*, y.*);
-        active_widget   = id;
-        log("start drag!");
-        return;
-    }
-
-    if is_dragging && !left_pressed {
-        active_widget = -1;
-        log("stop drag!");
-        return;
-    }
-
-    if is_dragging {
-        x.* = mouse_x - drag_offset.x;
-        y.* = mouse_y - drag_offset.y;
-    }
-}
-
-handle_scroll :: (using layout: *UI_Layout, loc := #caller_location) {
-    scrollbar_id := ui_id(loc, "_scroll_bar");
-    state        := find_or_add(*widget_states, scrollbar_id);
-
-    content_h := prev_cursor.y;
-    visible_h := content_rect.h;
-    track_h   := content_rect.h;
-
-    ratio    := clamp(visible_h / content_h, 0.0, 1.0);
-    // @todo, set min size in theme.
-    handle_h := max(20., track_h * ratio);
-    travel   := track_h - handle_h;
-    scroll_t := scroll.y / max_scroll;
-
-    handle := Rect.{
-        content_rect.x + content_rect.w - theme.scrollbar_width,
-        content_rect.y + scroll_t * travel,
-        theme.scrollbar_width,
-        handle_h,
-    };
-
-    ui_set_state(scrollbar_id, state, handle);
-
-    if active_widget == -1 || active_widget == scrollbar_id {
-
-        is_dragging := active_widget == scrollbar_id;
-        hit         := point_vs_rect(mouse_x, mouse_y, handle) && left_pressed;
-
-        if hit && !is_dragging && abs(delta_y) > 0  active_widget = scrollbar_id;
-        if is_dragging && !left_pressed             active_widget = -1;
-        if is_dragging && travel > 0 {
-            scroll.y += delta_y * (max_scroll / travel);
-        }
-
-    }
-
-    scroll.y = clamp(scroll.y, 0.0, max_scroll);
-
-    draw_rect(handle, theme.window_scroll_bar.normal.bg_color, .ROUND_ALL);
-}
 
 set_layout_order:: (order: Layout_Order, columns := 0) {
     current_layer.layout.order   = order;
@@ -842,19 +748,114 @@ set_layout_order:: (order: Layout_Order, columns := 0) {
 
 #scope_file;
 
-is_occluded :: (id: UI_ID, rect: Rect) -> bool {
-    if active_widget == id {
-        return false;
+get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
+    state, new := find_or_add(*widget_states, id);
+
+    if new {
+        ptr     := New(T);
+        state.*  = cast(*Window_State) ptr;
+
+        if default_rect.w > 0 || default_rect.h > 0 {
+            state.*.rect = default_rect;
+        }
     }
 
-    if current_layer {
+    return cast(*T) state.*, new;
+}
 
+// Not really, only if not active.
+update_rect_state :: (id: UI_ID, state: *Widget_State, rect: Rect) {
+    if active_widget > -1 && active_widget != id {
+        return;
+    }
+
+    if is_occluded(rect) {
+        return;
+    }
+
+    // @todo: it's a fucking hack, we don't want to do this check for the layer itself,
+    // cause the dragging won't work then, because it's above the content_rect....
+    // within_content := true;
+    // if current_layer.widget_id != id {
+    //     within_content = point_vs_rect(mouse_x, mouse_y, current_layer.layout.content_rect);
+    // }
+
+    was_pressed        := state.pressed;
+    state.hovered       = point_vs_rect(mouse_x, mouse_y, rect);
+    state.pressed       = state.hovered && left_pressed;
+    state.once          = !was_pressed && state.pressed;
+}
+
+update_scrollbar :: (loc := #caller_location) {
+    id      := ui_id(loc, "_scrollbar");
+    state   := get_widget_state(Widget_State, id);
+
+    prev_layout := current_layer.prev_layout;
+    layout      := current_layer.layout;
+
+    scroll      := *current_layer.layout.scroll;
+
+
+    // We compute the actual content size from the previous frame.
+    content_h   := prev_layout.cursor.y + prev_layout.prev_widget_size.y;
+    visible_h   := layout.rect.h;
+    max_scroll  := max(0.0, content_h - visible_h);
+
+    if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
+        scroll.y += xx wheel_y;
+        scroll.y = clamp(scroll.y, 0.0, max_scroll);
+    }
+
+
+
+    track_h  := layout.rect.h;
+
+    ratio    := clamp(visible_h / content_h, 0.0, 1.0);
+    handle_h := max(20., track_h * ratio); // @todo, set the min size in theme.
+    travel   := track_h - handle_h;
+    scroll_t := scroll.y / max_scroll;
+
+
+    handle := Rect.{
+        layout.rect.x + layout.rect.w - theme.scrollbar_width,
+        layout.rect.y + scroll_t * travel,
+        theme.scrollbar_width,
+        handle_h,
+    };
+
+    update_rect_state(id, state, handle);
+
+    if active_widget == -1 || active_widget == id {
+        is_dragging := active_widget == id;
+        hit         := point_vs_rect(mouse_x, mouse_y, handle) && left_pressed;
+
+        if hit && !is_dragging && abs(delta_y) > 0 {
+            active_widget = id;
+        }
+
+        if is_dragging && !left_pressed {
+            active_widget = -1;
+        }
+
+        if is_dragging && travel > 0 {
+            scroll.y += delta_y * (max_scroll / travel);
+            scroll.y  = clamp(scroll.y, 0.0, max_scroll);
+        }
+    }
+
+    draw_rect(handle, theme.window_scroll_bar.normal.bg_color, .ROUND_ALL);
+}
+
+is_occluded :: (rect: Rect) -> bool {
+    if current_layer {
         for prev_layer_list {
             // Don't test on itself.
             if it.widget_id == current_layer.widget_id continue;
 
             if current_layer.depth < it.depth {
-                if point_vs_rect(mouse_x, mouse_y, it.rect) {
+                widget_found, widget_state := table_find(*widget_states, it.widget_id);
+
+                if widget_found && point_vs_rect(mouse_x, mouse_y, widget_state.rect) {
                     return true;
                 }
             }
@@ -864,36 +865,22 @@ is_occluded :: (id: UI_ID, rect: Rect) -> bool {
     return false;
 }
 
-push_layer :: (id: UI_ID, occlusion_rect: Rect, content_rect: Rect) {
-    depth := -1;
-
-    prev_cursor : Vector2;
-    scroll      : Vector2;
-
-    layout      : UI_Layout;
+push_layer :: (id: UI_ID, rect: Rect) {
+    depth       := -1;
+    prev_layout : UI_Layout;
 
     // Find old z order.
     for prev_layer_list {
         if it.widget_id == id {
             depth       = it.depth;
-            scroll      = it.layout.scroll;
-            prev_cursor = it.layout.cursor + it.layout.prev_widget_size;
+            prev_layout = it.layout;
+            // scroll      = it.layout.scroll;
+            // prev_cursor = it.layout.cursor + it.layout.prev_widget_size;
             break;
         }
     }
 
-    content_h := prev_cursor.y;
-    visible_h := content_rect.h;
-
-    max_scroll := max(0.0, content_h - visible_h);
-
-    if point_vs_rect(mouse_x, mouse_y, content_rect) && max_scroll > 0 && active_widget == -1 {
-        scroll.y += xx wheel_y;
-    }
-
-    scroll.y = clamp(scroll.y, 0.0, max_scroll);
-
-    // If old z not found, it's a new layer, let's init its z order.
+    // If it's a new layout, we simply initialize it on the top of the stack.
     if depth == -1 {
         depth          = current_depth;
         current_depth += 1;
@@ -902,30 +889,25 @@ push_layer :: (id: UI_ID, occlusion_rect: Rect, content_rect: Rect) {
     index := curr_layer_list.count;
 
     array_add(*curr_layer_list, .{
-        widget_id  = id,
-        rect       = occlusion_rect,
-        depth      = depth,
-        layout = .{
-            scroll       = scroll,
-            max_scroll   = max_scroll,
-            content_rect = content_rect,
-            prev_cursor  = prev_cursor,
-        }
+        widget_id   = id,
+        rect        = rect,
+        depth       = depth,
+        prev_layout = prev_layout,
+        layout      = .{ scroll = prev_layout.scroll }, // Restore previous scroll.
     });
-
     array_add(*layer_stack, index);
     current_layer = *curr_layer_list[index];
-
-    push_clip(occlusion_rect);
 }
 
 // todo: some asserts could be cool to put there.
 pop_layer :: () {
-    pop_clip(current_layer.rect);
-
     _ := pop(*layer_stack); // @todo: assert bunch of stuff.
     // Not correct, but somehow ok.
     current_layer = ifx layer_stack then *curr_layer_list[peek(layer_stack)];
+}
+
+cursor_vs_rect :: (rect: Rect) -> bool {
+    return point_vs_rect(mouse_x, mouse_y, rect);
 }
 
 point_vs_rect :: (x: float, y: float, rect: Rect) -> bool {
@@ -961,10 +943,6 @@ get_layout :: () -> UI_Layout {
     return current_layer.layout;
 }
 
-get_state :: (id: UI_ID) -> *Widget_State {
-    return table_find_pointer(*widget_states, id);
-}
-
 get_vertices :: () -> *[..] UI_Vertex {
     assert(current_layer != null);
     return *current_layer.vertices;
@@ -984,7 +962,7 @@ push_clip :: (rect: Rect) {
 }
 
 // @todo: make proper assert.
-pop_clip :: (rect: Rect) {
+pop_clip :: () {
     old_rect := pop(*current_layer.clip_stack);
     record_draw_marker(old_rect);
 }
@@ -1005,7 +983,6 @@ raise_layer :: (id: UI_ID) {
     current_layer.depth = current_depth;
     current_depth += 1;
 
-    assert(current_layer.widget_id == id);
     log("Want to raise window : % :: %", id, current_layer.depth);
 }
 
