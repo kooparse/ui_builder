@@ -9,20 +9,34 @@
 
     - better understanding for scrollbar
     - better understanding for roudned corner.
+
+
+
+    Blog post:
+
+    1) Explain our the UI backbones : layers, occluders, dragging.
+
+    2) Explain nice tricks, like white pixel reserve in the font atlas, the
+       double array we swap, the hovered_layer at begin...
+
 */
 
 // @todo: should import font.
 #load "font.jai";
 #load "theme.jai";
 
+// @todo: explain.
+UV_DISCARD :: Vector2.{ 0, 0 };
+
 #scope_file;
 
 #import "Sort";
 
-UI_ID :: int;
+UI_ID      :: int;
+UI_Texture :: *void;
 
 // Context.
-theme            := Theme.{};
+theme            := DEFAULT_THEME;
 
 prev_layer_list  : [..] Layer;
 curr_layer_list  : [..] Layer;
@@ -34,7 +48,11 @@ widget_states   : Table(UI_ID, *Widget_State);
 active_widget   : UI_ID = -1; // I want a pointer to the state directly....
 hot_widget      : UI_ID = -1;
 
+hovered_layer   : UI_ID = -1;
+
 draw_list       : UI_Draw_List;
+
+current_texture : UI_Texture;
 
 mouse_x  : float;
 mouse_y  : float;
@@ -43,6 +61,9 @@ delta_y  : float;
 
 wheel_x  : float;
 wheel_y  : float;
+
+// The current font.
+font     : *Font;
 
 current_depth := 0;
 
@@ -54,6 +75,7 @@ right_pressed : bool;
 Draw_Marker :: struct {
     clip_rect    : Rect;
     vertex_start : int;
+    texture      : UI_Texture;
 };
 
 UI_Layout :: struct {
@@ -121,7 +143,8 @@ Dropdown_State :: struct {
 UI_Draw_Call :: struct {
     vertex_start : int;
     vertex_count : int;
-    clip         : Rect; // rename clip?
+    clip         : Rect;
+    texture      : UI_Texture;
 };
 
 UI_Draw_List  :: struct {
@@ -158,11 +181,22 @@ Rect :: struct {
     #overlay (w) size       : Vector2;
 };
 
+operator * :: (rect: Rect, scaler: float) -> Rect {
+    return .{ rect.x * scaler, rect.y * scaler, rect.w * scaler, rect.h * scaler };
+}
+
 operator == :: (a: Rect, b: Rect) -> bool {
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
-ui_set_theme :: () {}
+ui_set_theme :: (given_theme: Theme) {
+    theme = given_theme;
+}
+
+ui_set_font :: (font_to_set: *Font) {
+    font            = font_to_set;
+    current_texture = *font.texture_atlas;
+}
 
 ui_set_mouse_press :: (left: bool, right := false) {
     left_pressed    = left;
@@ -203,6 +237,15 @@ ui_begin :: () {
         current_layer = null;
     }
 
+
+    // @todo: explain that.
+    for < prev_layer_list  {
+        if cursor_vs_rect(it.rect) {
+            hovered_layer = it.widget_id;
+            break;
+        }
+    }
+
 }
 
 ui_end :: () {
@@ -233,6 +276,7 @@ ui_end :: () {
                 vertex_start = global_index + marker.vertex_start,
                 vertex_count = vertex_count,
                 clip         = marker.clip_rect,
+                texture      = marker.texture,
             });
         }
 
@@ -247,144 +291,13 @@ get_draw_list :: () -> UI_Draw_List {
     return draw_list;
 }
 
-Rect_Flags :: enum_flags u32 {
-    NONE                        :: 0x00;
-    ROUND_TOP_LEFT_CORNER       :: (1 << 0);
-    ROUND_TOP_RIGHT_CORNER      :: (1 << 1);
-    ROUND_BOTTOM_LEFT_CORNER    :: (1 << 2);
-    ROUND_BOTTOM_RIGHT_CORNER   :: (1 << 3);
-
-    ROUND_ALL :: ROUND_TOP_LEFT_CORNER      |
-                 ROUND_TOP_RIGHT_CORNER     |
-                 ROUND_BOTTOM_LEFT_CORNER   |
-                 ROUND_BOTTOM_RIGHT_CORNER;
-};
-
-draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
-    if flags == .NONE {
-        internal_draw_rect(r, color);
-        return;
-    }
-
-    // For rounded corners:
-    radius := 4.0;
-    radius = min(radius, r.w * 0.5);
-    radius = min(radius, r.h * 0.5);
-
-    // For that, it means that each corner is a rect of radius dimension.
-
-    top_left     := Rect.{ r.x, r.y, radius, radius };
-    top_right    := Rect.{ r.x + r.w - radius, r.y, radius, radius };
-    bottom_left  := Rect.{ r.x, r.y + r.h - radius, radius, radius };
-    bottom_right := Rect.{ r.x + r.w - radius, r.y + r.h - radius, radius, radius };
-
-    uv0 := xy(0, 0);
-    uv1 := xy(0, 0);
-    uv2 := xy(0, 0);
-
-    SAMPLE  :: 16;
-
-    if flags & .ROUND_TOP_LEFT_CORNER {
-
-        p0 := xy(top_left.x + top_left.w, top_left.y + top_left.h);
-
-        prev := p0 + xy(0, -radius);                 // angle 0, top
-
-        for 1..SAMPLE {
-            theta  := (PI * 0.5) * (it / cast(float) SAMPLE);
-
-            p1     := prev;
-            p2     := p0 + xy(-sin(theta) * radius, -cos(theta) * radius);
-
-            push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
-            prev = p2;
-        }
-    } else {
-        internal_draw_rect(top_left, color);
-    }
-
-    if flags & .ROUND_TOP_RIGHT_CORNER {
-        p0 := xy(top_right.x, top_right.y + top_right.h);
-
-        prev := p0 + xy(0, -radius);
-        for 1..SAMPLE {
-            a  := (PI * 0.5) * (it / cast(float) SAMPLE);
-            p2 := p0 + xy(sin(a) * radius, -cos(a) * radius);
-            push_triangle(p0, prev, p2, color, uv0, uv1, uv2);
-            prev = p2;
-        }
-    } else {
-        internal_draw_rect(top_right, color);
-    }
-
-    if flags & .ROUND_BOTTOM_LEFT_CORNER {
-        p0 := xy(bottom_left.x + bottom_left.w, bottom_left.y);
-
-        prev := p0 + xy(0, radius);
-        for 1..SAMPLE {
-            a  := (PI * 0.5) * (it / cast(float) SAMPLE);
-            p2 := p0 + xy(-sin(a) * radius, cos(a) * radius);
-            push_triangle(p0, prev, p2, color, uv0, uv1, uv2);
-            prev = p2;
-        }
-    } else {
-        internal_draw_rect(bottom_left, color);
-    }
-
-    if flags & .ROUND_BOTTOM_RIGHT_CORNER {
-        p0 := xy(bottom_right.x, bottom_right.y);
-
-        prev := p0 + xy(0, radius);
-        for 1..SAMPLE {
-            a  := (PI * 0.5) * (it / cast(float) SAMPLE);
-            p2 := p0 + xy(sin(a) * radius, cos(a) * radius);
-            push_triangle(p0, prev, p2, color, uv0, uv1, uv2);
-            prev = p2;
-        }
-    } else {
-        internal_draw_rect(bottom_right, color);
-    }
-
-    // To fill up the rest of the belly of the rounded corner, we can do that with only
-    // 3 rects.
-
-    center_middle := Rect.{ r.x + radius, r.y, r.w - (2 * radius), r.h };
-    internal_draw_rect(center_middle, color);
-
-    right_middle := Rect.{ r.x, r.y + radius, radius, r.h - (2 * radius) };
-    internal_draw_rect(right_middle, color);
-    left_middle := Rect.{ r.x + r.w - radius, r.y + radius, radius, r.h - (2 * radius) };
-    internal_draw_rect(left_middle, color);
-}
-
-internal_draw_rect :: (r: Rect, color: Vector4) {
-    p0 := Vector2.{ r.x, r.y };
-    p1 := Vector2.{ r.x + r.w, r.y };
-    p2 := Vector2.{ r.x, r.y + r.h };
-    p3 := Vector2.{ r.x + r.w, r.y + r.h };
-
-    uv0 := Vector2.{ 0, 0 };
-    uv1 := Vector2.{ 1, 0 };
-    uv2 := Vector2.{ 0, 1 };
-    uv3 := Vector2.{ 1, 1 };
-
-    push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
-    push_triangle(p2, p1, p3, color, uv2, uv1, uv3);
-}
-
-
-Region_Status :: struct {
-    hovered : bool;
-    clicked : bool;
-};
-
 begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
     id    := ui_id(loc, "_full_region");
     state := get_widget_state(Window_State, id, default_rect = region);
 
     push_layer(id, state.rect);
 
-    // If its layer was the topmost one of the last frame, we consider it as
+    // If window's layer was the topmost one of the last frame, we consider it as
     // "active".
     is_topmost  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
 
@@ -468,16 +381,26 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
     color := theme.window_title_bar.normal.bg_color;
     draw_rect(title_rect, color, .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER);
 
+    text_size := theme.window_title_bar_height * 0.5;
+    title_width, title_height := get_text_extents_v2(font, title, xx text_size);
+
+    x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
+    y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
+    draw_text(title, x, y, text_size);
+
     // Draw resizer.
     color  = theme.resizer.normal.bg_color;
     draw_rect(resizer_rect, theme.resizer.normal.bg_color, .ROUND_ALL);
 
+    draw_outline(state.rect, Vector4.{ 0.2, 0.2, 0.2, 1 }, theme.border_width, .ROUND_ALL);
 
     layer_rect   := state.rect;
     layer_rect.x += theme.content_padding;
     layer_rect.y += theme.window_title_bar_height + theme.content_padding;
     layer_rect.w -= (theme.scrollbar_width - theme.content_padding);
     layer_rect.h -= (theme.window_title_bar_height + theme.content_padding);
+
+    layer_rect = pad_rect(layer_rect, theme.border_width, theme.border_width);
 
     current_layer.layout.rect = layer_rect;
     update_scrollbar(loc);
@@ -493,14 +416,8 @@ end_window :: () {
     pop_layer();
 }
 
-alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
+alloc_space :: (widget_size: Vector2) -> Rect {
     using layout  := *current_layer.layout;
-
-    // If has a scrollbar.
-    // @todo: remove this... there's a better way.
-    // if max_scroll > 0 {
-    //     content_rect.w -= theme.scrollbar_width;
-    // }
 
     size := widget_size;
 
@@ -509,18 +426,18 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
     if prev_widget_size.x > 0 || prev_widget_size.y > 0 {
         if order == {
             case .STACK;
-                cursor.y += prev_widget_size.y + padding.y;
+                cursor.y += prev_widget_size.y + theme.margin_y;
             case .INLINE;
-                cursor.x += prev_widget_size.x + padding.x;
+                cursor.x += prev_widget_size.x + theme.margin_x;
             case .COLUMNS;
                 col_width := (layout.rect.w) / max(1, columns);
-                size.x     = col_width - padding.x;
+                size.x     = col_width - theme.margin_x;
 
-                // @todo: Here we have to take into account the padding.
+                // @todo: Here we have to take into account the margin.
 
                 if curr_column == 0 {
                     cursor.x  = 0;
-                    cursor.y += prev_widget_size.y + padding.y;
+                    cursor.y += prev_widget_size.y + theme.margin_y;
                     curr_column += 1;
                 } else {
                     cursor.x  += ifx curr_column > 0 col_width else 0;
@@ -535,7 +452,7 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
         // I don't like this tho....
         if order == .COLUMNS {
             col_width := (layout.rect.w) / max(1, columns);
-            size.x     = col_width - padding.x;
+            size.x     = col_width - theme.margin_x;
         }
     }
 
@@ -554,150 +471,161 @@ alloc_space :: (widget_size: Vector2, padding: Vector2) -> Rect {
     return r;
 }
 
-// draw_text :: (
-//     text        : string,
-//     font_name   : string,
-//     position    : Vector2,
-//     color       : Vector4,
-//     size        := 16,
-//     apply_scale_factor  := true
-// ) {
-//     if color.w <= 0 || text.count <= 0 return;
-//
-//     using font      := get_font(font_name);
-//     using metrics   := get_font_metrics(font, xx size, apply_scale_factor);
-//
-//     if apply_scale_factor {
-//         size = cast (int) (size * scale_factor);
-//     }
-//
-//     space_glyph := find_or_add_glyph(font, #char " ", pixel_size);
-//
-//     prev_tex := set_texture(list, *texture_atlas);
-//     defer set_texture(list, prev_tex);
-//
-//     pen := Vector2.{ 0, xx ascender };
-//     inv_scale_factor := 1 / scale_factor;
-//
-//     line_start_index := 0;
-//
-//     while line_start_index < text.count {
-//         line_end_index := find_index_from_left(text, #char "\n", line_start_index);
-//
-//         if line_end_index == -1 {
-//             line_end_index = text.count;
-//         }
-//
-//         line : string;
-//         line.data   = text.data + line_start_index;
-//         line.count  = line_end_index - line_start_index;
-//
-//         line_start_index = line_end_index + 1;
-//
-//         defer {
-//             pen.x = 0;
-//             pen.y += line_height;
-//         }
-//
-//         word_start_index := 0;
-//
-//         prev_char: u32;
-//         while word_start_index < line.count {
-//             word_end_index := find_index_from_left(line, #char " ", word_start_index);
-//
-//             defer {
-//                 pen.x += space_glyph.advance;
-//                 word_start_index = word_end_index + 1;
-//             }
-//
-//             // Treat if there is more than one space character.
-//             if word_start_index == word_end_index {
-//                 pen.x += space_glyph.advance;
-//             }
-//
-//             if word_end_index == -1 {
-//                 word_end_index = line.count;
-//             }
-//
-//             word: string;
-//             word.data   = line.data + word_start_index;
-//             word.count  = word_end_index - word_start_index;
-//
-//             // if check_if_should_wrap(font, position, size, word, pen.x, max_line_width) {
-//             //     prev_char    = 0;
-//             //     pen.x        = 0;
-//             //     pen.y       += line_height;
-//             // }
-//
-//             while word.count > 0 {
-//                 codepoint, _ := utf8_next_character(*word);
-//                 defer prev_char = codepoint;
-//
-//                 glyph           := find_or_add_glyph(font, codepoint, pixel_size);
-//                 pos_in_atlas    := glyph.pos_in_atlas;
-//
-//                 if prev_char > 0 {
-//                     delta: FT_Vector;
-//
-//                     FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
-//                     pen.x += xx (delta.x >> 6);
-//                 }
-//
-//                 defer pen.x += glyph.advance;
-//
-//                 glyph_pos := Vector2.{
-//                     pen.x + glyph.bearing_x,
-//                     pen.y - glyph.bearing_y
-//                 };
-//
-//                 rect := Rect.{
-//                     glyph_pos.x * inv_scale_factor,
-//                     glyph_pos.y * inv_scale_factor,
-//
-//                     pos_in_atlas.w * inv_scale_factor,
-//                     pos_in_atlas.h * inv_scale_factor,
-//                 };
-//
-//                 rect.position += position;
-//
-//                 rect.x = round_pixel(rect.x * scale_factor) / scale_factor;
-//                 rect.y = round_pixel(rect.y * scale_factor) / scale_factor;
-//
-//                 uv_rect := Rect.{
-//                     pos_in_atlas.x / cast(float) font_atlas.total_width,
-//                     pos_in_atlas.y / cast(float) font_atlas.total_height,
-//                     pos_in_atlas.w / cast(float) font_atlas.total_width,
-//                     pos_in_atlas.h / cast(float) font_atlas.total_height,
-//                 };
-//
-//                 push_rect(list, rect, color, uv_rect);
-//             }
-//         }
-//     }
-// }
+draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vector4.{ 1, 1, 1, 1 }) {
+    if color.w <= 0 || text.count <= 0 return;
 
-ui_select :: (size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) {
+    assert(font != null, "Font is null, you must set a font.");
+
+    using font;
+    using metrics := get_font_metrics(font, xx font_size);
+
+    space_glyph := find_or_add_glyph(font, #char " ", pixel_size);
+
+    pen := Vector2.{ 0, xx ascender };
+
+    line_start_index := 0;
+
+    while line_start_index < text.count {
+        line_end_index := find_index_from_left(text, #char "\n", line_start_index);
+
+        if line_end_index == -1 {
+            line_end_index = text.count;
+        }
+
+        line : string;
+        line.data   = text.data + line_start_index;
+        line.count  = line_end_index - line_start_index;
+
+        line_start_index = line_end_index + 1;
+
+        defer {
+            pen.x = 0;
+            pen.y += line_height;
+        }
+
+        word_start_index := 0;
+
+        prev_char: u32;
+        while word_start_index < line.count {
+            word_end_index := find_index_from_left(line, #char " ", word_start_index);
+
+            defer {
+                pen.x += space_glyph.advance;
+                word_start_index = word_end_index + 1;
+            }
+
+            // Treat if there is more than one space character.
+            if word_start_index == word_end_index {
+                pen.x += space_glyph.advance;
+            }
+
+            if word_end_index == -1 {
+                word_end_index = line.count;
+            }
+
+            word: string;
+            word.data   = line.data + word_start_index;
+            word.count  = word_end_index - word_start_index;
+
+            // if check_if_should_wrap(font, position, size, word, pen.x, max_line_width) {
+            //     prev_char    = 0;
+            //     pen.x        = 0;
+            //     pen.y       += line_height;
+            // }
+
+            while word.count > 0 {
+                codepoint, _ := utf8_next_character(*word);
+                defer prev_char = codepoint;
+
+                glyph           := find_or_add_glyph(font, codepoint, pixel_size);
+                pos_in_atlas    := glyph.pos_in_atlas;
+
+                if prev_char > 0 {
+                    delta: FT_Vector;
+
+                    FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
+                    pen.x += xx (delta.x >> 6);
+                }
+
+                defer pen.x += glyph.advance;
+
+                glyph_pos := Vector2.{
+                    pen.x + glyph.bearing_x,
+                    pen.y - glyph.bearing_y
+                };
+
+                rect := Rect.{
+                    glyph_pos.x,
+                    glyph_pos.y,
+
+                    xx pos_in_atlas.w,
+                    xx pos_in_atlas.h,
+                };
+
+                rect.position += xy(x, y);
+
+                rect.x = round_pixel(rect.x);
+                rect.y = round_pixel(rect.y);
+
+                // uv_rect := Rect.{
+                //     pos_in_atlas.x / cast(float) font_atlas.total_width,
+                //     pos_in_atlas.y / cast(float) font_atlas.total_height,
+                //     pos_in_atlas.w / cast(float) font_atlas.total_width,
+                //     pos_in_atlas.h / cast(float) font_atlas.total_height,
+                // };
+
+                u0 := pos_in_atlas.x / cast(float) font_atlas.total_width;
+                v0 := pos_in_atlas.y / cast(float) font_atlas.total_height;
+                u1 := (pos_in_atlas.x + pos_in_atlas.w) / cast(float) font_atlas.total_width;
+                v1 := (pos_in_atlas.y + pos_in_atlas.h) / cast(float) font_atlas.total_height;
+
+                uv_rect := Rect.{ u0, v0, u1, v1 };
+
+                internal_draw_rect(rect, color, uv_rect);
+            }
+        }
+    }
+}
+
+ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) -> int {
     id      := ui_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 
-    rect := alloc_space(size, theme.button.normal.padding);
+    placeholder_text := ifx placeholder placeholder else "<Choose>";
+
+    // @todo: Should specify a placeholder instead of "none".
+    button_label := ifx selected >= 0 items[selected] else placeholder_text;
+
+    rect := alloc_space(size);
     update_rect_state(id, state, rect);
 
-    color := Vector4.{ 0.2, 0.4, 1, 1 };
-    draw_rect(rect, color, .ROUND_ALL);
+    button_theme := ui_theme(state.*, theme.button);
+
+    font_size                 := size.y * 0.5;
+    text_width, text_height   := get_text_extents_v2(font, button_label, xx font_size);
+    text_rect                 := pad_rect(rect, theme.button_padding, 0);
+
+    // Center text in button rect.
+    x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
+    y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
+
+
 
     if state.once {
         state.open = !state.open;
     }
 
-    if state.open {
-        dropdown_rect := Rect.{ rect.x, rect.y + rect.h, rect.w, 100 };
-        content := dropdown_rect;
+    flags := Rect_Flags.ROUND_ALL;
+    if state.open flags = .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER;
 
-        content.x += theme.content_padding;
-        content.y += theme.content_padding;
-        content.w -= theme.content_padding;
-        content.h -= theme.content_padding;
+    draw_button(rect, button_label, button_theme.bg_color, flags);
+    draw_text(button_label, x, y, font_size, button_theme.text_color);
+
+    value := selected;
+
+    if state.open {
+        dropdown_flags := Rect_Flags.ROUND_BOTTOM_LEFT_CORNER | .ROUND_BOTTOM_RIGHT_CORNER;
+        dropdown_rect  := Rect.{ rect.x, rect.y + rect.h, rect.w, 300 };
 
         push_layer(id, dropdown_rect);
         defer pop_layer();
@@ -705,32 +633,106 @@ ui_select :: (size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_loc
         push_clip(dropdown_rect);
         defer pop_clip();
 
-        draw_rect(dropdown_rect, Vector4.{ 0.1, 0.4, 1, 1 });
+        is_topmost  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
+        want_raise := !is_topmost && active_widget == -1;
 
-        size := Vector2.{ 80, 20 };
+        if want_raise {
+            raise_layer(id);
+        }
 
-        set_layout_order(.COLUMNS, 1);
+        draw_rect(dropdown_rect, Vector4.{ 0.1, 0.4, 1, 1 }, dropdown_flags);
 
-        ui_button("asjkhd", size);
-        ui_button("asjkhd", size);
-        ui_button("asjkhd", size);
 
-        // handle_scroll(*current_layer.layout, loc);
+        layer_rect   := dropdown_rect;
+        layer_rect.x += theme.content_padding + theme.border_width;
+        layer_rect.y += theme.content_padding + theme.border_width;
+        layer_rect.w -= theme.content_padding + theme.border_width * 2;
+        layer_rect.h -= theme.content_padding + theme.border_width * 2;
+
+        current_layer.layout.rect = layer_rect;
+
+
+        { // if has scrollbar.
+            layer_rect.w -= theme.content_padding + theme.scrollbar_width;
+        }
+
+        // push_clip(layer_rect);
+        // defer pop_clip();
+
+        size := Vector2.{ layer_rect.w , 60 };
+
+        for items {
+            if ui_button(it, size) { // @todo: fix id.
+                value = it_index;
+            }
+        }
+
+        update_scrollbar(loc);
+        draw_outline(dropdown_rect, theme.button.normal.border_color, theme.border_width, dropdown_flags);
+
+        // If click outside the dropdown, we close the dropdown.
+        if left_pressed && !state.pressed && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
+            state.open = false;
+        }
+
     }
+
+    return value;
+}
+
+ui_label :: (label: string, color: Vector4, label_size := 0., loc := #caller_location) {
+
+    text_size := ifx label_size <= 0 theme.text_size else label_size;
+
+    width, height := get_text_extents_v2(font, label, xx text_size);
+    rect := alloc_space(xy(width, height));
+
+    draw_rect(rect, Vector4.{0.2, 0.4, 1, 1});
+
+    draw_text(label, rect.x, rect.y, text_size, color);
 }
 
 // @todo: remove "ui".
-ui_button :: (label: string, size := Vector2.{ 100, 40 }, loc := #caller_location) -> bool {
+ui_button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location) -> bool {
     id      := ui_id(loc, label);
     state   := get_widget_state(Widget_State, id);
 
-    rect := alloc_space(size, theme.button.normal.padding);
+    font_size                 := size.y * 0.5;
+    text_width, text_height   := get_text_extents_v2(font, label, xx font_size);
+
+    button_size := size;
+
+    if size.x <= 0 {
+        button_size.x = text_width + theme.button_padding;
+    }
+
+
+    rect := alloc_space(button_size);
     update_rect_state(id, state, rect);
 
-    color := ui_theme(state.*, theme.button).bg_color;
-    draw_rect(rect, color, .ROUND_ALL);
+    button_theme := ui_theme(state.*, theme.button);
+    draw_button(rect, label, button_theme.bg_color);
+
+    text_rect := pad_rect(rect, theme.button_padding, 0);
+
+    // Center text in button rect.
+    x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
+    y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
+
+    draw_text(label, x, y, font_size, button_theme.text_color);
 
     return state.once;
+}
+
+draw_button :: (rect: Rect, label: string, color: Vector4, flags := Rect_Flags.ROUND_ALL) {
+    draw_rect(rect, color, .ROUND_ALL);
+
+    border_color := color;
+    border_color.x *= 0.7;
+    border_color.y *= 0.7;
+    border_color.z *= 0.7;
+
+    draw_outline(rect, border_color, theme.border_width, flags);
 }
 
 ui_theme :: (state: Widget_State, theme_state: Theme_State) -> UI_Theme {
@@ -763,27 +765,16 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
     return cast(*T) state.*, new;
 }
 
-// Not really, only if not active.
+// @todo: rename? (get_status?)
 update_rect_state :: (id: UI_ID, state: *Widget_State, rect: Rect) {
-    if active_widget > -1 && active_widget != id {
-        return;
-    }
-
-    if is_occluded(rect) {
-        return;
-    }
-
-    // @todo: it's a fucking hack, we don't want to do this check for the layer itself,
-    // cause the dragging won't work then, because it's above the content_rect....
-    // within_content := true;
-    // if current_layer.widget_id != id {
-    //     within_content = point_vs_rect(mouse_x, mouse_y, current_layer.layout.content_rect);
-    // }
+    within_layout      := point_vs_rect(mouse_x, mouse_y, current_layer.rect);
+    within_widget_rect := point_vs_rect(mouse_x, mouse_y, rect);
 
     was_pressed        := state.pressed;
-    state.hovered       = point_vs_rect(mouse_x, mouse_y, rect);
+    state.hovered       = !is_occluded(rect) && within_widget_rect && within_layout;
     state.pressed       = state.hovered && left_pressed;
     state.once          = !was_pressed && state.pressed;
+    state.rect          = rect;
 }
 
 update_scrollbar :: (loc := #caller_location) {
@@ -801,10 +792,11 @@ update_scrollbar :: (loc := #caller_location) {
     visible_h   := layout.rect.h;
     max_scroll  := max(0.0, content_h - visible_h);
 
-    if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
-        scroll.y += xx wheel_y;
-        scroll.y = clamp(scroll.y, 0.0, max_scroll);
-    }
+    // @todo: Perhaps add again mouse wheel for scrolling content...
+    // if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
+    //     scroll.y += xx wheel_y;
+    //     scroll.y = clamp(scroll.y, 0.0, max_scroll);
+    // }
 
 
 
@@ -846,23 +838,9 @@ update_scrollbar :: (loc := #caller_location) {
     draw_rect(handle, theme.window_scroll_bar.normal.bg_color, .ROUND_ALL);
 }
 
+// @todo: inline this func.
 is_occluded :: (rect: Rect) -> bool {
-    if current_layer {
-        for prev_layer_list {
-            // Don't test on itself.
-            if it.widget_id == current_layer.widget_id continue;
-
-            if current_layer.depth < it.depth {
-                widget_found, widget_state := table_find(*widget_states, it.widget_id);
-
-                if widget_found && point_vs_rect(mouse_x, mouse_y, widget_state.rect) {
-                    return true;
-                }
-            }
-        }
-    }
-
-    return false;
+    return !point_vs_rect(mouse_x, mouse_y, rect) || current_layer.widget_id != hovered_layer;
 }
 
 push_layer :: (id: UI_ID, rect: Rect) {
@@ -874,8 +852,6 @@ push_layer :: (id: UI_ID, rect: Rect) {
         if it.widget_id == id {
             depth       = it.depth;
             prev_layout = it.layout;
-            // scroll      = it.layout.scroll;
-            // prev_cursor = it.layout.cursor + it.layout.prev_widget_size;
             break;
         }
     }
@@ -895,6 +871,7 @@ push_layer :: (id: UI_ID, rect: Rect) {
         prev_layout = prev_layout,
         layout      = .{ scroll = prev_layout.scroll }, // Restore previous scroll.
     });
+
     array_add(*layer_stack, index);
     current_layer = *curr_layer_list[index];
 }
@@ -902,8 +879,7 @@ push_layer :: (id: UI_ID, rect: Rect) {
 // todo: some asserts could be cool to put there.
 pop_layer :: () {
     _ := pop(*layer_stack); // @todo: assert bunch of stuff.
-    // Not correct, but somehow ok.
-    current_layer = ifx layer_stack then *curr_layer_list[peek(layer_stack)];
+    current_layer = ifx layer_stack then *curr_layer_list[peek(layer_stack)] else null;
 }
 
 cursor_vs_rect :: (rect: Rect) -> bool {
@@ -919,7 +895,7 @@ rect_vs_rect :: inline (rect: Rect, other: Rect) -> bool {
     && other.y < rect.y + rect.h && rect.y < other.y + other.h;
 }
 
-push_triangle :: (p0: Vector2, p1: Vector2, p2: Vector2, color: Vector4, uv0: Vector2, uv1: Vector2, uv2: Vector2) {
+push_triangle :: (p0: Vector2, p1: Vector2, p2: Vector2, color: Vector4, uv0 := UV_DISCARD, uv1 := UV_DISCARD, uv2 := UV_DISCARD) {
     vertices := get_vertices();
 
     array_add(vertices, .{ position = p0, uv = uv0, color = color });
@@ -948,6 +924,14 @@ get_vertices :: () -> *[..] UI_Vertex {
     return *current_layer.vertices;
 }
 
+// @todo: let's review this func at some point, when we add real texture(not just font).
+set_texture :: (texture: UI_Texture) -> old: UI_Texture {
+    old_texture := current_texture;
+    current_texture = texture;
+
+    return old_texture;
+}
+
 push_clip :: (rect: Rect) {
     safe_rect := rect;
 
@@ -973,10 +957,14 @@ record_draw_marker :: (rect: Rect) {
 
     if draw_markers.count > 0 {
         last := peek(draw_markers.*);
-        if last.clip_rect == rect return;
+        if last.clip_rect == rect && last.texture == current_texture return;
     }
 
-    array_add(*current_layer.draw_markers, .{ clip_rect = rect, vertex_start = current_layer.vertices.count });
+    array_add(*current_layer.draw_markers, .{
+        clip_rect    = rect,
+        vertex_start = current_layer.vertices.count,
+        texture      = current_texture,
+    });
 }
 
 raise_layer :: (id: UI_ID) {
@@ -986,3 +974,304 @@ raise_layer :: (id: UI_ID) {
     log("Want to raise window : % :: %", id, current_layer.depth);
 }
 
+
+/*
+        Some useful helpers.
+
+*/
+
+pad_rect :: (rect: Rect, pad_x : float, pad_y : float) -> Rect {
+    return .{
+        x = rect.x + pad_x,
+        y = rect.y + pad_y,
+        w = rect.w - pad_x * 2,
+        h = rect.h - pad_y * 2,
+    };
+}
+
+
+
+
+
+
+/*
+
+
+        Draw functions
+
+
+*/
+
+Rect_Flags :: enum_flags u32 {
+    NONE                        :: 0x00;
+    ROUND_TOP_LEFT_CORNER       :: (1 << 0);
+    ROUND_TOP_RIGHT_CORNER      :: (1 << 1);
+    ROUND_BOTTOM_LEFT_CORNER    :: (1 << 2);
+    ROUND_BOTTOM_RIGHT_CORNER   :: (1 << 3);
+
+    ROUND_ALL :: ROUND_TOP_LEFT_CORNER      |
+                 ROUND_TOP_RIGHT_CORNER     |
+                 ROUND_BOTTOM_LEFT_CORNER   |
+                 ROUND_BOTTOM_RIGHT_CORNER;
+};
+
+draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags = 0x00) {
+    if border_width <= 0 return;
+
+    if flags == .NONE {
+        top_line    := Rect.{ r.x, r.y, r.w, border_width };
+        bottom_line := Rect.{ r.x, r.y + r.h - border_width, r.w, border_width };
+        left_line   := Rect.{ r.x, r.y + border_width, border_width, r.h - border_width };
+        right_line  := Rect.{ r.x + r.w - border_width, r.y + border_width, border_width, r.h - border_width };
+
+        internal_draw_rect(top_line, color);
+        internal_draw_rect(bottom_line, color);
+        internal_draw_rect(left_line, color);
+        internal_draw_rect(right_line, color);
+
+        return;
+    }
+
+    // For rounded corners:
+    radius := theme.corner_radius;
+    radius  = min(radius, r.w * 0.5);
+    radius  = min(radius, r.h * 0.5);
+
+    top_left     := Rect.{ r.x, r.y, radius, radius };
+    top_right    := Rect.{ r.x + r.w - radius, r.y, radius, radius };
+    bottom_left  := Rect.{ r.x, r.y + r.h - radius, radius, radius };
+    bottom_right := Rect.{ r.x + r.w - radius, r.y + r.h - radius, radius, radius };
+
+    if flags & .ROUND_TOP_LEFT_CORNER {
+        p0 := xy(top_left.x + top_left.w, top_left.y + top_left.h);
+
+        prev := p0 + xy(0, -radius);                 // angle 0, top
+
+        for 1..theme.radius_sample {
+            theta  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1     := prev;
+            p2     := p0 + xy(-sin(theta) * radius, -cos(theta) * radius);
+
+            a := p1 + normalize(p0 - p1) * border_width;
+            b := p1;
+            c := p2;
+            d := p2 + normalize(p0 - p2) * border_width;
+
+            push_triangle(a, b, c, color);
+            push_triangle(a, c, d, color);
+
+            prev = p2;
+        }
+
+    } else {
+        a := Rect.{ r.x, r.y, border_width, radius };
+        b := Rect.{ r.x + border_width, r.y, border_width, radius - border_width };
+
+        internal_draw_rect(a, color);
+        internal_draw_rect(b, color);
+    }
+
+    if flags & .ROUND_TOP_RIGHT_CORNER {
+        p0 := xy(top_right.x, top_right.y + top_right.h);
+
+        prev := p0 + xy(0, -radius);
+        for 1..theme.radius_sample {
+            theta  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1     := prev;
+            p2     := p0 + xy(sin(theta) * radius, -cos(theta) * radius);
+
+            a := p1 + normalize(p0 - p1) * border_width;
+            b := p1;
+            c := p2;
+            d := p2 + normalize(p0 - p2) * border_width;
+
+            push_triangle(a, b, c, color);
+            push_triangle(a, c, d, color);
+
+            prev = p2;
+        }
+    } else {
+        a := Rect.{ r.x + r.w - radius, r.y, radius, border_width};
+        b := Rect.{ r.x + r.w - border_width, r.y + border_width, border_width, radius - border_width };
+
+        internal_draw_rect(a, color);
+        internal_draw_rect(b, color);
+
+    }
+
+    if flags & .ROUND_BOTTOM_LEFT_CORNER {
+        p0 := xy(bottom_left.x + bottom_left.w, bottom_left.y);
+
+        prev := p0 + xy(0, radius);
+        for 1..theme.radius_sample {
+            theta := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1 := prev;
+            p2 := p0 + xy(-sin(theta) * radius, cos(theta) * radius);
+
+            a := p1 + normalize(p0 - p1) * border_width;
+            b := p1;
+            c := p2;
+            d := p2 + normalize(p0 - p2) * border_width;
+
+            push_triangle(a, b, c, color);
+            push_triangle(a, c, d, color);
+
+            prev = p2;
+        }
+    } else {
+        a := Rect.{ r.x, r.y + r.h - radius, border_width, radius };
+        b := Rect.{ r.x + border_width, r.y + r.h - border_width, radius - border_width, border_width };
+
+        internal_draw_rect(a, color);
+        internal_draw_rect(b, color);
+    }
+
+    if flags & .ROUND_BOTTOM_RIGHT_CORNER {
+        p0   := xy(bottom_right.x, bottom_right.y);
+        prev := p0 + xy(0, radius);
+
+        for 1..theme.radius_sample {
+            theta  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1 := prev;
+            p2 := p0 + xy(sin(theta) * radius, cos(theta) * radius);
+
+            a := p1 + normalize(p0 - p1) * border_width;
+            b := p1;
+            c := p2;
+            d := p2 + normalize(p0 - p2) * border_width;
+
+            push_triangle(a, b, c, color);
+            push_triangle(a, c, d, color);
+
+            prev = p2;
+        }
+    } else {
+        a := Rect.{ r.x + r.w - border_width, r.y + r.h - radius, border_width, radius};
+        b := Rect.{ r.x + r.w - radius, r.y + r.h - border_width, radius - border_width, border_width };
+
+        internal_draw_rect(a, color);
+        internal_draw_rect(b, color);
+    }
+
+    top_line := Rect.{ r.x + border_width, r.y, r.w - border_width * 2, border_width };
+    internal_draw_rect(top_line, color);
+
+    left_line := Rect.{ r.x, r.y + border_width, border_width, r.h - border_width * 2};
+    internal_draw_rect(left_line, color);
+
+    right_line := Rect.{ r.x + r.w - border_width, r.y + border_width, border_width, r.h - border_width * 2};
+    internal_draw_rect(right_line, color);
+
+    bottom_line := Rect.{ r.x + border_width, r.y + r.h - border_width, r.w - border_width * 2, border_width };
+    internal_draw_rect(bottom_line, color);
+}
+
+draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
+    if flags == .NONE {
+        internal_draw_rect(r, color);
+        return;
+    }
+
+    // For rounded corners:
+    radius := theme.corner_radius;
+    radius = min(radius, r.w * 0.5);
+    radius = min(radius, r.h * 0.5);
+
+    // For that, it means that each corner is a rect of radius dimension.
+
+    top_left     := Rect.{ r.x, r.y, radius, radius };
+    top_right    := Rect.{ r.x + r.w - radius, r.y, radius, radius };
+    bottom_left  := Rect.{ r.x, r.y + r.h - radius, radius, radius };
+    bottom_right := Rect.{ r.x + r.w - radius, r.y + r.h - radius, radius, radius };
+
+    if flags & .ROUND_TOP_LEFT_CORNER {
+
+        p0 := xy(top_left.x + top_left.w, top_left.y + top_left.h);
+
+        prev := p0 + xy(0, -radius);                 // angle 0, top
+
+        for 1..theme.radius_sample {
+            theta  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1     := prev;
+            p2     := p0 + xy(-sin(theta) * radius, -cos(theta) * radius);
+
+            push_triangle(p0, p1, p2, color);
+            prev = p2;
+        }
+    } else {
+        internal_draw_rect(top_left, color);
+    }
+
+    if flags & .ROUND_TOP_RIGHT_CORNER {
+        p0 := xy(top_right.x, top_right.y + top_right.h);
+
+        prev := p0 + xy(0, -radius);
+        for 1..theme.radius_sample {
+            a  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+            p2 := p0 + xy(sin(a) * radius, -cos(a) * radius);
+            push_triangle(p0, prev, p2, color);
+            prev = p2;
+        }
+    } else {
+        internal_draw_rect(top_right, color);
+    }
+
+    if flags & .ROUND_BOTTOM_LEFT_CORNER {
+        p0 := xy(bottom_left.x + bottom_left.w, bottom_left.y);
+
+        prev := p0 + xy(0, radius);
+        for 1..theme.radius_sample {
+            a  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+            p2 := p0 + xy(-sin(a) * radius, cos(a) * radius);
+            push_triangle(p0, prev, p2, color);
+            prev = p2;
+        }
+    } else {
+        internal_draw_rect(bottom_left, color);
+    }
+
+    if flags & .ROUND_BOTTOM_RIGHT_CORNER {
+        p0 := xy(bottom_right.x, bottom_right.y);
+
+        prev := p0 + xy(0, radius);
+        for 1..theme.radius_sample {
+            a  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+            p2 := p0 + xy(sin(a) * radius, cos(a) * radius);
+            push_triangle(p0, prev, p2, color);
+            prev = p2;
+        }
+    } else {
+        internal_draw_rect(bottom_right, color);
+    }
+
+    // To fill up the rest of the belly of the rounded corner, we can do that with only
+    // 3 rects.
+
+    center_middle := Rect.{ r.x + radius, r.y, r.w - (2 * radius), r.h };
+    internal_draw_rect(center_middle, color);
+
+    right_middle := Rect.{ r.x, r.y + radius, radius, r.h - (2 * radius) };
+    internal_draw_rect(right_middle, color);
+    left_middle := Rect.{ r.x + r.w - radius, r.y + radius, radius, r.h - (2 * radius) };
+    internal_draw_rect(left_middle, color);
+}
+
+internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
+    p0 := Vector2.{ r.x, r.y };
+    p1 := Vector2.{ r.x + r.w, r.y };
+    p2 := Vector2.{ r.x, r.y + r.h };
+    p3 := Vector2.{ r.x + r.w, r.y + r.h };
+
+    uv0 := Vector2.{ uv.x, uv.y };
+    uv1 := Vector2.{ uv.w, uv.y };
+    uv2 := Vector2.{ uv.x, uv.h };
+    uv3 := Vector2.{ uv.w, uv.h };
+
+    push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
+    push_triangle(p2, p1, p3, color, uv2, uv1, uv3);
+}

@@ -17,8 +17,6 @@
 quit   := false;
 window : *SDL_Window;
 
-scale_factor := 2.0;
-
 Frame_Info :: struct {
     ortho : Matrix4;
 };
@@ -35,11 +33,21 @@ left_down   : bool;
 
 wheel_delta : Vector2;
 
+cascadia: *Font;
+
+dpi_scale := 1.;
+
 main :: () {
     window := SDL_CreateWindow("Demo", SDL_WINDOWPOS_UNDEFINED , SDL_WINDOWPOS_UNDEFINED,
-                                       window_width, window_height, 0x0);
+                                       window_width, window_height, SDL_WINDOW_ALLOW_HIGHDPI);
 
     assert(window != null);
+
+    dw, dh: s32;
+    SDL_GL_GetDrawableSize(window, *dw, *dh);
+
+    dpi_scale = xx (dw / window_width);
+    log("dpi_scale: %", dpi_scale);
 
     success := create_gfx_context(window);
     assert(success == true);
@@ -48,7 +56,7 @@ main :: () {
     init_gfx_buffers();
 
 
-    _ := bake_font("cascadia_mono", "./cascadia_mono.ttf");
+    cascadia = bake_font("cascadia_mono", "./cascadia_mono.ttf");
 
     while !quit {
         event: SDL_Event;
@@ -86,22 +94,50 @@ main :: () {
 
 should_open := false;
 
+selected := -1;
+items    := string.[ "Apple", "Peach", "Banana", "Chocolate", "Tea" ];
+
+last_draw_calls   : int;
+last_vertex_count : int;
+
 make_ui :: () -> UI_Draw_List {
     ui_begin();
 
     mouse_x, mouse_y: s32;
     SDL_GetMouseState(*mouse_x, *mouse_y);
 
+    ui_set_theme(Theme.{
+        window_title_bar_height = DEFAULT_THEME.window_title_bar_height * dpi_scale,
+        resize_size             = DEFAULT_THEME.resize_size             * dpi_scale,
+        scrollbar_width         = DEFAULT_THEME.scrollbar_width         * dpi_scale,
+        content_padding         = DEFAULT_THEME.content_padding         * dpi_scale,
+        margin_x                = DEFAULT_THEME.margin_x                * dpi_scale,
+        margin_y                = DEFAULT_THEME.margin_y                * dpi_scale,
+        button_padding          = DEFAULT_THEME.button_padding          * dpi_scale,
+        text_size               = DEFAULT_THEME.text_size               * dpi_scale,
+    });
+
+    ui_set_font(cascadia);
     ui_set_mouse_press(left_down);
-    ui_set_mouse(xx mouse_x, xx mouse_y);
+    ui_set_mouse(xx mouse_x * dpi_scale, xx mouse_y * dpi_scale);
     ui_set_wheel(wheel_delta.x, wheel_delta.y);
 
-    r := Rect.{ 10, 10, window_width, window_height };
+    size := Vector2.{ -1, 30 } * dpi_scale;
 
-    if begin_window(Rect.{ r.x, r.y, 450, 400 }, "menu 2") {
+    if begin_window(Rect.{ 10, 10, 450, 400 } * dpi_scale, "menu 1") {
+
+        ui_label(tprint("Draw calls: %", last_draw_calls), Vector4.{0, 0, 0, 1});
+        ui_label(tprint("Vertex count: %", last_vertex_count), Vector4.{0, 0, 0, 1});
+
+        placeholder := "Choose...";
+        selected = ui_select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
+
+        if ui_button("Alex + Ola = ♥", size) {
+            log("click!");
+        }
 
         for 1..15 {
-            if ui_button(tprint("button %", it)) {
+            if ui_button(tprint("button %", it), size) {
                 log("click! %", it);
             }
         }
@@ -109,13 +145,12 @@ make_ui :: () -> UI_Draw_List {
         end_window();
     }
 
-    // ui_select();
 
 
 
-    if begin_window(Rect.{ 600, r.y, 150, 400 }, "menu 1") {
-        if ui_button("stack 1") {
-            log("click! 3");
+    if begin_window(Rect.{ 600, 10, 150, 400 } * dpi_scale, "menu 2") {
+        if ui_button("Button", size) {
+            log("click!");
         }
 
         end_window();
@@ -166,11 +201,12 @@ make_ui :: () -> UI_Draw_List {
     // }
 
     ui_end();
+
+    last_draw_calls   = get_draw_list().draw_calls.count;
+    last_vertex_count = get_draw_list().vertices.count;
     // Make UI.
     return get_draw_list();
 }
-
-
 
 
 
@@ -207,6 +243,7 @@ do_gpu_stuff:: (draw_list: UI_Draw_List) {
             set_vertex_shader(*loaded_shader.vertex_shader);
             set_pixel_shader(*loaded_shader.fragment_shader);
             set_color_format(get_swapchain_pixel_format());
+            set_blend_mode(.ADDITIVE);
             set_vertex_layout(UI_Vertex);
 
             set_cull_face(.NONE);
@@ -214,19 +251,26 @@ do_gpu_stuff:: (draw_list: UI_Draw_List) {
             vertex_buffer := *vertex_buffers[get_backbuffer_index()];
             set_vertex_buffer(*pass, 10, vertex_buffer, 0, vertex_buffer.size, size_of(UI_Vertex));
 
+            set_viewport(*pass, .{ width = window_width * dpi_scale, height = window_height * dpi_scale });
+
             Shader_Params :: struct {
-                frame_info : GFX_Pipeline_Binding;
+                frame_info        : GFX_Pipeline_Binding;
+                immediate_texture : GFX_Pipeline_Binding;
+                default_sampler   : GFX_Pipeline_Binding;
             }
 
-            params := get_binding(*loaded_shader.vertex_shader, Shader_Params.{});
-            set_buffer(*pass, params.frame_info, *frame_info_buffer, 0, size_of(Matrix4));
+            vert := get_binding(*loaded_shader.vertex_shader, Shader_Params.{});
+            frag := get_binding(*loaded_shader.fragment_shader, Shader_Params.{});
 
-            set_viewport(*pass, .{ width = window_width, height = window_height });
-
-            // set_texture(*pass, pixel_params.immediate_2d_texture, *immediate_2d_resolve_texture);
-            // set_sampler_state(*pass, pixel_params.default_sampler, *default_sampler);
+            set_buffer(*pass, vert.frame_info, *frame_info_buffer, 0, size_of(Matrix4));
+                set_sampler_state(*pass, frag.default_sampler, *default_sampler);
 
             for draw_list.draw_calls {
+
+                if it.texture {
+                    set_texture(*pass, frag.immediate_texture, xx it.texture);
+                }
+
                 set_scissor(true, .{ xx it.clip.x, xx it.clip.y, xx it.clip.w, xx it.clip.h });
                 draw_primitives(*pass, xx it.vertex_count, 1, base_vertex = xx it.vertex_start);
             }
@@ -240,6 +284,9 @@ do_gpu_stuff:: (draw_list: UI_Draw_List) {
     submit_gfx_frame();
 }
 
+
+default_sampler : GFX_Sampler_State;
+
 init_gfx_buffers :: () {
     stride       := size_of(UI_Vertex);
     capacity     := cast(u64, stride * 24000);
@@ -249,6 +296,12 @@ init_gfx_buffers :: () {
     }
 
     frame_info_buffer = create_gfx_buffer("Frame Info", size_of(Frame_Info), size_of(Frame_Info), null, .CPU_WRITE, .CONSTANT_BUFFER);
+
+
+    sampler_desc : GFX_Sampler_State_Desc;
+    sampler_desc.min_filter = .LINEAR;
+    sampler_desc.mag_filter = .LINEAR;
+    default_sampler = create_gfx_sampler_state("default_sampler", sampler_desc);
 }
 
 update_gfx_buffers :: (vertices: [] UI_Vertex) {
@@ -269,7 +322,7 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
     {
         lock_buffer(*frame_info_buffer, .WRITE_AND_FLUSH);
         frame_info := Frame_Info.{
-            ortho = orthographic_projection_matrix(0, window_width, window_height, 0, -1, 1, depth_range_01=true),
+            ortho = orthographic_projection_matrix(0, window_width * dpi_scale, window_height * dpi_scale, 0, -1, 1, depth_range_01=true),
         };
         memcpy(frame_info_buffer.data_ptr, *frame_info, size_of(Frame_Info));
         unlock_buffer(*frame_info_buffer);

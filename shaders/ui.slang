@@ -14,9 +14,9 @@ struct Frame_Info {
     float4x4 ortho;
 };
 
-ConstantBuffer<Frame_Info>    frame_info;
-// Texture2D                   immediate_texture;
-// SamplerState                default_sampler;
+ConstantBuffer<Frame_Info>  frame_info;
+Texture2D                   immediate_texture;
+SamplerState                default_sampler;
 
 [shader("vertex")]
 Vertex_Out vertex_main(Vertex vertex) {
@@ -33,8 +33,6 @@ Vertex_Out vertex_main(Vertex vertex) {
 
 [shader("fragment")]
 float4 fragment_main(Vertex_Out input) : SV_Target {
-    return input.color;
-    // return float4(0, 1, 1, 1);
-    // float4 sampled = immediate_texture.Sample(default_sampler, input.uv);
-    // return input.color * sampled;
+    float4 sampled = immediate_texture.Sample(default_sampler, input.uv);
+    return input.color * sampled;
 }

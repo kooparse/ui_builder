@@ -26,6 +26,8 @@ Font :: struct {
 
     font_atlas      : Font_Atlas;
     texture_atlas   : GFX_Texture;
+
+    white_pixel     : Vector2;
 }
 
 Glyph_Info :: struct {
@@ -37,7 +39,7 @@ bake_font :: (font_name: string, ttf_filepath: string) -> *Font {
     content := read_entire_file(ttf_filepath);
     count32 := cast,trunc(s32) content.count;
 
-    font := New (Font,, temp);
+    font := New(Font,, temp);
     using font;
 
     if FT_Init_FreeType(*ft_library) {
@@ -48,6 +50,15 @@ bake_font :: (font_name: string, ttf_filepath: string) -> *Font {
         log_error("Error while loading ft_face.");
     }
 
+
+    WHITE_PIXELS :: u8.[255, 255, 255, 255];
+    white_pos := push_white_bitmap_and_set_alpha_values(*font_atlas, 2, 2, xx *WHITE_PIXELS);
+
+    font.white_pixel = Vector2.{
+        (white_pos.x + 0.5) / cast(float) font_atlas.total_width,
+        (white_pos.y + 0.5) / cast(float) font_atlas.total_height,
+    };
+
     texture_name := tprint("Font Atlas %", font_name);
     texture_atlas = create_texture_2d_rgba8(texture_name, xx font_atlas.bitmap.data, xx font_atlas.total_width, xx font_atlas.total_height, mipmapped=false);
 
@@ -55,10 +66,10 @@ bake_font :: (font_name: string, ttf_filepath: string) -> *Font {
     return new_font;
 }
 
-find_or_add_glyph :: (using font: *Font, char: u32, size: int) -> Glyph_Info {
+find_or_add_glyph :: (using font: *Font, char: u32, font_size: int) -> Glyph_Info {
     // @Speed Perhaps not very fast...
     key := sdbm_hash(*char, size_of(type_of(char)));
-    key = sdbm_hash(*size, size_of(type_of(size)), key);
+    key  = sdbm_hash(*font_size, size_of(type_of(font_size)), key);
 
     glyph, newly_add := find_or_add(*glyph_table, key);
 
@@ -68,7 +79,7 @@ find_or_add_glyph :: (using font: *Font, char: u32, size: int) -> Glyph_Info {
 
     // @speed (stefan): This retrieves some info about the font metrics
     // each time it is called, so it may not be a good idea to call this per glyph
-    FT_Set_Pixel_Sizes(ft_face, 0, xx size);
+    FT_Set_Pixel_Sizes(ft_face, 0, xx font_size);
 
     glyph_index := FT_Get_Char_Index(ft_face, char);
     slot        := ft_face.glyph;
@@ -113,26 +124,23 @@ get_font :: (font_name: string) -> *Font {
 }
 
 Font_Metrics :: struct {
-    pixel_size: u32;
-    ascender: s32;
-    descender: s32;
-    line_height: s32; // ascender - descender
-    max_advance: s32;
+    pixel_size  : u32;
+    ascender    : s32;
+    descender   : s32;
+    line_height : s32; // ascender - descender
+    max_advance : s32;
 }
 
 // @speed (stefan): we could cache this if we end up using many different
 // sizes at once
-get_font_metrics :: (using font : *Font, size : u32, apply_scale_factor := true) -> Font_Metrics {
-    if apply_scale_factor {
-        size = xx (size * scale_factor);
-    }
+get_font_metrics :: (using font : *Font, font_size : u32) -> Font_Metrics {
 
-    FT_Set_Pixel_Sizes(ft_face, 0, xx size);
+    FT_Set_Pixel_Sizes(ft_face, 0, xx font_size);
 
     result := Font_Metrics.{
-        pixel_size = size,
-        ascender = xx (ft_face.size.metrics.ascender >> 6),
-        descender = xx (ft_face.size.metrics.descender >> 6),
+        pixel_size  = font_size,
+        ascender    = xx (ft_face.size.metrics.ascender >> 6),
+        descender   = xx (ft_face.size.metrics.descender >> 6),
         max_advance = xx (ft_face.size.metrics.max_advance >> 6)
     };
 
@@ -141,35 +149,33 @@ get_font_metrics :: (using font : *Font, size : u32, apply_scale_factor := true)
     return result;
 }
 
-get_font_metrics :: inline (font_name : string, size : u32, apply_scale_factor := true) -> Font_Metrics {
+get_font_metrics :: inline (font_name : string, size : u32) -> Font_Metrics {
     font := get_font(font_name);
     assert (font != null);
 
-    return get_font_metrics(font, size, apply_scale_factor);
+    return get_font_metrics(font, size);
 }
 
 
 /// @Note: If text has more than one line, it returns the width of the longest one.
-get_text_extents_v2 :: (font_name : string, text : string, size := DEFAULT_FT_SIZE, max_line_width := -1, apply_scale_factor := true) -> width: float, height: float {
+get_text_extents_v2 :: (using font: *Font, text : string, size : int, max_line_width := -1) -> width: float, height: float {
     if text.count <= 0 return 0, 0;
 
-    max_width, max_height: float;
+    max_width : float;
 
-    using font      := get_font(font_name);
-    using metrics   := get_font_metrics(font, xx size, apply_scale_factor);
-
-    if apply_scale_factor {
-        size = cast (int) (size * scale_factor);
-    }
+    using metrics := get_font_metrics(font, xx size);
 
     space_glyph := find_or_add_glyph(font, #char " ", pixel_size);
 
     pen := Vector2.{ 0, xx ascender };
-    inv_scale_factor := 1. / scale_factor;
 
     line_start_index := 0;
 
+    line_count := 0;
+
     while line_start_index < text.count {
+        line_count += 1;
+
         line_end_index := find_index_from_left(text, #char "\n", line_start_index);
 
         if line_end_index == -1 {
@@ -239,67 +245,59 @@ get_text_extents_v2 :: (font_name : string, text : string, size := DEFAULT_FT_SI
                     pen.y - glyph.bearing_y
                 };
 
-                rect := Rect.{
-                    glyph_pos.x * inv_scale_factor,
-                    glyph_pos.y * inv_scale_factor,
+                rect   := Rect.{ glyph_pos.x, glyph_pos.y, xx pos_in_atlas.w, xx pos_in_atlas.h };
+                rect.x  = round_pixel(rect.x);
+                rect.y  = round_pixel(rect.y);
 
-                    pos_in_atlas.w * inv_scale_factor,
-                    pos_in_atlas.h * inv_scale_factor,
-                };
-
-                rect.x = round_pixel(rect.x * scale_factor) / scale_factor;
-                rect.y = round_pixel(rect.y * scale_factor) / scale_factor;
-
-                max_width   = max(max_width, rect.x + rect.w);
-                max_height  = max(max_height, rect.y + rect.h);
+                max_width = max(max_width, rect.x + rect.w);
             }
         }
     }
 
-    return max_width, max_height;
+    return max_width, xx (line_count * line_height);
 }
 
-get_text_extents :: (font_name : string, text : string, size := DEFAULT_FT_SIZE, max_line_width := -1, apply_scale_factor := true) -> width: float, height: float {
-    using font := get_font(font_name);
-
-    metrics := get_font_metrics(font_name, xx size, apply_scale_factor);
-
-    if apply_scale_factor {
-        size = cast (int) (size * scale_factor);
-    }
-
-    width       := 0.0;
-    height      := 0.0;
-
-    line_start  := 0;
-
-    while line_start < text.count {
-        line_end := find_index_from_left(text, #char "\n", line_start);
-
-        if line_end == -1 {
-            line_end = text.count;
-        }
-
-        line := string.{line_end - line_start, text.data + line_start};
-        line_start = line_end + 1;
-
-        x := 0.;
-        i := 0;
-
-        while line.count > 0 {
-            // @todo: We need to take care of wrong conversion here.
-            codepoint, _ := utf8_next_character(*line);
-            glyph := find_or_add_glyph(font, codepoint, size);
-
-            x += glyph.advance;
-        }
-
-        width   = max(width, x);
-        height += metrics.line_height;
-    }
-
-    return width, height;
-}
+// get_text_extents :: (font_name : string, text : string, size := DEFAULT_FT_SIZE, max_line_width := -1, apply_scale_factor := true) -> width: float, height: float {
+//     using font := get_font(font_name);
+//
+//     metrics := get_font_metrics(font_name, xx size);
+//
+//     if apply_scale_factor {
+//         size = cast (int) (size * scale_factor);
+//     }
+//
+//     width       := 0.0;
+//     height      := 0.0;
+//
+//     line_start  := 0;
+//
+//     while line_start < text.count {
+//         line_end := find_index_from_left(text, #char "\n", line_start);
+//
+//         if line_end == -1 {
+//             line_end = text.count;
+//         }
+//
+//         line := string.{line_end - line_start, text.data + line_start};
+//         line_start = line_end + 1;
+//
+//         x := 0.;
+//         i := 0;
+//
+//         while line.count > 0 {
+//             // @todo: We need to take care of wrong conversion here.
+//             codepoint, _ := utf8_next_character(*line);
+//             glyph := find_or_add_glyph(font, codepoint, size);
+//
+//             x += glyph.advance;
+//         }
+//
+//         width   = max(width, x);
+//         height += metrics.line_height;
+//     }
+//
+//     return width, height;
+// }
 
 free_font:: (using font: *Font) {
     FT_Done_Face(ft_face);
@@ -376,8 +374,6 @@ check_if_should_wrap :: (using font: *Font, position: Vector2, size: int, word: 
 
     using metrics := get_font_metrics(font, xx size);
 
-    inv_scale_factor := 1 / scale_factor;
-
     prev_char: u32;
     while word.count > 0 {
         codepoint, _ := utf8_next_character(*word);
@@ -395,11 +391,11 @@ check_if_should_wrap :: (using font: *Font, position: Vector2, size: int, word: 
 
         glyph_pos := pen + glyph.bearing_x;
 
-        rect_x := glyph_pos * inv_scale_factor;
+        rect_x := glyph_pos;
         rect_x += position.x;
-        rect_x  = round_pixel(rect_x * scale_factor) / scale_factor;
+        rect_x  = round_pixel(rect_x);
 
-        rect_w := glyph.pos_in_atlas.w * inv_scale_factor;
+        rect_w := glyph.pos_in_atlas.w;
 
         if rect_x + rect_w > position.x + max_line_wrap {
             return true;
