@@ -10,7 +10,7 @@
     - better understanding for scrollbar
     - better understanding for roudned corner.
 
-
+    - Should makes radius samples relative to size.
 
     Blog post:
 
@@ -21,22 +21,18 @@
 
 */
 
-// @todo: should import font.
-#load "font.jai";
-#load "theme.jai";
+
+// Context.
+theme            := DEFAULT_THEME;
+
+#scope_file;
 
 // @todo: explain.
 UV_DISCARD :: Vector2.{ 0, 0 };
 
-#scope_file;
-
-#import "Sort";
-
 UI_ID      :: int;
 UI_Texture :: *void;
 
-// Context.
-theme            := DEFAULT_THEME;
 
 prev_layer_list  : [..] Layer;
 curr_layer_list  : [..] Layer;
@@ -68,6 +64,8 @@ font     : *Font;
 current_depth := 0;
 
 // @todo: rename those variables.
+prev_left_pressed  : bool;
+
 left_pressed  : bool;
 right_pressed : bool;
 
@@ -84,9 +82,13 @@ UI_Layout :: struct {
     cursor       : Vector2; // @todo: explain that.
     prev_cursor  : Vector2;
 
+    changed    := false; // @explain that.
+
     order      := Layout_Order.STACK;
     align      := Layout_Align.PIXEL_LEFT;
     columns    := 0;
+
+    collapser_offset : Vector2;
 
     scroll     : Vector2;
 
@@ -116,14 +118,22 @@ Layer :: struct {
     clip_stack   : [..] Rect;
 };
 
+Widget_Status :: enum_flags u32 {
+    HOVERED     :: (1 << 0);
+
+    PRESSED     :: (1 << 1);
+
+    FOCUSED     :: (1 << 2);
+    DISABLED    :: (1 << 3);
+
+    ONCE        :: (1 << 4);
+};
+
 Widget_State :: struct {
-    id      : UI_ID = -1;
+    widget_id : UI_ID;
     kind    : Type;
     rect    : Rect;
-
-    pressed : bool;
-    hovered : bool;
-    once    : bool;
+    status  : Widget_Status;
 };
 
 Window_State :: struct {
@@ -134,6 +144,11 @@ Window_State :: struct {
 };
 
 Dropdown_State :: struct {
+    #as using state : Widget_State;
+    open            : bool;
+};
+
+Collapse_State :: struct {
     #as using state : Widget_State;
     open            : bool;
 };
@@ -199,8 +214,10 @@ ui_set_font :: (font_to_set: *Font) {
 }
 
 ui_set_mouse_press :: (left: bool, right := false) {
-    left_pressed    = left;
-    right_pressed   = right;
+    prev_left_pressed = left_pressed;
+
+    left_pressed      = left;
+    right_pressed     = right;
 }
 
 ui_set_mouse :: (x: float, y: float) {
@@ -295,16 +312,16 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
     id    := ui_id(loc, "_full_region");
     state := get_widget_state(Window_State, id, default_rect = region);
 
-    push_layer(id, state.rect);
+    is_new := push_layer(id, state.rect);
 
     // If window's layer was the topmost one of the last frame, we consider it as
     // "active".
     is_topmost  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
 
-    update_rect_state(id, state, state.rect);
+    mutate_state(state, state.rect);
     // If we click somewhere on the layer, we want to raise it to the top of
     // the stack.
-    want_raise := !is_topmost && state.once && active_widget == -1;
+    want_raise := !is_new && !is_topmost && (state.status & .ONCE != 0) && active_widget == -1;
     if want_raise then raise_layer(id);
 
 
@@ -373,26 +390,26 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
     resizer_rect.w  = theme.resize_size;
     resizer_rect.h  = theme.resize_size;
 
-    // Draw window background.
-    window_theme := ifx is_topmost then theme.window_content.focused else theme.window_content.normal;
-    draw_rect(state.rect, window_theme.bg_color, .ROUND_ALL);
+    bg_color     := ifx is_topmost then theme.window_color else darken(theme.window_color, 5);
+
+    draw_rect(state.rect, bg_color, .ROUND_ALL);
 
     // Draw title bar.
-    color := theme.window_title_bar.normal.bg_color;
-    draw_rect(title_rect, color, .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER);
+    title_color := theme.win_title_color;
 
     text_size := theme.window_title_bar_height * 0.5;
     title_width, title_height := get_text_extents_v2(font, title, xx text_size);
 
     x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
     y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
-    draw_text(title, x, y, text_size);
+
+    draw_rect(title_rect, title_color, .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER);
+    draw_text(title, x, y, text_size, lighten(title_color, 80));
 
     // Draw resizer.
-    color  = theme.resizer.normal.bg_color;
     draw_rect(resizer_rect, theme.resizer.normal.bg_color, .ROUND_ALL);
 
-    draw_outline(state.rect, Vector4.{ 0.2, 0.2, 0.2, 1 }, theme.border_width, .ROUND_ALL);
+    draw_outline(state.rect, title_color, theme.border_width, .ROUND_ALL);
 
     layer_rect   := state.rect;
     layer_rect.x += theme.content_padding;
@@ -416,175 +433,75 @@ end_window :: () {
     pop_layer();
 }
 
-alloc_space :: (widget_size: Vector2) -> Rect {
-    using layout  := *current_layer.layout;
 
-    size := widget_size;
+begin_collapse :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
+    id          := ui_id(loc);
+    state, new  := get_widget_state(Collapse_State, id);
 
-    if order != .COLUMNS then curr_column = 0;
+    if new state.open = open_by_default;
 
-    if prev_widget_size.x > 0 || prev_widget_size.y > 0 {
-        if order == {
-            case .STACK;
-                cursor.y += prev_widget_size.y + theme.margin_y;
-            case .INLINE;
-                cursor.x += prev_widget_size.x + theme.margin_x;
-            case .COLUMNS;
-                col_width := (layout.rect.w) / max(1, columns);
-                size.x     = col_width - theme.margin_x;
+    size := Vector2.{ current_layer.layout.rect.w - theme.scrollbar_width - theme.content_padding, 40. };
 
-                // @todo: Here we have to take into account the margin.
+    rect := alloc_space(size);
+    mutate_state(state, rect);
 
-                if curr_column == 0 {
-                    cursor.x  = 0;
-                    cursor.y += prev_widget_size.y + theme.margin_y;
-                    curr_column += 1;
-                } else {
-                    cursor.x  += ifx curr_column > 0 col_width else 0;
-                    curr_column += 1;
-                }
+    bg_color, border_color, text_color := get_colors(state.status, theme.button_color);
 
-                if curr_column >= columns {
-                    curr_column = 0;
-                }
-        }
-    } else {
-        // I don't like this tho....
-        if order == .COLUMNS {
-            col_width := (layout.rect.w) / max(1, columns);
-            size.x     = col_width - theme.margin_x;
-        }
+    font_size                 := size.y * 0.5;
+    text_width, text_height   := get_text_extents_v2(font, title, xx font_size);
+    text_rect                 := pad_rect(rect, theme.button_padding, 0);
+
+    // Center text in button rect.
+    x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
+    y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
+
+
+    if state.status & .ONCE {
+        state.open = !state.open;
     }
 
-    base_x := layout.rect.x - scroll.x;
-    base_y := layout.rect.y - scroll.y;
+    flags := Rect_Flags.ROUND_ALL;
+    if state.open flags = .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER;
 
-    r := Rect.{ base_x + cursor.x, base_y + cursor.y, size.x, size.y };
+    draw_rect(rect, bg_color, flags);
+    draw_outline(rect, border_color, theme.border_width, flags);
+    draw_text(title, x, y, font_size, text_color);
 
-    r.x = round_pixel(r.x);
-    r.y = round_pixel(r.y);
-    r.w = round_pixel(r.w);
-    r.h = round_pixel(r.h);
 
-    prev_widget_size = Vector2.{ size.x, size.y };
+    // Draw arrow.
+    {
+        arrow_size  := rect.h * 0.3;
+        offset      := arrow_size * 0.2;
+        arrow_rect := Rect.{
+            rect.x + rect.w - (arrow_size + theme.button_padding),
+            rect.y + rect.h * 0.5 - arrow_size * 0.5 + offset,
+            arrow_size, arrow_size,
+        };
 
-    return r;
+        // draw_rect(arrow_rect, Vector4.{1, 1, 1, 1});
+
+        p0 := Vector2.{ arrow_rect.x, arrow_rect.y };
+        p1 := Vector2.{ arrow_rect.x + arrow_rect.w, arrow_rect.y };
+        p2 := Vector2.{ arrow_rect.x + arrow_rect.w * 0.5, arrow_rect.y + arrow_rect.h - offset };
+
+        if state.open {
+            p0 = Vector2.{ arrow_rect.x, p2.y };
+            p1 = Vector2.{ arrow_rect.x + arrow_rect.w, p2.y };
+            p2 = Vector2.{ arrow_rect.x + arrow_rect.w * 0.5, arrow_rect.y };
+        }
+
+        push_triangle(p0, p1, p2, border_color);
+    }
+
+    if state.open {
+        current_layer.layout.collapser_offset = Vector2.{ 60, 0 };
+    }
+
+    return state.open;
 }
 
-draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vector4.{ 1, 1, 1, 1 }) {
-    if color.w <= 0 || text.count <= 0 return;
-
-    assert(font != null, "Font is null, you must set a font.");
-
-    using font;
-    using metrics := get_font_metrics(font, xx font_size);
-
-    space_glyph := find_or_add_glyph(font, #char " ", pixel_size);
-
-    pen := Vector2.{ 0, xx ascender };
-
-    line_start_index := 0;
-
-    while line_start_index < text.count {
-        line_end_index := find_index_from_left(text, #char "\n", line_start_index);
-
-        if line_end_index == -1 {
-            line_end_index = text.count;
-        }
-
-        line : string;
-        line.data   = text.data + line_start_index;
-        line.count  = line_end_index - line_start_index;
-
-        line_start_index = line_end_index + 1;
-
-        defer {
-            pen.x = 0;
-            pen.y += line_height;
-        }
-
-        word_start_index := 0;
-
-        prev_char: u32;
-        while word_start_index < line.count {
-            word_end_index := find_index_from_left(line, #char " ", word_start_index);
-
-            defer {
-                pen.x += space_glyph.advance;
-                word_start_index = word_end_index + 1;
-            }
-
-            // Treat if there is more than one space character.
-            if word_start_index == word_end_index {
-                pen.x += space_glyph.advance;
-            }
-
-            if word_end_index == -1 {
-                word_end_index = line.count;
-            }
-
-            word: string;
-            word.data   = line.data + word_start_index;
-            word.count  = word_end_index - word_start_index;
-
-            // if check_if_should_wrap(font, position, size, word, pen.x, max_line_width) {
-            //     prev_char    = 0;
-            //     pen.x        = 0;
-            //     pen.y       += line_height;
-            // }
-
-            while word.count > 0 {
-                codepoint, _ := utf8_next_character(*word);
-                defer prev_char = codepoint;
-
-                glyph           := find_or_add_glyph(font, codepoint, pixel_size);
-                pos_in_atlas    := glyph.pos_in_atlas;
-
-                if prev_char > 0 {
-                    delta: FT_Vector;
-
-                    FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
-                    pen.x += xx (delta.x >> 6);
-                }
-
-                defer pen.x += glyph.advance;
-
-                glyph_pos := Vector2.{
-                    pen.x + glyph.bearing_x,
-                    pen.y - glyph.bearing_y
-                };
-
-                rect := Rect.{
-                    glyph_pos.x,
-                    glyph_pos.y,
-
-                    xx pos_in_atlas.w,
-                    xx pos_in_atlas.h,
-                };
-
-                rect.position += xy(x, y);
-
-                rect.x = round_pixel(rect.x);
-                rect.y = round_pixel(rect.y);
-
-                // uv_rect := Rect.{
-                //     pos_in_atlas.x / cast(float) font_atlas.total_width,
-                //     pos_in_atlas.y / cast(float) font_atlas.total_height,
-                //     pos_in_atlas.w / cast(float) font_atlas.total_width,
-                //     pos_in_atlas.h / cast(float) font_atlas.total_height,
-                // };
-
-                u0 := pos_in_atlas.x / cast(float) font_atlas.total_width;
-                v0 := pos_in_atlas.y / cast(float) font_atlas.total_height;
-                u1 := (pos_in_atlas.x + pos_in_atlas.w) / cast(float) font_atlas.total_width;
-                v1 := (pos_in_atlas.y + pos_in_atlas.h) / cast(float) font_atlas.total_height;
-
-                uv_rect := Rect.{ u0, v0, u1, v1 };
-
-                internal_draw_rect(rect, color, uv_rect);
-            }
-        }
-    }
+end_collapse :: () {
+    current_layer.layout.collapser_offset = .{};
 }
 
 ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) -> int {
@@ -593,13 +510,12 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
 
     placeholder_text := ifx placeholder placeholder else "<Choose>";
 
-    // @todo: Should specify a placeholder instead of "none".
     button_label := ifx selected >= 0 items[selected] else placeholder_text;
 
     rect := alloc_space(size);
-    update_rect_state(id, state, rect);
+    mutate_state(state, rect);
 
-    button_theme := ui_theme(state.*, theme.button);
+    bg_color, border_color, text_color := get_colors(state.status, theme.button_color);
 
     font_size                 := size.y * 0.5;
     text_width, text_height   := get_text_extents_v2(font, button_label, xx font_size);
@@ -611,15 +527,16 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
 
 
 
-    if state.once {
+    if state.status & .ONCE {
         state.open = !state.open;
     }
 
     flags := Rect_Flags.ROUND_ALL;
     if state.open flags = .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER;
 
-    draw_button(rect, button_label, button_theme.bg_color, flags);
-    draw_text(button_label, x, y, font_size, button_theme.text_color);
+    draw_rect(rect, bg_color, flags);
+    draw_outline(rect, border_color, theme.border_width, flags);
+    draw_text(button_label, x, y, font_size, text_color);
 
     value := selected;
 
@@ -627,14 +544,14 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
         dropdown_flags := Rect_Flags.ROUND_BOTTOM_LEFT_CORNER | .ROUND_BOTTOM_RIGHT_CORNER;
         dropdown_rect  := Rect.{ rect.x, rect.y + rect.h, rect.w, 300 };
 
-        push_layer(id, dropdown_rect);
+        is_new := push_layer(id, dropdown_rect);
         defer pop_layer();
 
         push_clip(dropdown_rect);
         defer pop_clip();
 
         is_topmost  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
-        want_raise := !is_topmost && active_widget == -1;
+        want_raise := !is_new && !is_topmost && active_widget == -1;
 
         if want_raise {
             raise_layer(id);
@@ -656,22 +573,20 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
             layer_rect.w -= theme.content_padding + theme.scrollbar_width;
         }
 
-        // push_clip(layer_rect);
-        // defer pop_clip();
-
         size := Vector2.{ layer_rect.w , 60 };
 
         for items {
             if ui_button(it, size) { // @todo: fix id.
-                value = it_index;
+                value       = it_index;
+                state.open  = false;
             }
         }
 
         update_scrollbar(loc);
-        draw_outline(dropdown_rect, theme.button.normal.border_color, theme.border_width, dropdown_flags);
+        draw_outline(dropdown_rect, border_color, theme.border_width, dropdown_flags);
 
         // If click outside the dropdown, we close the dropdown.
-        if left_pressed && !state.pressed && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
+        if left_pressed && (state.status & .PRESSED == 0) && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
             state.open = false;
         }
 
@@ -687,15 +602,45 @@ ui_label :: (label: string, color: Vector4, label_size := 0., loc := #caller_loc
     width, height := get_text_extents_v2(font, label, xx text_size);
     rect := alloc_space(xy(width, height));
 
-    draw_rect(rect, Vector4.{0.2, 0.4, 1, 1});
+    // draw_rect(rect, Vector4.{0.2, 0.4, 1, 1});
 
     draw_text(label, rect.x, rect.y, text_size, color);
 }
 
+// @todo: we don't need state for that...
+ui_checkbox :: (checked: *bool, size := 0., loc := #caller_location) {
+    id      := ui_id(loc);
+    state   := get_widget_state(Widget_State, id);
+
+    checkbox_size := ifx size <= 0 xy(theme.checkbox_size) else xy(size);
+
+    rect := alloc_space(checkbox_size);
+    mutate_state(state, rect);
+
+
+    if state.status & .ONCE {
+        checked.* = !checked.*;
+    }
+
+    bg_color, border_color, _ := get_colors(state.status, theme.button_color);
+
+    pos     := xy(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
+    radius  := checkbox_size.x * 0.5;
+
+    draw_circle(pos, radius, bg_color);
+    draw_circle_outline(pos, radius, theme.border_width, border_color);
+
+    if checked.* == true {
+        radius = radius * 0.6;
+        draw_circle(pos, radius, border_color);
+    }
+
+}
+
 // @todo: remove "ui".
 ui_button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location) -> bool {
-    id      := ui_id(loc, label);
-    state   := get_widget_state(Widget_State, id);
+    id          := ui_id(loc, label);
+    using state := get_widget_state(Widget_State, id);
 
     font_size                 := size.y * 0.5;
     text_width, text_height   := get_text_extents_v2(font, label, xx font_size);
@@ -706,12 +651,14 @@ ui_button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location
         button_size.x = text_width + theme.button_padding;
     }
 
+    mutate_state(state, alloc_space(button_size));
 
-    rect := alloc_space(button_size);
-    update_rect_state(id, state, rect);
 
-    button_theme := ui_theme(state.*, theme.button);
-    draw_button(rect, label, button_theme.bg_color);
+
+    bg_color, border_color, text_color := get_colors(status, theme.button_color);
+
+    draw_rect(rect, bg_color, .ROUND_ALL);
+    draw_outline(rect, border_color, theme.border_width, .ROUND_ALL);
 
     text_rect := pad_rect(rect, theme.button_padding, 0);
 
@@ -719,31 +666,39 @@ ui_button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
     y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
 
-    draw_text(label, x, y, font_size, button_theme.text_color);
+    draw_text(label, x, y, font_size, text_color);
 
-    return state.once;
+    return status & .ONCE != 0;
 }
 
-draw_button :: (rect: Rect, label: string, color: Vector4, flags := Rect_Flags.ROUND_ALL) {
-    draw_rect(rect, color, .ROUND_ALL);
+get_colors :: (status: Widget_Status, base_color: Vector4) -> Vector4, Vector4, Vector4 {
+    bg_color        := base_color;
+    border_color    := darken(bg_color, 40);
+    text_color      := lighten(bg_color, 90);
 
-    border_color := color;
-    border_color.x *= 0.7;
-    border_color.y *= 0.7;
-    border_color.z *= 0.7;
+    if status & .PRESSED {
+        bg_color     = lighten(bg_color, 25);
+        border_color = lighten(border_color, 25);
 
-    draw_outline(rect, border_color, theme.border_width, flags);
-}
+        return bg_color, border_color, text_color;
+    }
 
-ui_theme :: (state: Widget_State, theme_state: Theme_State) -> UI_Theme {
-    if state.pressed return theme_state.focused;
-    if state.hovered && !state.pressed return theme_state.hovered;
+    if status & .HOVERED {
+        bg_color     = lighten(bg_color, 10);
+        border_color = lighten(border_color, 10);
 
-    return theme_state.normal;
+        return bg_color, border_color, text_color;
+    }
+
+    return bg_color, border_color, text_color;
 }
 
 
 set_layout_order:: (order: Layout_Order, columns := 0) {
+    if current_layer.layout.order != order {
+        current_layer.layout.changed = true;
+    }
+
     current_layer.layout.order   = order;
     current_layer.layout.columns = columns;
 }
@@ -765,16 +720,30 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
     return cast(*T) state.*, new;
 }
 
-// @todo: rename? (get_status?)
-update_rect_state :: (id: UI_ID, state: *Widget_State, rect: Rect) {
-    within_layout      := point_vs_rect(mouse_x, mouse_y, current_layer.rect);
+mutate_state :: (state: *Widget_State, rect: Rect) {
+    state.status = get_status(rect);
+    state.rect   = rect;
+}
+
+get_status :: (rect: Rect) -> Widget_Status {
+    status : Widget_Status;
+
+    within_layer       := point_vs_rect(mouse_x, mouse_y, current_layer.rect);
     within_widget_rect := point_vs_rect(mouse_x, mouse_y, rect);
 
-    was_pressed        := state.pressed;
-    state.hovered       = !is_occluded(rect) && within_widget_rect && within_layout;
-    state.pressed       = state.hovered && left_pressed;
-    state.once          = !was_pressed && state.pressed;
-    state.rect          = rect;
+    if !is_occluded(rect) && within_widget_rect && within_layer {
+        status |= .HOVERED;
+    }
+
+    if status & .HOVERED && left_pressed {
+        status |= .PRESSED;
+    }
+
+    if !prev_left_pressed && status & .PRESSED {
+        status |= .ONCE;
+    }
+
+    return status;
 }
 
 update_scrollbar :: (loc := #caller_location) {
@@ -815,7 +784,9 @@ update_scrollbar :: (loc := #caller_location) {
         handle_h,
     };
 
-    update_rect_state(id, state, handle);
+    mutate_state(state, handle);
+
+    bg_color, _, _ := get_colors(state.status, theme.scrollbar_color);
 
     if active_widget == -1 || active_widget == id {
         is_dragging := active_widget == id;
@@ -835,7 +806,7 @@ update_scrollbar :: (loc := #caller_location) {
         }
     }
 
-    draw_rect(handle, theme.window_scroll_bar.normal.bg_color, .ROUND_ALL);
+    draw_rect(handle, bg_color, .ROUND_ALL);
 }
 
 // @todo: inline this func.
@@ -843,7 +814,8 @@ is_occluded :: (rect: Rect) -> bool {
     return !point_vs_rect(mouse_x, mouse_y, rect) || current_layer.widget_id != hovered_layer;
 }
 
-push_layer :: (id: UI_ID, rect: Rect) {
+push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
+    is_new      := false;
     depth       := -1;
     prev_layout : UI_Layout;
 
@@ -858,6 +830,7 @@ push_layer :: (id: UI_ID, rect: Rect) {
 
     // If it's a new layout, we simply initialize it on the top of the stack.
     if depth == -1 {
+        is_new         = true;
         depth          = current_depth;
         current_depth += 1;
     }
@@ -874,6 +847,8 @@ push_layer :: (id: UI_ID, rect: Rect) {
 
     array_add(*layer_stack, index);
     current_layer = *curr_layer_list[index];
+
+    return is_new;
 }
 
 // todo: some asserts could be cool to put there.
@@ -898,9 +873,12 @@ rect_vs_rect :: inline (rect: Rect, other: Rect) -> bool {
 push_triangle :: (p0: Vector2, p1: Vector2, p2: Vector2, color: Vector4, uv0 := UV_DISCARD, uv1 := UV_DISCARD, uv2 := UV_DISCARD) {
     vertices := get_vertices();
 
-    array_add(vertices, .{ position = p0, uv = uv0, color = color });
-    array_add(vertices, .{ position = p1, uv = uv1, color = color });
-    array_add(vertices, .{ position = p2, uv = uv2, color = color });
+    c  := color;
+    c.w = theme.alpha;
+
+    array_add(vertices, .{ position = p0, uv = uv0, color = c });
+    array_add(vertices, .{ position = p1, uv = uv1, color = c });
+    array_add(vertices, .{ position = p2, uv = uv2, color = c });
 }
 
 ui_id :: (loc: Source_Code_Location, extra := "") -> u32 {
@@ -974,11 +952,94 @@ raise_layer :: (id: UI_ID) {
     log("Want to raise window : % :: %", id, current_layer.depth);
 }
 
+alloc_space :: (widget_size: Vector2) -> Rect {
+    using layout  := *current_layer.layout;
+
+    size := widget_size;
+
+    // @todo: Check if this condition can be removed and put in the layout.changed one.
+    if order != .COLUMNS then curr_column = 0;
+
+    if layout.changed {
+        cursor.x       = 0;
+        layout.changed = false;
+    }
+
+    if prev_widget_size.x > 0 || prev_widget_size.y > 0 {
+        if order == {
+            case .STACK;
+                cursor.y += prev_widget_size.y + theme.margin_y;
+            case .INLINE;
+                cursor.x += prev_widget_size.x + theme.margin_x;
+            case .COLUMNS;
+                col_width := (layout.rect.w) / max(1, columns);
+                size.x     = col_width - theme.margin_x;
+
+                // @todo: Here we have to take into account the margin.
+
+                if curr_column == 0 {
+                    cursor.x  = 0;
+                    cursor.y += prev_widget_size.y + theme.margin_y;
+                    curr_column += 1;
+                } else {
+                    cursor.x  += ifx curr_column > 0 col_width else 0;
+                    curr_column += 1;
+                }
+
+                if curr_column >= columns {
+                    curr_column = 0;
+                }
+        }
+    } else {
+        // I don't like this tho....
+        if order == .COLUMNS {
+            col_width := (layout.rect.w) / max(1, columns);
+            size.x     = col_width - theme.margin_x;
+        }
+    }
+
+    base_x := layout.collapser_offset.x + layout.rect.x - scroll.x;
+    base_y := layout.collapser_offset.y + layout.rect.y - scroll.y;
+
+    r := Rect.{ base_x + cursor.x, base_y + cursor.y, size.x, size.y };
+
+    r.x = round_pixel(r.x);
+    r.y = round_pixel(r.y);
+    r.w = round_pixel(r.w);
+    r.h = round_pixel(r.h);
+
+    prev_widget_size = Vector2.{ size.x, size.y };
+
+    return r;
+}
+
+
 
 /*
         Some useful helpers.
 
 */
+
+darken :: (color: Vector4, percent : float) -> Vector4 {
+    darker := color;
+
+    t := clamp(percent / 100, 0, 1);
+    darker.xyz *= 1 - t;
+
+    return darker;
+}
+
+lighten :: (color: Vector4, percent : float) -> Vector4 {
+    lighter := color;
+
+    t := clamp(percent / 100, 0, 1);
+
+    lighter.x = lerp(lighter.x, 1.0, t);
+    lighter.y = lerp(lighter.y, 1.0, t);
+    lighter.z = lerp(lighter.z, 1.0, t);
+
+    return lighter;
+}
 
 pad_rect :: (rect: Rect, pad_x : float, pad_y : float) -> Rect {
     return .{
@@ -1170,6 +1231,44 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
     internal_draw_rect(bottom_line, color);
 }
 
+draw_circle :: (pos: Vector2, radius: float, color: Vector4) {
+    p0   := pos;
+    prev := pos - xy(-1, 0) * radius;
+
+    for 1..theme.circle_sample {
+        theta  := 2 * PI * (it / cast(float) theme.circle_sample);
+
+        p1 := prev;
+        p2 := p0 + xy(cos(theta), sin(theta)) * radius;
+
+        push_triangle(p0, p1, p2, color);
+
+        prev = p2;
+    }
+}
+
+draw_circle_outline :: (pos: Vector2, radius: float, border_size: float, color: Vector4) {
+    p0   := pos;
+    prev := pos - xy(-1, 0) * radius;
+
+    for 1..theme.circle_sample {
+        theta  := 2 * PI * (it / cast(float) theme.circle_sample);
+
+        p1 := prev;
+        p2 := p0 + xy(cos(theta), sin(theta)) * radius;
+
+        a := p1;
+        b := p2;
+        c := p2 + normalize(p0 - p2) * border_size;
+        d := p1 + normalize(p0 - p1) * border_size;
+
+        push_triangle(a, b, c, color);
+        push_triangle(a, c, d, color);
+
+        prev = p2;
+    }
+}
+
 draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
     if flags == .NONE {
         internal_draw_rect(r, color);
@@ -1261,6 +1360,123 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
     internal_draw_rect(left_middle, color);
 }
 
+draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vector4.{ 1, 1, 1, 1 }) {
+    if color.w <= 0 || text.count <= 0 return;
+
+    assert(font != null, "Font is null, you must set a font.");
+
+    using font;
+    using metrics := get_font_metrics(font, xx font_size);
+
+    space_glyph := find_or_add_glyph(font, #char " ", pixel_size);
+
+    pen := Vector2.{ 0, xx ascender };
+
+    line_start_index := 0;
+
+    while line_start_index < text.count {
+        line_end_index := find_index_from_left(text, #char "\n", line_start_index);
+
+        if line_end_index == -1 {
+            line_end_index = text.count;
+        }
+
+        line : string;
+        line.data   = text.data + line_start_index;
+        line.count  = line_end_index - line_start_index;
+
+        line_start_index = line_end_index + 1;
+
+        defer {
+            pen.x = 0;
+            pen.y += line_height;
+        }
+
+        word_start_index := 0;
+
+        prev_char: u32;
+        while word_start_index < line.count {
+            word_end_index := find_index_from_left(line, #char " ", word_start_index);
+
+            defer {
+                pen.x += space_glyph.advance;
+                word_start_index = word_end_index + 1;
+            }
+
+            // Treat if there is more than one space character.
+            if word_start_index == word_end_index {
+                pen.x += space_glyph.advance;
+            }
+
+            if word_end_index == -1 {
+                word_end_index = line.count;
+            }
+
+            word: string;
+            word.data   = line.data + word_start_index;
+            word.count  = word_end_index - word_start_index;
+
+            // if check_if_should_wrap(font, position, size, word, pen.x, max_line_width) {
+            //     prev_char    = 0;
+            //     pen.x        = 0;
+            //     pen.y       += line_height;
+            // }
+
+            while word.count > 0 {
+                codepoint, _ := utf8_next_character(*word);
+                defer prev_char = codepoint;
+
+                glyph           := find_or_add_glyph(font, codepoint, pixel_size);
+                pos_in_atlas    := glyph.pos_in_atlas;
+
+                if prev_char > 0 {
+                    delta: FT_Vector;
+
+                    FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
+                    pen.x += xx (delta.x >> 6);
+                }
+
+                defer pen.x += glyph.advance;
+
+                glyph_pos := Vector2.{
+                    pen.x + glyph.bearing_x,
+                    pen.y - glyph.bearing_y
+                };
+
+                rect := Rect.{
+                    glyph_pos.x,
+                    glyph_pos.y,
+
+                    xx pos_in_atlas.w,
+                    xx pos_in_atlas.h,
+                };
+
+                rect.position += xy(x, y);
+
+                rect.x = round_pixel(rect.x);
+                rect.y = round_pixel(rect.y);
+
+                // uv_rect := Rect.{
+                //     pos_in_atlas.x / cast(float) font_atlas.total_width,
+                //     pos_in_atlas.y / cast(float) font_atlas.total_height,
+                //     pos_in_atlas.w / cast(float) font_atlas.total_width,
+                //     pos_in_atlas.h / cast(float) font_atlas.total_height,
+                // };
+
+                u0 := pos_in_atlas.x / cast(float) font_atlas.total_width;
+                v0 := pos_in_atlas.y / cast(float) font_atlas.total_height;
+                u1 := (pos_in_atlas.x + pos_in_atlas.w) / cast(float) font_atlas.total_width;
+                v1 := (pos_in_atlas.y + pos_in_atlas.h) / cast(float) font_atlas.total_height;
+
+                uv_rect := Rect.{ u0, v0, u1, v1 };
+
+                internal_draw_rect(rect, color, uv_rect);
+            }
+        }
+    }
+}
+
+
 internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
     p0 := Vector2.{ r.x, r.y };
     p1 := Vector2.{ r.x + r.w, r.y };
@@ -1275,3 +1491,12 @@ internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
     push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
     push_triangle(p2, p1, p3, color, uv2, uv1, uv3);
 }
+
+
+#scope_file;
+
+// @todo: should import font.
+#load "font.jai";
+#load "theme.jai";
+
+#import "Sort";
