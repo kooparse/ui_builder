@@ -27,8 +27,8 @@ vertex_buffers        : [MAX_FRAME_IN_FLIGHT] GFX_Buffer;
 frame_info_buffer     : GFX_Buffer;
 quad_buffer           : GFX_Buffer;
 
-window_width    :: 1200;
-window_height   :: 800;
+window_width    := 1200.;
+window_height   := 800.;
 
 left_down   : bool;
 
@@ -44,8 +44,10 @@ frame_start : float;
 dt          : float;
 
 main :: () {
+    window_flags := SDL_WindowFlags.SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+
     window := SDL_CreateWindow("Demo", SDL_WINDOWPOS_UNDEFINED , SDL_WINDOWPOS_UNDEFINED,
-                                       window_width, window_height, SDL_WINDOW_ALLOW_HIGHDPI);
+                                       xx window_width, xx window_height, window_flags);
 
     assert(window != null);
 
@@ -94,6 +96,13 @@ main :: () {
         while SDL_PollEvent(*event) {
 
             if event.type == {
+
+                case SDL_WINDOWEVENT;
+                    if event.window.event == .SDL_WINDOWEVENT_RESIZED {
+                        window_width  = xx event.window.data1;
+                        window_height = xx event.window.data2;
+                        log("WINDOW RESIZE! :: % :: %", window_width, window_height);
+                    }
                 case SDL_MOUSEWHEEL;
                     wheel_delta.x = xx event.wheel.x;
                     wheel_delta.y = xx event.wheel.y;
@@ -159,7 +168,7 @@ make_ui :: () -> UI_Draw_List {
 
     if begin_window(Rect.{ 10, 10, 450, 400 } * dpi_scale, "menu 1") {
 
-        dt_fmt  := FormatFloat.{ value = dt * 1000, trailing_width = 1 };
+        dt_fmt  := FormatFloat.{ value = dt * 1000, trailing_width = 0 };
         gpu_fmt := FormatFloat.{ value = get_last_frame_gpu_time() * 1000, trailing_width = 1 };
 
         ui_label(tprint("CPU % / GPU %", dt_fmt, gpu_fmt), WHITE);
@@ -167,18 +176,20 @@ make_ui :: () -> UI_Draw_List {
         ui_label(tprint("Vertex count: %", last_vertex_count), WHITE);
 
         placeholder := "Choose...";
-        selected = ui_select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
+        selected     = ui_select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
 
-        ui_label("Checkbox:", WHITE);
-        set_layout_order(.INLINE);
         ui_checkbox(*checked);
-        set_layout_order(.STACK);
-
-        ui_label("Translucent:", WHITE);
         set_layout_order(.INLINE);
-        ui_checkbox(*translucent);
+        ui_label("A checkbox", WHITE);
 
         set_layout_order(.STACK);
+
+        ui_checkbox(*translucent);
+        set_layout_order(.INLINE);
+        ui_label("Translucent", WHITE);
+
+        set_layout_order(.STACK);
+
 
         if ui_button("Alex + Ola = ♥", size) {
             log("click!");
@@ -197,6 +208,8 @@ make_ui :: () -> UI_Draw_List {
         }
 
         for 1..15 {
+            set_layout_order(.COLUMNS, 2);
+
             if ui_button(tprint("button %", it), size) {
                 log("click! %", it);
             }
@@ -216,7 +229,7 @@ make_ui :: () -> UI_Draw_List {
 
     if menu_3_open {
 
-        if begin_window(Rect.{ 600, 500, 400, 300 } * dpi_scale, "menu 3") {
+        if begin_window(Rect.{ 600, 450, 400, 300 } * dpi_scale, "menu 3") {
             if ui_button("Button", size) {
                 log("click!");
             }
@@ -225,52 +238,14 @@ make_ui :: () -> UI_Draw_List {
         }
 
     }
-    //     begin_window(Rect.{ 600, r.y, 150, 400 }, "menu 1");
-    //
-    //     if ui_button("stack 1") {
-    //         log("click! 3");
-    //     }
-    //
-    //     if ui_button("stack 2") {
-    //         log("click! 4");
-    //     }
-    //
-    //     set_layout_order(.INLINE);
-    //
-    //     if ui_button("inline") {
-    //         log("click! 5");
-    //     }
-    //
-    //     set_layout_order(.COLUMNS, 3);
-    //
-    //     if ui_button("col") {
-    //         log("click! col 1");
-    //     }
-    //
-    //     if ui_button("col") {
-    //         log("click! col 2");
-    //     }
-    //
-    //     if ui_button("col") {
-    //         log("click! col 3");
-    //     }
-    //
-    //     if ui_button("col") {
-    //         log("click! col 4");
-    //     }
-    //
-    //     if ui_button("col") {
-    //         log("click! col 5");
-    //     }
-    //
-    //     end_window();
-    //
-    // }
+
+
 
     ui_end();
 
     last_draw_calls   = get_draw_list().draw_calls.count;
     last_vertex_count = get_draw_list().vertices.count;
+
     // Make UI.
     return get_draw_list();
 }
@@ -343,7 +318,14 @@ do_gpu_stuff:: (draw_list: UI_Draw_List) {
                     set_texture(*pass, frag.immediate_texture, xx it.texture);
                 }
 
-                set_scissor(true, .{ xx it.clip.x, xx it.clip.y, xx it.clip.w, xx it.clip.h });
+                clip := Recti.{
+                    xx max(0., it.clip.x),
+                    xx max(0., it.clip.y),
+                    xx max(0., it.clip.w),
+                    xx max(0., it.clip.h),
+                };
+
+                set_scissor(true, clip);
                 draw_primitives(*pass, xx it.vertex_count, 1, base_vertex = xx it.vertex_start);
             }
 
@@ -369,16 +351,7 @@ init_gfx_buffers :: () {
 
     frame_info_buffer = create_gfx_buffer("Frame Info", size_of(Frame_Info), size_of(Frame_Info), null, .CPU_WRITE, .CONSTANT_BUFFER);
 
-    white := Vector4.{ 1, 1, 1, 1 };
-
-    p0 := UI_Vertex.{ position = xy(0, 0), color = white, uv = xy(0, 0) };
-    p1 := UI_Vertex.{ position = xy(window_width * 2, 0), color = white, uv = xy(1, 0) };
-    p2 := UI_Vertex.{ position = xy(window_width * 2, window_height * 2), color = white, uv = xy(1, 1) };
-    p3 := UI_Vertex.{ position = xy(0, window_height * 2), color = white, uv = xy(0, 1)};
-
-    quad_vertices := UI_Vertex.[ p0, p1, p2, p0, p2, p3 ];
-
-    quad_buffer = create_gfx_buffer("QUAD", quad_vertices.count * size_of(UI_Vertex), size_of(UI_Vertex), quad_vertices.data, .CPU_WRITE, .VERTEX_BUFFER);
+    quad_buffer = create_gfx_buffer("QUAD", 6 * size_of(UI_Vertex), size_of(UI_Vertex), null, .CPU_WRITE, .VERTEX_BUFFER);
 
     sampler_desc : GFX_Sampler_State_Desc;
     sampler_desc.min_filter = .LINEAR;
@@ -412,6 +385,23 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
         };
         memcpy(frame_info_buffer.data_ptr, *frame_info, size_of(Frame_Info));
         unlock_buffer(*frame_info_buffer);
+    }
+
+    {
+        lock_buffer(*quad_buffer, .WRITE_AND_FLUSH);
+
+        white := Vector4.{ 1, 1, 1, 1 };
+
+        p0 := UI_Vertex.{ position = xy(0, 0), color = white, uv = xy(0, 0) };
+        p1 := UI_Vertex.{ position = xy(window_width * 2, 0), color = white, uv = xy(1, 0) };
+        p2 := UI_Vertex.{ position = xy(window_width * 2, window_height * 2), color = white, uv = xy(1, 1) };
+        p3 := UI_Vertex.{ position = xy(0, window_height * 2), color = white, uv = xy(0, 1)};
+
+        quad_vertices := UI_Vertex.[ p0, p1, p2, p0, p2, p3 ];
+
+        memcpy(quad_buffer.data_ptr, quad_vertices.data, size_of(UI_Vertex) * quad_vertices.count);
+
+        unlock_buffer(*quad_buffer);
     }
 }
 

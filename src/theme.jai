@@ -12,6 +12,7 @@ Theme_State :: struct {
 };
 
 Theme :: struct {
+    ui_scaler               := 1.0;
     alpha                   := 1.0;
 
     content_padding         := 4.;

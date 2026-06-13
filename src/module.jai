@@ -8,15 +8,14 @@
     - no allocation for stack, clips etc? (not sure it's needed...).
 
     - better understanding for scrollbar
-    - better understanding for roudned corner.
-
+    - better understanding for rounded corner.
     - Should makes radius samples relative to size.
 
     Blog post:
 
     1) Explain our the UI backbones : layers, occluders, dragging.
 
-    2) Explain nice tricks, like white pixel reserve in the font atlas, the
+    2) Explain "nice" tricks, like white pixel reserve in the font atlas, the
        double array we swap, the hovered_layer at begin...
 
 */
@@ -82,7 +81,9 @@ UI_Layout :: struct {
     cursor       : Vector2; // @todo: explain that.
     prev_cursor  : Vector2;
 
-    changed    := false; // @explain that.
+    // When layout changed, we have to reset a couple of things, like the
+    // "curr_column" or the cursor, and this variable is our way to notice it.
+    changed    := false;
 
     order      := Layout_Order.STACK;
     align      := Layout_Align.PIXEL_LEFT;
@@ -90,7 +91,8 @@ UI_Layout :: struct {
 
     collapser_offset : Vector2;
 
-    scroll     : Vector2;
+    scroll           : Vector2;
+    has_scrollbar    : bool;
 
     // For auto layout.
     curr_column      := 0;
@@ -318,7 +320,7 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
     // "active".
     is_topmost  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
 
-    mutate_state(state, state.rect);
+    mutate_state(state, state.rect, check_layout = false);
     // If we click somewhere on the layer, we want to raise it to the top of
     // the stack.
     want_raise := !is_new && !is_topmost && (state.status & .ONCE != 0) && active_widget == -1;
@@ -414,8 +416,12 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
     layer_rect   := state.rect;
     layer_rect.x += theme.content_padding;
     layer_rect.y += theme.window_title_bar_height + theme.content_padding;
-    layer_rect.w -= (theme.scrollbar_width - theme.content_padding);
+    layer_rect.w -= theme.content_padding * 2;
     layer_rect.h -= (theme.window_title_bar_height + theme.content_padding);
+
+    if current_layer.prev_layout.has_scrollbar {
+        layer_rect.w -= theme.scrollbar_width;
+    }
 
     layer_rect = pad_rect(layer_rect, theme.border_width, theme.border_width);
 
@@ -568,8 +574,7 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
 
         current_layer.layout.rect = layer_rect;
 
-
-        { // if has scrollbar.
+        if current_layer.prev_layout.has_scrollbar { // if has scrollbar.
             layer_rect.w -= theme.content_padding + theme.scrollbar_width;
         }
 
@@ -596,13 +601,10 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
 }
 
 ui_label :: (label: string, color: Vector4, label_size := 0., loc := #caller_location) {
-
     text_size := ifx label_size <= 0 theme.text_size else label_size;
 
     width, height := get_text_extents_v2(font, label, xx text_size);
     rect := alloc_space(xy(width, height));
-
-    // draw_rect(rect, Vector4.{0.2, 0.4, 1, 1});
 
     draw_text(label, rect.x, rect.y, text_size, color);
 }
@@ -637,7 +639,6 @@ ui_checkbox :: (checked: *bool, size := 0., loc := #caller_location) {
 
 }
 
-// @todo: remove "ui".
 ui_button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location) -> bool {
     id          := ui_id(loc, label);
     using state := get_widget_state(Widget_State, id);
@@ -653,7 +654,7 @@ ui_button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location
 
     mutate_state(state, alloc_space(button_size));
 
-
+    text_too_big := rect.w < button_size.x;
 
     bg_color, border_color, text_color := get_colors(status, theme.button_color);
 
@@ -666,7 +667,9 @@ ui_button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
     y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
 
+    if text_too_big push_clip(rect);
     draw_text(label, x, y, font_size, text_color);
+    if text_too_big pop_clip();
 
     return status & .ONCE != 0;
 }
@@ -720,18 +723,20 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
     return cast(*T) state.*, new;
 }
 
-mutate_state :: (state: *Widget_State, rect: Rect) {
-    state.status = get_status(rect);
+mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true) {
+    state.status = get_status(rect, check_layout);
     state.rect   = rect;
 }
 
-get_status :: (rect: Rect) -> Widget_Status {
+// @todo: Explain why check_layout or rename.
+get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
     status : Widget_Status;
 
-    within_layer       := point_vs_rect(mouse_x, mouse_y, current_layer.rect);
-    within_widget_rect := point_vs_rect(mouse_x, mouse_y, rect);
+    within_layer       := cursor_vs_rect(current_layer.rect);
+    within_widget_rect := cursor_vs_rect(rect);
+    within_layout_rect := ifx check_layout cursor_vs_rect(current_layer.layout.rect) else true;
 
-    if !is_occluded(rect) && within_widget_rect && within_layer {
+    if !is_occluded(rect) && within_widget_rect && within_layer && within_layout_rect {
         status |= .HOVERED;
     }
 
@@ -751,8 +756,7 @@ update_scrollbar :: (loc := #caller_location) {
     state   := get_widget_state(Widget_State, id);
 
     prev_layout := current_layer.prev_layout;
-    layout      := current_layer.layout;
-
+    layout      := *current_layer.layout;
     scroll      := *current_layer.layout.scroll;
 
 
@@ -760,6 +764,8 @@ update_scrollbar :: (loc := #caller_location) {
     content_h   := prev_layout.cursor.y + prev_layout.prev_widget_size.y;
     visible_h   := layout.rect.h;
     max_scroll  := max(0.0, content_h - visible_h);
+
+    layout.has_scrollbar = max_scroll > 0;
 
     // @todo: Perhaps add again mouse wheel for scrolling content...
     // if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
@@ -778,19 +784,19 @@ update_scrollbar :: (loc := #caller_location) {
 
 
     handle := Rect.{
-        layout.rect.x + layout.rect.w - theme.scrollbar_width,
+        layout.rect.x + layout.rect.w + theme.content_padding * 0.5,
         layout.rect.y + scroll_t * travel,
         theme.scrollbar_width,
         handle_h,
     };
 
-    mutate_state(state, handle);
+    mutate_state(state, handle, check_layout = false);
 
     bg_color, _, _ := get_colors(state.status, theme.scrollbar_color);
 
     if active_widget == -1 || active_widget == id {
         is_dragging := active_widget == id;
-        hit         := point_vs_rect(mouse_x, mouse_y, handle) && left_pressed;
+        hit         := cursor_vs_rect(handle) && left_pressed;
 
         if hit && !is_dragging && abs(delta_y) > 0 {
             active_widget = id;
@@ -913,20 +919,30 @@ set_texture :: (texture: UI_Texture) -> old: UI_Texture {
 push_clip :: (rect: Rect) {
     safe_rect := rect;
 
-    // @todo: Let's the user declare some viewport, and make sure our rects are viewport bounds.
-    safe_rect.x = max(0.0, rect.x);
-    safe_rect.y = max(0.0, rect.y);
-    safe_rect.w = max(0.0, rect.w);
-    safe_rect.h = max(0.0, rect.h);
+    if current_layer.clip_stack {
+        clip := peek(current_layer.clip_stack);
+
+        x0 := max(rect.x, clip.x);
+        y0 := max(rect.y, clip.y);
+        x1 := min(rect.x + rect.w, clip.x + clip.w);
+        y1 := min(rect.y + rect.h, clip.y + clip.h);
+
+        safe_rect.x = x0;
+        safe_rect.y = y0;
+        safe_rect.w = max(0.0, x1 - x0);
+        safe_rect.h = max(0.0, y1 - y0);
+    }
 
     array_add(*current_layer.clip_stack, safe_rect);
     record_draw_marker(safe_rect);
 }
 
-// @todo: make proper assert.
 pop_clip :: () {
     old_rect := pop(*current_layer.clip_stack);
-    record_draw_marker(old_rect);
+
+    if current_layer.clip_stack {
+        record_draw_marker(peek(current_layer.clip_stack));
+    }
 }
 
 // change the name.
@@ -957,11 +973,10 @@ alloc_space :: (widget_size: Vector2) -> Rect {
 
     size := widget_size;
 
-    // @todo: Check if this condition can be removed and put in the layout.changed one.
-    if order != .COLUMNS then curr_column = 0;
-
     if layout.changed {
+        curr_column    = 0;
         cursor.x       = 0;
+
         layout.changed = false;
     }
 
@@ -972,17 +987,17 @@ alloc_space :: (widget_size: Vector2) -> Rect {
             case .INLINE;
                 cursor.x += prev_widget_size.x + theme.margin_x;
             case .COLUMNS;
-                col_width := (layout.rect.w) / max(1, columns);
+                layout_width := layout.rect.w;
+
+                col_width := layout.rect.w / max(1, columns);
                 size.x     = col_width - theme.margin_x;
 
-                // @todo: Here we have to take into account the margin.
-
                 if curr_column == 0 {
-                    cursor.x  = 0;
-                    cursor.y += prev_widget_size.y + theme.margin_y;
+                    cursor.x     = 0;
+                    cursor.y    += prev_widget_size.y + theme.margin_y;
                     curr_column += 1;
                 } else {
-                    cursor.x  += ifx curr_column > 0 col_width else 0;
+                    cursor.x    += ifx curr_column > 0 col_width else 0;
                     curr_column += 1;
                 }
 
