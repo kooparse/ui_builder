@@ -91,8 +91,7 @@ UI_Layout :: struct {
 
     collapser_offset : Vector2;
 
-    scroll           : Vector2;
-    has_scrollbar    : bool;
+    scrollbar        : *Scrollbar_State;
 
     // For auto layout.
     curr_column      := 0;
@@ -114,6 +113,9 @@ Layer :: struct {
 
     layout       : UI_Layout;
     prev_layout  : UI_Layout;
+
+    layouts       : [..] UI_Layout;
+    prev_layouts  : [..] UI_Layout;
 
     vertices     : [..] UI_Vertex;
     draw_markers : [..] Draw_Marker;
@@ -148,6 +150,12 @@ Window_State :: struct {
 Dropdown_State :: struct {
     #as using state : Widget_State;
     open            : bool;
+};
+
+Scrollbar_State :: struct {
+    #as using state : Widget_State;
+    scroll          : Vector2;
+    has_scroll      : bool;
 };
 
 Collapse_State :: struct {
@@ -416,17 +424,14 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
     layer_rect   := state.rect;
     layer_rect.x += theme.content_padding;
     layer_rect.y += theme.window_title_bar_height + theme.content_padding;
-    layer_rect.w -= theme.content_padding * 2;
+    layer_rect.w -= theme.scrollbar_width + theme.content_padding * 2;
     layer_rect.h -= (theme.window_title_bar_height + theme.content_padding);
-
-    if current_layer.prev_layout.has_scrollbar {
-        layer_rect.w -= theme.scrollbar_width;
-    }
 
     layer_rect = pad_rect(layer_rect, theme.border_width, theme.border_width);
 
     current_layer.layout.rect = layer_rect;
-    update_scrollbar(loc);
+
+    ui_scrollbar(loc);
 
     push_clip(layer_rect);
 
@@ -569,14 +574,12 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
         layer_rect   := dropdown_rect;
         layer_rect.x += theme.content_padding + theme.border_width;
         layer_rect.y += theme.content_padding + theme.border_width;
-        layer_rect.w -= theme.content_padding + theme.border_width * 2;
+        layer_rect.w -= theme.content_padding + theme.scrollbar_width + theme.border_width * 2;
         layer_rect.h -= theme.content_padding + theme.border_width * 2;
 
         current_layer.layout.rect = layer_rect;
 
-        if current_layer.prev_layout.has_scrollbar { // if has scrollbar.
-            layer_rect.w -= theme.content_padding + theme.scrollbar_width;
-        }
+        ui_scrollbar(loc);
 
         size := Vector2.{ layer_rect.w , 60 };
 
@@ -587,7 +590,6 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
             }
         }
 
-        update_scrollbar(loc);
         draw_outline(dropdown_rect, border_color, theme.border_width, dropdown_flags);
 
         // If click outside the dropdown, we close the dropdown.
@@ -751,21 +753,23 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
     return status;
 }
 
-update_scrollbar :: (loc := #caller_location) {
+// @note: Not sure about the name "ui_" ?
+ui_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
     id      := ui_id(loc, "_scrollbar");
-    state   := get_widget_state(Widget_State, id);
+    state   := get_widget_state(Scrollbar_State, id);
+
+    current_layer.layout.scrollbar = state;
+
+    scroll  := *state.scroll;
 
     prev_layout := current_layer.prev_layout;
     layout      := *current_layer.layout;
-    scroll      := *current_layer.layout.scroll;
 
 
     // We compute the actual content size from the previous frame.
     content_h   := prev_layout.cursor.y + prev_layout.prev_widget_size.y;
     visible_h   := layout.rect.h;
     max_scroll  := max(0.0, content_h - visible_h);
-
-    layout.has_scrollbar = max_scroll > 0;
 
     // @todo: Perhaps add again mouse wheel for scrolling content...
     // if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
@@ -813,6 +817,8 @@ update_scrollbar :: (loc := #caller_location) {
     }
 
     draw_rect(handle, bg_color, .ROUND_ALL);
+
+    return state;
 }
 
 // @todo: inline this func.
@@ -825,11 +831,14 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
     depth       := -1;
     prev_layout : UI_Layout;
 
+    prev_layouts : [..] UI_Layout;
+
     // Find old z order.
     for prev_layer_list {
         if it.widget_id == id {
             depth       = it.depth;
             prev_layout = it.layout;
+            prev_layouts = it.layouts;
             break;
         }
     }
@@ -848,7 +857,8 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
         rect        = rect,
         depth       = depth,
         prev_layout = prev_layout,
-        layout      = .{ scroll = prev_layout.scroll }, // Restore previous scroll.
+        prev_layouts = prev_layouts,
+        // layout      = .{ scroll = prev_layout.scroll }, // Restore previous scroll.
     });
 
     array_add(*layer_stack, index);
@@ -899,8 +909,16 @@ ui_id :: (loc: Source_Code_Location, extra := "") -> u32 {
     return h;
 }
 
-get_layout :: () -> UI_Layout {
-    return current_layer.layout;
+current_layout :: () -> *UI_Layout {
+    return *current_layer.layouts[current_layer.layouts.count - 1];
+}
+
+push_layout :: (layout_rect: Rect) {
+    array_add(*current_layer.layouts, .{ rect = layout_rect });
+}
+
+pop_layout :: (layout_rect: Rect) {
+    _ := pop(*current_layer.layouts);
 }
 
 get_vertices :: () -> *[..] UI_Vertex {
@@ -1012,6 +1030,10 @@ alloc_space :: (widget_size: Vector2) -> Rect {
             size.x     = col_width - theme.margin_x;
         }
     }
+
+    scroll : Vector2;
+
+    if layout.scrollbar then scroll = layout.scrollbar.scroll;
 
     base_x := layout.collapser_offset.x + layout.rect.x - scroll.x;
     base_y := layout.collapser_offset.y + layout.rect.y - scroll.y;

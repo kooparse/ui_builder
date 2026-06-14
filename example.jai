@@ -21,7 +21,7 @@ Frame_Info :: struct {
     ortho : Matrix4;
 };
 
-MAX_FRAME_IN_FLIGHT :: 3;
+MAX_FRAME_IN_FLIGHT :: 2;
 
 vertex_buffers        : [MAX_FRAME_IN_FLIGHT] GFX_Buffer;
 frame_info_buffer     : GFX_Buffer;
@@ -53,6 +53,7 @@ main :: () {
         SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
         SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
     }
+
     window := SDL_CreateWindow("Demo", SDL_WINDOWPOS_UNDEFINED , SDL_WINDOWPOS_UNDEFINED,
                                        xx window_width, xx window_height, window_flags);
 
