@@ -41,12 +41,11 @@ current_layer    : *Layer;
 widget_states   : Table(UI_ID, *Widget_State);
 
 active_widget   : UI_ID = -1; // I want a pointer to the state directly....
-hot_widget      : UI_ID = -1;
+// hot_widget      : UI_ID = -1;
 
 hovered_layer   : UI_ID = -1;
 
 draw_list       : UI_Draw_List;
-
 current_texture : UI_Texture;
 
 mouse_x  : float;
@@ -64,9 +63,8 @@ current_depth := 0;
 
 // @todo: rename those variables.
 prev_left_pressed  : bool;
-
-left_pressed  : bool;
-right_pressed : bool;
+left_pressed       : bool;
+right_pressed      : bool;
 
 // @todo I don't like the name here...
 Draw_Marker :: struct {
@@ -111,11 +109,8 @@ Layer :: struct {
     widget_id    : UI_ID;
     depth        : int; // Used to sort the layer list.
 
-    layout       : UI_Layout;
-    prev_layout  : UI_Layout;
-
     layouts       : [..] UI_Layout;
-    prev_layouts  : [..] UI_Layout;
+    prev_layouts  : [] UI_Layout;
 
     vertices     : [..] UI_Vertex;
     draw_markers : [..] Draw_Marker;
@@ -251,11 +246,13 @@ ui_begin :: () {
     {
         swap(*prev_layer_list, *curr_layer_list);
 
+
         // Reset occlusion and widget list.
         for * curr_layer_list {
             array_reset(*it.vertices);
             array_reset(*it.draw_markers);
             array_reset(*it.clip_stack);
+            array_reset(*it.layouts);
         }
 
         array_reset_keeping_memory(*curr_layer_list);
@@ -429,7 +426,7 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
 
     layer_rect = pad_rect(layer_rect, theme.border_width, theme.border_width);
 
-    current_layer.layout.rect = layer_rect;
+    push_layout(layer_rect);
 
     ui_scrollbar(loc);
 
@@ -441,6 +438,7 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
 // rename window_end().
 end_window :: () {
     pop_clip();
+    pop_layout();
     pop_layer();
 }
 
@@ -451,7 +449,8 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
 
     if new state.open = open_by_default;
 
-    size := Vector2.{ current_layer.layout.rect.w - theme.scrollbar_width - theme.content_padding, 40. };
+    layout := current_layout();
+    size := Vector2.{ layout.rect.w - theme.scrollbar_width - theme.content_padding, 40. };
 
     rect := alloc_space(size);
     mutate_state(state, rect);
@@ -505,14 +504,15 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
     }
 
     if state.open {
-        current_layer.layout.collapser_offset = Vector2.{ 60, 0 };
+        layout.collapser_offset = Vector2.{ 60, 0 };
     }
 
     return state.open;
 }
 
 end_collapse :: () {
-    current_layer.layout.collapser_offset = .{};
+    layout := current_layout();
+    layout.collapser_offset = .{};
 }
 
 ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) -> int {
@@ -577,7 +577,8 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
         layer_rect.w -= theme.content_padding + theme.scrollbar_width + theme.border_width * 2;
         layer_rect.h -= theme.content_padding + theme.border_width * 2;
 
-        current_layer.layout.rect = layer_rect;
+        push_layout(layer_rect);
+        defer pop_layout();
 
         ui_scrollbar(loc);
 
@@ -700,12 +701,13 @@ get_colors :: (status: Widget_Status, base_color: Vector4) -> Vector4, Vector4, 
 
 
 set_layout_order:: (order: Layout_Order, columns := 0) {
-    if current_layer.layout.order != order {
-        current_layer.layout.changed = true;
+    layout := current_layout();
+    if layout.order != order {
+        layout.changed = true;
     }
 
-    current_layer.layout.order   = order;
-    current_layer.layout.columns = columns;
+    layout.order   = order;
+    layout.columns = columns;
 }
 
 #scope_file;
@@ -736,7 +738,7 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
 
     within_layer       := cursor_vs_rect(current_layer.rect);
     within_widget_rect := cursor_vs_rect(rect);
-    within_layout_rect := ifx check_layout cursor_vs_rect(current_layer.layout.rect) else true;
+    within_layout_rect := ifx check_layout cursor_vs_rect(current_layout().rect) else true;
 
     if !is_occluded(rect) && within_widget_rect && within_layer && within_layout_rect {
         status |= .HOVERED;
@@ -755,15 +757,17 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
 
 // @note: Not sure about the name "ui_" ?
 ui_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
+    if current_layer.prev_layouts.count < current_layer.layouts.count return null;
+
     id      := ui_id(loc, "_scrollbar");
     state   := get_widget_state(Scrollbar_State, id);
 
-    current_layer.layout.scrollbar = state;
+    layout := current_layout();
+    layout.scrollbar = state;
 
     scroll  := *state.scroll;
 
-    prev_layout := current_layer.prev_layout;
-    layout      := *current_layer.layout;
+    prev_layout := current_layer.prev_layouts[current_layer.layouts.count - 1];
 
 
     // We compute the actual content size from the previous frame.
@@ -829,15 +833,13 @@ is_occluded :: (rect: Rect) -> bool {
 push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
     is_new      := false;
     depth       := -1;
-    prev_layout : UI_Layout;
 
-    prev_layouts : [..] UI_Layout;
+    prev_layouts : [] UI_Layout;
 
     // Find old z order.
     for prev_layer_list {
         if it.widget_id == id {
-            depth       = it.depth;
-            prev_layout = it.layout;
+            depth        = it.depth;
             prev_layouts = it.layouts;
             break;
         }
@@ -856,9 +858,7 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
         widget_id   = id,
         rect        = rect,
         depth       = depth,
-        prev_layout = prev_layout,
         prev_layouts = prev_layouts,
-        // layout      = .{ scroll = prev_layout.scroll }, // Restore previous scroll.
     });
 
     array_add(*layer_stack, index);
@@ -910,6 +910,7 @@ ui_id :: (loc: Source_Code_Location, extra := "") -> u32 {
 }
 
 current_layout :: () -> *UI_Layout {
+    assert(current_layer.layouts.count > 0, "No layout found.");
     return *current_layer.layouts[current_layer.layouts.count - 1];
 }
 
@@ -917,7 +918,7 @@ push_layout :: (layout_rect: Rect) {
     array_add(*current_layer.layouts, .{ rect = layout_rect });
 }
 
-pop_layout :: (layout_rect: Rect) {
+pop_layout :: () {
     _ := pop(*current_layer.layouts);
 }
 
@@ -987,7 +988,7 @@ raise_layer :: (id: UI_ID) {
 }
 
 alloc_space :: (widget_size: Vector2) -> Rect {
-    using layout  := *current_layer.layout;
+    using layout := current_layout();
 
     size := widget_size;
 
