@@ -52,6 +52,8 @@ main :: () {
 
         SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
         SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
+    } else {
+        window_flags |= .SDL_WINDOW_ALLOW_HIGHDPI;
     }
 
     window := SDL_CreateWindow("Demo", SDL_WINDOWPOS_UNDEFINED , SDL_WINDOWPOS_UNDEFINED,
@@ -270,7 +272,7 @@ make_ui :: () -> UI_Draw_List {
 
 
 
-do_gpu_stuff:: (draw_list: UI_Draw_List) {
+do_gpu_stuff :: (draw_list: UI_Draw_List) {
     command_buffer := create_gfx_command_buffer("Frame");
     screen_texture := get_swapchain_texture();
 
