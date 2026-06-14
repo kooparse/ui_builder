@@ -183,9 +183,9 @@ UI_State :: struct {
 };
 
 UI_Vertex :: struct {
-    position : Vector2;
-    uv       : Vector2;
-    color    : Vector4;
+    position : Vector2; @TEXCOORD;
+    uv       : Vector2; @TEXCOORD;
+    color    : Vector4; @TEXCOORD;
 };
 
 Rect :: struct {

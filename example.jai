@@ -44,8 +44,15 @@ frame_start : float;
 dt          : float;
 
 main :: () {
-    window_flags := SDL_WindowFlags.SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+    window_flags := SDL_WindowFlags.SDL_WINDOW_RESIZABLE;
 
+    #if OS == .WINDOWS {
+        SDL_HINT_WINDOWS_DPI_SCALING    :: "SDL_WINDOWS_DPI_SCALING";
+        SDL_HINT_WINDOWS_DPI_AWARENESS  :: "SDL_WINDOWS_DPI_AWARENESS";
+
+        SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
+        SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
+    }
     window := SDL_CreateWindow("Demo", SDL_WINDOWPOS_UNDEFINED , SDL_WINDOWPOS_UNDEFINED,
                                        xx window_width, xx window_height, window_flags);
 
@@ -393,9 +400,9 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
         white := Vector4.{ 1, 1, 1, 1 };
 
         p0 := UI_Vertex.{ position = xy(0, 0), color = white, uv = xy(0, 0) };
-        p1 := UI_Vertex.{ position = xy(window_width * 2, 0), color = white, uv = xy(1, 0) };
-        p2 := UI_Vertex.{ position = xy(window_width * 2, window_height * 2), color = white, uv = xy(1, 1) };
-        p3 := UI_Vertex.{ position = xy(0, window_height * 2), color = white, uv = xy(0, 1)};
+        p1 := UI_Vertex.{ position = xy(window_width * dpi_scale, 0), color = white, uv = xy(1, 0) };
+        p2 := UI_Vertex.{ position = xy(window_width * dpi_scale, window_height * dpi_scale), color = white, uv = xy(1, 1) };
+        p3 := UI_Vertex.{ position = xy(0, window_height * dpi_scale), color = white, uv = xy(0, 1)};
 
         quad_vertices := UI_Vertex.[ p0, p1, p2, p0, p2, p3 ];
 
