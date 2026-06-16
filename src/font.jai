@@ -158,103 +158,37 @@ get_font_metrics :: inline (font_name : string, size : u32) -> Font_Metrics {
 
 
 /// @Note: If text has more than one line, it returns the width of the longest one.
-get_text_extents_v2 :: (using font: *Font, text : string, size : int, max_line_width := -1) -> width: float, height: float {
+get_text_extents_v2 :: (using font: *Font, text : string, size : int) -> width: float, height: float {
     if text.count <= 0 return 0, 0;
 
     max_width : float;
 
     using metrics := get_font_metrics(font, xx size);
 
-    space_glyph := find_or_add_glyph(font, #char " ", pixel_size);
-
     pen := Vector2.{ 0, xx ascender };
 
-    line_start_index := 0;
+    words       := text;
+    prev_char   : u32;
 
-    line_count := 0;
+    while words.count > 0 {
+        codepoint, status := utf8_next_character(*words);
+        defer prev_char = codepoint;
 
-    while line_start_index < text.count {
-        line_count += 1;
+        glyph           := find_or_add_glyph(font, codepoint, pixel_size);
+        pos_in_atlas    := glyph.pos_in_atlas;
 
-        line_end_index := find_index_from_left(text, #char "\n", line_start_index);
+        if prev_char > 0 {
+            delta: FT_Vector;
 
-        if line_end_index == -1 {
-            line_end_index = text.count;
+            FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
+            pen.x += xx (delta.x >> 6);
         }
 
-        line : string;
-        line.data   = text.data + line_start_index;
-        line.count  = line_end_index - line_start_index;
-
-        line_start_index = line_end_index + 1;
-
-        defer {
-            pen.x  = 0;
-            pen.y += line_height;
-        }
-
-
-        word_start_index := 0;
-
-        prev_char: u32;
-        while word_start_index < line.count {
-            word_end_index := find_index_from_left(line, #char " ", word_start_index);
-
-            defer {
-                pen.x += space_glyph.advance;
-                word_start_index = word_end_index + 1;
-            }
-
-            if word_start_index == word_end_index {
-                pen.x += space_glyph.advance;
-            }
-
-            if word_end_index == -1 {
-                word_end_index = line.count;
-            }
-
-            word: string;
-            word.data   = line.data + word_start_index;
-            word.count  = word_end_index - word_start_index;
-
-
-            if check_if_should_wrap(font, xy(0), size, word, pen.x, max_line_width) {
-                prev_char    = 0;
-                pen.x        = 0;
-                pen.y       += line_height;
-            }
-
-            while word.count > 0 {
-                codepoint, _ := utf8_next_character(*word);
-                defer prev_char = codepoint;
-
-                glyph           := find_or_add_glyph(font, codepoint, pixel_size);
-                pos_in_atlas    := glyph.pos_in_atlas;
-
-                if prev_char > 0 {
-                    delta: FT_Vector;
-
-                    FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
-                    pen.x += xx (delta.x >> 6);
-                }
-
-                defer pen.x += glyph.advance;
-
-                glyph_pos := Vector2.{
-                    pen.x + glyph.bearing_x,
-                    pen.y - glyph.bearing_y
-                };
-
-                rect   := Rect.{ glyph_pos.x, glyph_pos.y, xx pos_in_atlas.w, xx pos_in_atlas.h };
-                rect.x  = round_pixel(rect.x);
-                rect.y  = round_pixel(rect.y);
-
-                max_width = max(max_width, rect.x + rect.w);
-            }
-        }
+        max_width = max(max_width, pen.x + glyph.advance);
+        pen.x    += glyph.advance;
     }
 
-    return max_width, xx (line_count * line_height);
+    return max_width, xx line_height;
 }
 
 // get_text_extents :: (font_name : string, text : string, size := DEFAULT_FT_SIZE, max_line_width := -1, apply_scale_factor := true) -> width: float, height: float {

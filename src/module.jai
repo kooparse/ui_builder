@@ -24,6 +24,22 @@
 // Context.
 theme            := DEFAULT_THEME;
 
+UI_Key_Event :: enum_flags {
+    TAB         :: 1 << 0;
+    ESC         :: 1 << 1;
+    BACKSPACE   :: 1 << 2;
+    ARROW_LEFT  :: 1 << 3;
+    ARROW_RIGHT :: 1 << 4;
+    ARROW_UP    :: 1 << 5;
+    ARROW_DOWN  :: 1 << 6;
+
+    KEY_C       :: 1 << 7;
+    KEY_V       :: 1 << 8;
+    KEY_X       :: 1 << 9;
+    KEY_A       :: 1 << 10;
+    CTRL        :: 1 << 11;
+};
+
 #scope_file;
 
 // @todo: explain.
@@ -32,6 +48,20 @@ UV_DISCARD :: Vector2.{ 0, 0 };
 UI_ID      :: int;
 UI_Texture :: *void;
 
+UI_Modifiers :: enum_flags {
+    CTRL;
+    SHIFT;
+    ALT;
+}
+
+
+UI_Event_Type :: enum {
+    KEYDOWN;
+};
+
+UI_Event :: struct {
+    // event_type :
+};
 
 prev_layer_list  : [..] Layer;
 curr_layer_list  : [..] Layer;
@@ -44,6 +74,10 @@ active_widget   : UI_ID = -1; // I want a pointer to the state directly....
 // hot_widget      : UI_ID = -1;
 
 hovered_layer   : UI_ID = -1;
+
+
+key_event       : UI_Key_Event;
+unicode_text    : string;
 
 draw_list       : UI_Draw_List;
 current_texture : UI_Texture;
@@ -147,6 +181,19 @@ Dropdown_State :: struct {
     open            : bool;
 };
 
+Input_State :: struct {
+    #as using state : Widget_State;
+
+    text    : string;
+    focused : bool;
+    focused_start_time : float;
+
+    offset        := 0;
+
+    cursor_start  := -1;
+    cursor_end    := -1;
+}
+
 Scrollbar_State :: struct {
     #as using state : Widget_State;
     scroll          : Vector2;
@@ -243,16 +290,18 @@ ui_begin :: () {
     array_reset_keeping_memory(*draw_list.vertices);
     array_reset_keeping_memory(*draw_list.draw_calls);
 
+    key_event          = 0x0;
+    unicode_text.count = 0;
+
     {
         swap(*prev_layer_list, *curr_layer_list);
-
 
         // Reset occlusion and widget list.
         for * curr_layer_list {
             array_reset(*it.vertices);
             array_reset(*it.draw_markers);
             array_reset(*it.clip_stack);
-            array_reset(*it.layouts);
+            array_reset(*it.prev_layouts);
         }
 
         array_reset_keeping_memory(*curr_layer_list);
@@ -269,7 +318,6 @@ ui_begin :: () {
             break;
         }
     }
-
 }
 
 ui_end :: () {
@@ -612,8 +660,165 @@ ui_label :: (label: string, color: Vector4, label_size := 0., loc := #caller_loc
     draw_text(label, rect.x, rect.y, text_size, color);
 }
 
+ui_separator :: (height: float) {
+    layout := current_layout();
+
+    rect := alloc_space(.{ layout.rect.w, height + theme.content_padding * 2 });
+
+    sep_rect := Rect.{ rect.x + theme.content_padding, rect.y + theme.content_padding, rect.w - theme.content_padding * 2, height };
+
+    draw_rect(sep_rect, lighten(theme.button_color, 50));
+}
+
+ui_set_event :: (e: UI_Key_Event) {
+    key_event = e;
+}
+
+ui_set_text_pressed :: (text: string) {
+    if text {
+        unicode_text = text;
+    }
+}
+
+ui_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_location) -> modified: bool, new_string: string {
+    id              := ui_id(loc);
+    state, is_new   := get_widget_state(Input_State, id);
+
+    if is_new {
+        state.text         = copy_string(value);
+        state.cursor_start = state.text.count;
+    }
+
+    mutate_state(state, alloc_space(size));
+
+    if !state.focused && state.status & .ONCE {
+        active_widget = id;
+        state.focused = true;
+        state.focused_start_time = xx seconds_since_init();
+    }
+
+
+    if state.focused {
+        click_outside := !cursor_vs_rect(state.rect) && left_pressed;
+
+        if key_event & .ESC || click_outside {
+            active_widget = -1;
+            state.focused = false;
+        }
+
+        if key_event & .BACKSPACE && state.cursor_start > 0 {
+            for state.cursor_start..state.text.count - 1 {
+                state.text[it - 1] = state.text[it];
+            }
+
+            if state.cursor_start > 0 then state.cursor_start -= 1;
+            if state.text.count   > 0 then state.text.count   -= 1;
+        }
+
+        if key_event & .ARROW_RIGHT && state.cursor_start <= state.text.count {
+            state.cursor_start += 1;
+        }
+
+        if key_event & .ARROW_LEFT && state.cursor_start > 0 {
+            state.cursor_start -= 1;
+        }
+
+        if unicode_text && unicode_text != state.text {
+            begin := slice(state.text, 0, state.cursor_start);
+            end   := slice(state.text, state.cursor_start, state.text.count);
+
+            new_value := join(begin, unicode_text, end);
+            state.cursor_start += 1;
+
+            if state.text {
+                free(state.text);
+            }
+
+            state.text = new_value;
+        }
+    }
+
+    bg_color, border_color, text_color := get_colors(state.status, theme.button_color);
+
+    draw_rect(state.rect, bg_color, .ROUND_ALL);
+    draw_outline(state.rect, border_color, theme.border_width, .ROUND_ALL);
+
+    font_size                 := size.y * 0.5;
+    text_width, text_height   := get_text_extents_v2(font, state.text, xx font_size);
+
+
+    x := state.rect.x + theme.input_padding + theme.border_width;
+    y := state.rect.y + state.rect.h * 0.5 - text_height * 0.5;
+
+
+    should_clip := x + text_width > state.rect.w - theme.border_width;
+
+    clip_rect   := state.rect;
+    clip_rect.w -= theme.border_width;
+
+    if should_clip       then push_clip(clip_rect);
+    defer if should_clip then pop_clip();
+
+    if state.focused {
+        cursor_text := state.text;
+
+        if state.cursor_start < state.text.count {
+            cursor_text = slice(state.text, 0, state.cursor_start);
+        }
+
+        cursor_height    := size.y * 0.5;
+        to_cursor_width  := get_text_extents_v2(font, cursor_text, xx font_size);
+
+        input_width := state.rect.w - (theme.border_width * 2);
+        cursor_size := theme.input_cursor_size;
+
+        offset := (to_cursor_width + cursor_size + theme.input_padding) - input_width;
+        if offset >= 0 x -= offset;
+
+        cursor_rect := Rect.{ x + to_cursor_width, state.rect.y + state.rect.h * 0.5 - cursor_height * 0.5, cursor_size, cursor_height };
+
+        now             := cast(float) seconds_since_init();
+        elapsed         := state.focused_start_time - now;
+        blink_speed     := 8.0;
+        alpha           := cast(float) (sin(elapsed * blink_speed) + 1.0) * 0.5;
+
+        cursor_color  := lighten(text_color, 20);
+        cursor_color.w = alpha;
+
+
+        draw_text(state.text, x, y, font_size, text_color);
+        draw_rect(cursor_rect, cursor_color);
+    } else {
+        draw_text(state.text, x, y, font_size);
+    }
+
+    return false, state.text;
+}
+
+ui_radio :: (items: []string, index: *int, loc := #caller_location) -> bool {
+    changed := false;
+
+    for items {
+        checked := it_index == index.*;
+
+        if ui_checkbox(*checked) {
+            changed = true;
+        }
+
+        set_layout_order(.INLINE);
+        ui_label(it, Vector4.{ 1, 1, 1, 1 });
+        set_layout_order(.STACK);
+
+        if checked {
+            index.* = it_index;
+        }
+    }
+
+    return changed;
+}
+
 // @todo: we don't need state for that...
-ui_checkbox :: (checked: *bool, size := 0., loc := #caller_location) {
+ui_checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
     id      := ui_id(loc);
     state   := get_widget_state(Widget_State, id);
 
@@ -622,8 +827,10 @@ ui_checkbox :: (checked: *bool, size := 0., loc := #caller_location) {
     rect := alloc_space(checkbox_size);
     mutate_state(state, rect);
 
+    changed := false;
 
     if state.status & .ONCE {
+        changed   = true;
         checked.* = !checked.*;
     }
 
@@ -635,11 +842,13 @@ ui_checkbox :: (checked: *bool, size := 0., loc := #caller_location) {
     draw_circle(pos, radius, bg_color);
     draw_circle_outline(pos, radius, theme.border_width, border_color);
 
+
     if checked.* == true {
         radius = radius * 0.6;
         draw_circle(pos, radius, border_color);
     }
 
+    return changed;
 }
 
 ui_button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location) -> bool {
@@ -681,6 +890,13 @@ get_colors :: (status: Widget_Status, base_color: Vector4) -> Vector4, Vector4, 
     bg_color        := base_color;
     border_color    := darken(bg_color, 40);
     text_color      := lighten(bg_color, 90);
+
+    if status & .FOCUSED {
+        bg_color     = lighten(bg_color, 25);
+        border_color = lighten(border_color, 25);
+
+        return bg_color, border_color, text_color;
+    }
 
     if status & .PRESSED {
         bg_color     = lighten(bg_color, 25);
@@ -724,11 +940,20 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
         }
     }
 
+    state.*.widget_id = id;
+
     return cast(*T) state.*, new;
 }
 
 mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true) {
-    state.status = get_status(rect, check_layout);
+    state.status = ifx active_widget > -1 && active_widget != state.widget_id then 0x0 else get_status(rect, check_layout);
+
+    if state.widget_id == active_widget {
+        state.status |= .FOCUSED;
+    } else {
+        state.status &= ~.FOCUSED;
+    }
+
     state.rect   = rect;
 }
 
@@ -757,7 +982,10 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
 
 // @note: Not sure about the name "ui_" ?
 ui_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
-    if current_layer.prev_layouts.count < current_layer.layouts.count return null;
+
+    if current_layer.prev_layouts.count < current_layer.layouts.count {
+        return null;
+    }
 
     id      := ui_id(loc, "_scrollbar");
     state   := get_widget_state(Scrollbar_State, id);
@@ -765,8 +993,7 @@ ui_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
     layout := current_layout();
     layout.scrollbar = state;
 
-    scroll  := *state.scroll;
-
+    scroll      := *state.scroll;
     prev_layout := current_layer.prev_layouts[current_layer.layouts.count - 1];
 
 
@@ -890,7 +1117,7 @@ push_triangle :: (p0: Vector2, p1: Vector2, p2: Vector2, color: Vector4, uv0 := 
     vertices := get_vertices();
 
     c  := color;
-    c.w = theme.alpha;
+    c.w = color.w * theme.alpha;
 
     array_add(vertices, .{ position = p0, uv = uv0, color = c });
     array_add(vertices, .{ position = p1, uv = uv1, color = c });
@@ -919,7 +1146,7 @@ push_layout :: (layout_rect: Rect) {
 }
 
 pop_layout :: () {
-    _ := pop(*current_layer.layouts);
+    // _ := pop(*current_layer.layouts);
 }
 
 get_vertices :: () -> *[..] UI_Vertex {
@@ -1538,3 +1765,4 @@ internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
 #load "theme.jai";
 
 #import "Sort";
+#import "String";

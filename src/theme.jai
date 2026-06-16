@@ -15,6 +15,9 @@ Theme :: struct {
     ui_scaler               := 1.0;
     alpha                   := 1.0;
 
+    input_padding           := 4.;
+    input_cursor_size       := 2.;
+
     content_padding         := 4.;
     window_title_bar_height := 30.;
     resize_size             := 16.;

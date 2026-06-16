@@ -43,6 +43,10 @@ background_texture : GFX_Texture;
 frame_start : float;
 dt          : float;
 
+text_scanned : string;
+
+ui_event : UI_Key_Event;
+
 main :: () {
     window_flags := SDL_WindowFlags.SDL_WINDOW_RESIZABLE;
 
@@ -102,10 +106,34 @@ main :: () {
         event: SDL_Event;
 
         wheel_delta = .{};
+        text_scanned.count = 0;
+
+        ui_event = 0x0;
 
         while SDL_PollEvent(*event) {
 
             if event.type == {
+
+                case .SDL_KEYDOWN;
+                    if event.key.keysym.sym == SDL_Keycode.SDLK_BACKSPACE {
+                        ui_event |= .BACKSPACE;
+                    }
+
+                    if event.key.keysym.sym == SDL_Keycode.SDLK_ESCAPE {
+                        ui_event |= .ESC;
+                    }
+
+                    if event.key.keysym.sym == SDL_Keycode.SDLK_LEFT {
+                        ui_event |= .ARROW_LEFT;
+                    }
+
+                    if event.key.keysym.sym == SDL_Keycode.SDLK_RIGHT {
+                        ui_event |= .ARROW_RIGHT;
+                    }
+
+                case .SDL_TEXTINPUT;
+                    str := to_string(cast(*u8) event.text.text.data);
+                    text_scanned = copy_string(str ,, temp);
 
                 case SDL_WINDOWEVENT;
                     if event.window.event == .SDL_WINDOWEVENT_RESIZED {
@@ -113,9 +141,11 @@ main :: () {
                         window_height = xx event.window.data2;
                         log("WINDOW RESIZE! :: % :: %", window_width, window_height);
                     }
+
                 case SDL_MOUSEWHEEL;
                     wheel_delta.x = xx event.wheel.x;
                     wheel_delta.y = xx event.wheel.y;
+
                 case SDL_MOUSEBUTTONUP;
                     if event.button.button == SDL_BUTTON_LEFT {
                         left_down = false;
@@ -138,8 +168,11 @@ main :: () {
     }
 }
 
-selected := -1;
-items    := string.[ "Apple", "Peach", "Banana", "Chocolate", "Tea" ];
+selected        := -1;
+radio_selected  := 0;
+items           := string.[ "Apple", "Peach", "Banana", "Chocolate", "Tea" ];
+
+mutate_text     : string = "Hey! klasjd fhgeiuhr asd";
 
 menu_3_open       := false;
 checked           := true;
@@ -167,12 +200,17 @@ make_ui :: () -> UI_Draw_List {
         margin_y                = DEFAULT_THEME.margin_y                * dpi_scale,
         button_padding          = DEFAULT_THEME.button_padding          * dpi_scale,
         text_size               = DEFAULT_THEME.text_size               * dpi_scale,
+        input_padding           = DEFAULT_THEME.input_padding           * dpi_scale,
+        input_cursor_size       = DEFAULT_THEME.input_cursor_size       * dpi_scale,
     });
 
     ui_set_font(cascadia);
     ui_set_mouse_press(left_down);
     ui_set_mouse(xx mouse_x * dpi_scale, xx mouse_y * dpi_scale);
     ui_set_wheel(wheel_delta.x, wheel_delta.y);
+
+    ui_set_event(ui_event);
+    ui_set_text_pressed(text_scanned);
 
     size := Vector2.{ -1, 30 } * dpi_scale;
 
@@ -188,6 +226,11 @@ make_ui :: () -> UI_Draw_List {
         placeholder := "Choose...";
         selected     = ui_select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
 
+        ui_label("Input", WHITE);
+        set_layout_order(.INLINE);
+        ui_input(mutate_text);
+        set_layout_order(.STACK);
+
         ui_checkbox(*checked);
         set_layout_order(.INLINE);
         ui_label("A checkbox", WHITE);
@@ -200,6 +243,13 @@ make_ui :: () -> UI_Draw_List {
 
         set_layout_order(.STACK);
 
+        ui_separator(1 * dpi_scale);
+
+        if ui_radio(items, *radio_selected) {
+            log("Fruit choosen: %", items[radio_selected]);
+        }
+
+        ui_separator(1 * dpi_scale);
 
         if ui_button("Alex + Ola = ♥", size) {
             log("click!");
