@@ -24,20 +24,33 @@
 // Context.
 theme            := DEFAULT_THEME;
 
-UI_Key_Event :: enum_flags {
-    TAB         :: 1 << 0;
-    ESC         :: 1 << 1;
-    BACKSPACE   :: 1 << 2;
-    ARROW_LEFT  :: 1 << 3;
-    ARROW_RIGHT :: 1 << 4;
-    ARROW_UP    :: 1 << 5;
-    ARROW_DOWN  :: 1 << 6;
+UI_Key :: enum {
+    ESCAPE;
+    TAB;
+    RETURN;
+    BACKSPACE;
 
-    KEY_C       :: 1 << 7;
-    KEY_V       :: 1 << 8;
-    KEY_X       :: 1 << 9;
-    KEY_A       :: 1 << 10;
-    CTRL        :: 1 << 11;
+    LEFT;
+    RIGHT;
+    UP;
+    DOWN;
+
+    KEY_C;
+    KEY_V;
+    KEY_X;
+    KEY_A;
+    CTRL;
+};
+
+UI_Key_State :: struct {
+    once         : bool;
+    down         : bool;
+
+    repeat_duration   : float;
+    repeat_start_time : float;
+
+    down_start_time : float;
+    down_duration   : float;
 };
 
 #scope_file;
@@ -55,13 +68,9 @@ UI_Modifiers :: enum_flags {
 }
 
 
-UI_Event_Type :: enum {
-    KEYDOWN;
-};
 
-UI_Event :: struct {
-    // event_type :
-};
+key_count       :: #run enum_names(UI_Key).count;
+key_state       : [key_count] UI_Key_State;
 
 prev_layer_list  : [..] Layer;
 curr_layer_list  : [..] Layer;
@@ -71,13 +80,10 @@ current_layer    : *Layer;
 widget_states   : Table(UI_ID, *Widget_State);
 
 active_widget   : UI_ID = -1; // I want a pointer to the state directly....
-// hot_widget      : UI_ID = -1;
-
 hovered_layer   : UI_ID = -1;
 
 
-key_event       : UI_Key_Event;
-unicode_text    : string;
+text_codepoint : string;
 
 draw_list       : UI_Draw_List;
 current_texture : UI_Texture;
@@ -285,13 +291,68 @@ ui_set_wheel :: (x: float, y: float) {
     wheel_y = y;
 }
 
+is_pressed :: (key: UI_Key, repeat := true) -> bool {
+    state := key_state[key];
+
+    if !repeat {
+        return state.down && state.down_duration == 0;
+    } else {
+        return state.down && state.down_duration == 0 || state.down && state.repeat_duration == 0;
+    }
+}
+
+set_key_event :: (key: UI_Key, down: bool) {
+    state := *key_state[key];
+
+    if !state.down && down {
+        state.down_start_time = cast(float) seconds_since_init();
+    }
+
+    state.down = down;
+}
+
+KEY_REPEAT_DELAY    :: 0.275;
+KEY_REPEAT_RATE     :: 0.020;
+
+update_io :: () {
+    text_codepoint.count = 0;
+
+    now := cast(float) seconds_since_init();
+
+    for * key_state {
+        if !it.down {
+            it.down_duration        = 0;
+            it.repeat_duration      = -1;
+            it.repeat_start_time    = -1;
+        } else {
+            it.down_duration    = now - it.down_start_time;
+
+            if it.down_duration >= KEY_REPEAT_DELAY && it.repeat_start_time < 0 {
+                it.repeat_start_time = now;
+                it.repeat_duration   = 0;
+            }
+
+            if it.down_duration >= KEY_REPEAT_DELAY && it.repeat_start_time > 0 {
+                it.repeat_duration  = now - it.repeat_start_time;
+
+                if it.repeat_duration > KEY_REPEAT_RATE {
+                    it.repeat_duration   = 0;
+                    it.repeat_start_time = now;
+                }
+            }
+
+        }
+
+
+    }
+}
+
 ui_begin :: () {
+    update_io();
+
     // Reset flat vertices.
     array_reset_keeping_memory(*draw_list.vertices);
     array_reset_keeping_memory(*draw_list.draw_calls);
-
-    key_event          = 0x0;
-    unicode_text.count = 0;
 
     {
         swap(*prev_layer_list, *curr_layer_list);
@@ -670,14 +731,11 @@ ui_separator :: (height: float) {
     draw_rect(sep_rect, lighten(theme.button_color, 50));
 }
 
-ui_set_event :: (e: UI_Key_Event) {
-    key_event = e;
-}
+send_text_codepoint :: (codepoint: string) {
+    if !codepoint return;
 
-ui_set_text_pressed :: (text: string) {
-    if text {
-        unicode_text = text;
-    }
+    if text_codepoint then free(text_codepoint);
+    text_codepoint = copy_string(codepoint);
 }
 
 ui_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_location) -> modified: bool, new_string: string {
@@ -701,12 +759,17 @@ ui_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_location
     if state.focused {
         click_outside := !cursor_vs_rect(state.rect) && left_pressed;
 
-        if key_event & .ESC || click_outside {
+        if is_pressed(.RETURN) {
             active_widget = -1;
             state.focused = false;
         }
 
-        if key_event & .BACKSPACE && state.cursor_start > 0 {
+        if is_pressed(.ESCAPE) || click_outside {
+            active_widget = -1;
+            state.focused = false;
+        }
+
+        if is_pressed(.BACKSPACE, true) && state.cursor_start > 0 {
             for state.cursor_start..state.text.count - 1 {
                 state.text[it - 1] = state.text[it];
             }
@@ -715,19 +778,19 @@ ui_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_location
             if state.text.count   > 0 then state.text.count   -= 1;
         }
 
-        if key_event & .ARROW_RIGHT && state.cursor_start <= state.text.count {
+        if is_pressed(.RIGHT) && state.cursor_start <= state.text.count {
             state.cursor_start += 1;
         }
 
-        if key_event & .ARROW_LEFT && state.cursor_start > 0 {
+        if is_pressed(.LEFT) && state.cursor_start > 0 {
             state.cursor_start -= 1;
         }
 
-        if unicode_text && unicode_text != state.text {
+        if text_codepoint && text_codepoint != state.text {
             begin := slice(state.text, 0, state.cursor_start);
             end   := slice(state.text, state.cursor_start, state.text.count);
 
-            new_value := join(begin, unicode_text, end);
+            new_value := join(begin, text_codepoint, end);
             state.cursor_start += 1;
 
             if state.text {

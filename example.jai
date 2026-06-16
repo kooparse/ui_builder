@@ -32,8 +32,6 @@ window_height   := 800.;
 
 left_down   : bool;
 
-wheel_delta : Vector2;
-
 cascadia: *Font;
 
 dpi_scale := 1.;
@@ -42,10 +40,6 @@ background_texture : GFX_Texture;
 
 frame_start : float;
 dt          : float;
-
-text_scanned : string;
-
-ui_event : UI_Key_Event;
 
 main :: () {
     window_flags := SDL_WindowFlags.SDL_WINDOW_RESIZABLE;
@@ -103,37 +97,30 @@ main :: () {
 
         begin_gfx_frame();
 
+        ui_begin();
+
         event: SDL_Event;
-
-        wheel_delta = .{};
-        text_scanned.count = 0;
-
-        ui_event = 0x0;
 
         while SDL_PollEvent(*event) {
 
             if event.type == {
-
+                case .SDL_KEYUP;    #through;
                 case .SDL_KEYDOWN;
-                    if event.key.keysym.sym == SDL_Keycode.SDLK_BACKSPACE {
-                        ui_event |= .BACKSPACE;
-                    }
+                    down := event.key.state == SDL_PRESSED;
 
-                    if event.key.keysym.sym == SDL_Keycode.SDLK_ESCAPE {
-                        ui_event |= .ESC;
-                    }
-
-                    if event.key.keysym.sym == SDL_Keycode.SDLK_LEFT {
-                        ui_event |= .ARROW_LEFT;
-                    }
-
-                    if event.key.keysym.sym == SDL_Keycode.SDLK_RIGHT {
-                        ui_event |= .ARROW_RIGHT;
+                    if event.key.keysym.sym == {
+                        case .SDLK_ESCAPE;      set_key_event(.ESCAPE, down);
+                        case .SDLK_BACKSPACE;   set_key_event(.BACKSPACE, down);
+                        case .SDLK_RETURN;      set_key_event(.RETURN, down);
+                        case .SDLK_LEFT;        set_key_event(.LEFT, down);
+                        case .SDLK_RIGHT;       set_key_event(.RIGHT, down);
+                        case .SDLK_UP;          set_key_event(.UP, down);
+                        case .SDLK_DOWN;        set_key_event(.DOWN, down);
                     }
 
                 case .SDL_TEXTINPUT;
                     str := to_string(cast(*u8) event.text.text.data);
-                    text_scanned = copy_string(str ,, temp);
+                    send_text_codepoint(str);
 
                 case SDL_WINDOWEVENT;
                     if event.window.event == .SDL_WINDOWEVENT_RESIZED {
@@ -143,8 +130,7 @@ main :: () {
                     }
 
                 case SDL_MOUSEWHEEL;
-                    wheel_delta.x = xx event.wheel.x;
-                    wheel_delta.y = xx event.wheel.y;
+                    ui_set_wheel(cast(float) event.wheel.x, cast(float) event.wheel.y);
 
                 case SDL_MOUSEBUTTONUP;
                     if event.button.button == SDL_BUTTON_LEFT {
@@ -158,6 +144,14 @@ main :: () {
                 case SDL_QUIT; quit = true;
             }
         }
+
+
+        mouse_x, mouse_y: s32;
+        SDL_GetMouseState(*mouse_x, *mouse_y);
+
+        ui_set_mouse_press(left_down);
+        ui_set_mouse(xx mouse_x * dpi_scale, xx mouse_y * dpi_scale);
+
 
         draw_list := make_ui();
         do_gpu_stuff(draw_list);
@@ -184,11 +178,6 @@ WHITE   :: Vector4.{ 1, 1, 1, 1 };
 BLACK   :: Vector4.{ 0, 0, 0, 1 };
 
 make_ui :: () -> UI_Draw_List {
-    ui_begin();
-
-    mouse_x, mouse_y: s32;
-    SDL_GetMouseState(*mouse_x, *mouse_y);
-
     ui_set_theme(Theme.{
         alpha                   = ifx translucent 0.2 else 1.0,
 
@@ -205,12 +194,6 @@ make_ui :: () -> UI_Draw_List {
     });
 
     ui_set_font(cascadia);
-    ui_set_mouse_press(left_down);
-    ui_set_mouse(xx mouse_x * dpi_scale, xx mouse_y * dpi_scale);
-    ui_set_wheel(wheel_delta.x, wheel_delta.y);
-
-    ui_set_event(ui_event);
-    ui_set_text_pressed(text_scanned);
 
     size := Vector2.{ -1, 30 } * dpi_scale;
 
