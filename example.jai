@@ -168,8 +168,7 @@ items           := string.[ "Apple", "Peach", "Banana", "Chocolate", "Tea" ];
 
 mutate_text     : string = "Hey! klasjd fhgeiuhr asd";
 
-menu_3_open       := false;
-checked           := true;
+show_menu_3       := false;
 translucent       := false;
 last_draw_calls   : int;
 last_vertex_count : int;
@@ -214,9 +213,10 @@ make_ui :: () -> UI_Draw_List {
         ui_input(mutate_text);
         set_layout_order(.STACK);
 
-        ui_checkbox(*checked);
+        ui_checkbox(*show_menu_3);
         set_layout_order(.INLINE);
-        ui_label("A checkbox", WHITE);
+        ui_label("Show menu 3", WHITE);
+
 
         set_layout_order(.STACK);
 
@@ -236,10 +236,6 @@ make_ui :: () -> UI_Draw_List {
 
         if ui_button("Alex + Ola = ♥", size) {
             log("click!");
-        }
-
-        if ui_button("Toggle Menu 3", size) {
-            menu_3_open = !menu_3_open;
         }
 
         if begin_collapse("My collapser!") {
@@ -270,8 +266,7 @@ make_ui :: () -> UI_Draw_List {
     }
 
 
-    if menu_3_open {
-
+    if show_menu_3 {
         if begin_window(Rect.{ 600, 450, 400, 300 } * dpi_scale, "menu 3") {
             if ui_button("Button", size) {
                 log("click!");
