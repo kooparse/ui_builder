@@ -176,7 +176,7 @@ Color_Themes :: enum {
 
 mutate_text     : string = "I'm an input text!";
 
-show_menu_3       := false;
+show_color_picker := false;
 translucent       := false;
 last_draw_calls   : int;
 last_vertex_count : int;
@@ -197,7 +197,7 @@ make_ui :: () -> UI_Draw_List {
 
     ui_set_theme(Theme.{
         color                   = THEMES[chosen_theme],
-        alpha                   = ifx translucent 0.2 else 1.0,
+        alpha                   = ifx translucent 0.4 else 1.0,
 
         window_title_bar_height = DEFAULT_THEME.window_title_bar_height * dpi_scale,
         resize_size             = DEFAULT_THEME.resize_size             * dpi_scale,
@@ -238,9 +238,9 @@ make_ui :: () -> UI_Draw_List {
             ui_input(mutate_text);
             set_layout_order(.STACK);
 
-            ui_checkbox(*show_menu_3);
+            ui_checkbox(*show_color_picker);
             set_layout_order(.INLINE);
-            ui_label("Show menu 3");
+            ui_label("Show Color Picker");
 
 
             set_layout_order(.STACK);
@@ -250,14 +250,6 @@ make_ui :: () -> UI_Draw_List {
             ui_label("Translucent");
 
             set_layout_order(.STACK);
-
-            ui_separator(1 * dpi_scale);
-
-            if ui_radio(enum_names(Color_Themes), *chosen_theme) {
-                log("Theme choosen: %", enum_names(Color_Themes)[chosen_theme]);
-            }
-
-            ui_separator(1 * dpi_scale);
 
             if ui_button("Alex + Ola = ♥", size) {
                 log("click!");
@@ -286,18 +278,24 @@ make_ui :: () -> UI_Draw_List {
         end_window();
     }
 
-    if begin_window(Rect.{ 600, 10, 150, 400 } * dpi_scale, "menu 2") {
-        if ui_button("Button", size) {
-            log("click!");
+    if begin_window(Rect.{ 600, 10, 250, 400 } * dpi_scale, "menu 2") {
+        ui_separator(1 * dpi_scale);
+
+        if ui_radio(enum_names(Color_Themes), *chosen_theme) {
+            log("Theme choosen: %", enum_names(Color_Themes)[chosen_theme]);
         }
+
+        ui_separator(1 * dpi_scale);
+
+
 
         end_window();
     }
 
 
-    if show_menu_3 {
-        if begin_window(Rect.{ 600, 450, 400, 300 } * dpi_scale, "menu 3") {
-            if ui_button("Button", size) {
+    if show_color_picker {
+        if begin_window(Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
+            if ui_button("OK!", size) {
                 log("click!");
             }
 

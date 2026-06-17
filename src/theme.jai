@@ -74,7 +74,7 @@ Theme :: struct {
     checkbox_size           := 40.;
 
     margin_x                := 3.;
-    margin_y                := 3.;
+    margin_y                := 6.;
 
     button_padding          := 16.;
 
