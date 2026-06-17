@@ -41,6 +41,7 @@ background_texture : GFX_Texture;
 frame_start : float;
 dt          : float;
 
+
 main :: () {
     window_flags := SDL_WindowFlags.SDL_WINDOW_RESIZABLE;
 
@@ -166,7 +167,14 @@ selected        := -1;
 radio_selected  := 0;
 items           := string.[ "Apple", "Peach", "Banana", "Chocolate", "Tea" ];
 
-mutate_text     : string = "Hey! klasjd fhgeiuhr asd";
+chosen_theme := 0;
+Color_Themes :: enum {
+    GRUVBOX_DARK;
+    GRUVBOX_LIGHT;
+    LIPKO;
+};
+
+mutate_text     : string = "I'm an input text!";
 
 show_menu_3       := false;
 translucent       := false;
@@ -176,8 +184,19 @@ last_vertex_count : int;
 WHITE   :: Vector4.{ 1, 1, 1, 1 };
 BLACK   :: Vector4.{ 0, 0, 0, 1 };
 
+TABS :: enum {
+    TAB_1;
+    TAB_2;
+    TAB_3;
+    TAB_4;
+};
+current_tab := TABS.TAB_1;
+
+THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, LIPKO ];
 make_ui :: () -> UI_Draw_List {
+
     ui_set_theme(Theme.{
+        color                   = THEMES[chosen_theme],
         alpha                   = ifx translucent 0.2 else 1.0,
 
         window_title_bar_height = DEFAULT_THEME.window_title_bar_height * dpi_scale,
@@ -201,57 +220,67 @@ make_ui :: () -> UI_Draw_List {
         dt_fmt  := FormatFloat.{ value = dt * 1000, trailing_width = 0 };
         gpu_fmt := FormatFloat.{ value = get_last_frame_gpu_time() * 1000, trailing_width = 1 };
 
-        ui_label(tprint("CPU % / GPU %", dt_fmt, gpu_fmt), WHITE);
-        ui_label(tprint("Draw calls: %", last_draw_calls), WHITE);
-        ui_label(tprint("Vertex count: %", last_vertex_count), WHITE);
-
-        placeholder := "Choose...";
-        selected     = ui_select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
-
-        ui_label("Input", WHITE);
-        set_layout_order(.INLINE);
-        ui_input(mutate_text);
-        set_layout_order(.STACK);
-
-        ui_checkbox(*show_menu_3);
-        set_layout_order(.INLINE);
-        ui_label("Show menu 3", WHITE);
+        ui_label(tprint("CPU % / GPU %", dt_fmt, gpu_fmt));
+        ui_label(tprint("Draw calls: %", last_draw_calls));
+        ui_label(tprint("Vertex count: %", last_vertex_count));
 
 
-        set_layout_order(.STACK);
-
-        ui_checkbox(*translucent);
-        set_layout_order(.INLINE);
-        ui_label("Translucent", WHITE);
-
-        set_layout_order(.STACK);
-
-        ui_separator(1 * dpi_scale);
-
-        if ui_radio(items, *radio_selected) {
-            log("Fruit choosen: %", items[radio_selected]);
+        if ui_tab(enum_names(TABS), xx *current_tab) {
+            log("Select Tab: %", enum_names(TABS)[current_tab]);
         }
 
-        ui_separator(1 * dpi_scale);
+        if current_tab == .TAB_1 {
+            placeholder := "Choose...";
+            selected     = ui_select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
 
-        if ui_button("Alex + Ola = ♥", size) {
-            log("click!");
-        }
+            ui_label("Input");
+            set_layout_order(.INLINE);
+            ui_input(mutate_text);
+            set_layout_order(.STACK);
 
-        if begin_collapse("My collapser!") {
-            if ui_button("Ola ♥") {
+            ui_checkbox(*show_menu_3);
+            set_layout_order(.INLINE);
+            ui_label("Show menu 3");
+
+
+            set_layout_order(.STACK);
+
+            ui_checkbox(*translucent);
+            set_layout_order(.INLINE);
+            ui_label("Translucent");
+
+            set_layout_order(.STACK);
+
+            ui_separator(1 * dpi_scale);
+
+            if ui_radio(enum_names(Color_Themes), *chosen_theme) {
+                log("Theme choosen: %", enum_names(Color_Themes)[chosen_theme]);
+            }
+
+            ui_separator(1 * dpi_scale);
+
+            if ui_button("Alex + Ola = ♥", size) {
                 log("click!");
             }
 
-            end_collapse();
-        }
+            if begin_collapse("My collapser!") {
+                if ui_button("Ola ♥") {
+                    log("click!");
+                }
 
-        for 1..15 {
-            set_layout_order(.COLUMNS, 2);
-
-            if ui_button(tprint("button %", it), size) {
-                log("click! %", it);
+                end_collapse();
             }
+
+            for 1..15 {
+                set_layout_order(.COLUMNS, 2);
+
+                if ui_button(tprint("button %", it), size) {
+                    log("click! %", it);
+                }
+            }
+
+        } else {
+            ui_label(tprint("YOU ARE ON TAB NUMBER %", current_tab));
         }
 
         end_window();
@@ -428,12 +457,10 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
     {
         lock_buffer(*quad_buffer, .WRITE_AND_FLUSH);
 
-        white := Vector4.{ 1, 1, 1, 1 };
-
-        p0 := UI_Vertex.{ position = xy(0, 0), color = white, uv = xy(0, 0) };
-        p1 := UI_Vertex.{ position = xy(window_width * dpi_scale, 0), color = white, uv = xy(1, 0) };
-        p2 := UI_Vertex.{ position = xy(window_width * dpi_scale, window_height * dpi_scale), color = white, uv = xy(1, 1) };
-        p3 := UI_Vertex.{ position = xy(0, window_height * dpi_scale), color = white, uv = xy(0, 1)};
+        p0 := UI_Vertex.{ position = xy(0, 0), color = WHITE, uv = xy(0, 0) };
+        p1 := UI_Vertex.{ position = xy(window_width * dpi_scale, 0), color = WHITE, uv = xy(1, 0) };
+        p2 := UI_Vertex.{ position = xy(window_width * dpi_scale, window_height * dpi_scale), color = WHITE, uv = xy(1, 1) };
+        p3 := UI_Vertex.{ position = xy(0, window_height * dpi_scale), color = WHITE, uv = xy(0, 1)};
 
         quad_vertices := UI_Vertex.[ p0, p1, p2, p0, p2, p3 ];
 

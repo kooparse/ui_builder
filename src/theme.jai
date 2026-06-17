@@ -11,6 +11,51 @@ Theme_State :: struct {
     disabled : UI_Theme;
 };
 
+Color_Theme :: struct {
+    bg            : Vector4;
+    fg            : Vector4;
+    border        : Vector4;
+    text          : Vector4;
+    accent        : Vector4;
+    text_muted    : Vector4;
+};
+
+hex :: (hex: u32) -> Vector4 {
+    r := (cast(float) (hex >> 16) & 0xFF) / 255.0;
+    g := (cast(float) (hex >> 8) & 0xFF)  / 255.0;
+    b := (cast(float) (hex >> 0) & 0xFF)  / 255.0;
+
+    return xyzw(r, g, b, 1.0);
+}
+
+GRUVBOX_DARK :: Color_Theme.{
+    bg          = #run hex(0x1d2021),
+    fg          = #run hex(0x3c3836),
+    text        = #run hex(0xebdbb2),
+    text_muted  = #run hex(0x928374),
+    border      = #run hex(0x504945),
+    accent      = #run hex(0x7daea3),
+};
+
+LIPKO :: Color_Theme.{
+    bg          = #run hex(0x427b58),
+    fg          = #run hex(0x076678),
+
+    text        = #run hex(0xebdbb2),
+    text_muted  = #run hex(0x928374),
+    border      = #run hex(0x076678),
+    accent      = #run hex(0xd79921),
+};
+
+GRUVBOX_LIGHT :: Color_Theme.{
+    bg          = #run hex(0xfbf1c7),
+    fg          = #run hex(0xa89984),
+    text        = #run hex(0x654735),
+    text_muted  = #run hex(0xa89984),
+    border      = #run hex(0xbdae93),
+    accent      = #run hex(0x45707a),
+};
+
 Theme :: struct {
     ui_scaler               := 1.0;
     alpha                   := 1.0;
@@ -36,6 +81,8 @@ Theme :: struct {
     text_size               := 16.;
 
     window_content := Theme_State.{};
+
+    color := LIPKO;
 
     button_color    := Vector4.{ 0.3, 0.3, 0.9, 1 };
     window_color    := Vector4.{ 0.2, 0.7, 0.3, 1 };
