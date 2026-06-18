@@ -39,7 +39,11 @@ dpi_scale := 1.;
 background_texture : GFX_Texture;
 
 frame_start : float;
+frame_count : int;
 dt          : float;
+
+cpu_time        : float;
+gpu_time        : float;
 
 
 main :: () {
@@ -90,11 +94,15 @@ main :: () {
     while !quit {
         reset_temporary_storage();
 
-        now     := cast(float) seconds_since_init();
-        dt       = now - frame_start;
-        frame_start = now;
+        {
+            now     := cast(float) seconds_since_init();
+            dt       = now - frame_start;
 
-        // if dt * 1000 > 20 then log("SPIKE!");
+            frame_start  = now;
+            frame_count += 1;
+
+            // if dt * 1000 > 20 then log("SPIKE!");
+        }
 
         begin_gfx_frame();
 
@@ -193,8 +201,8 @@ TABS :: enum {
 current_tab := TABS.TAB_1;
 
 THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, LIPKO ];
-make_ui :: () -> UI_Draw_List {
 
+make_ui :: () -> UI_Draw_List {
     ui_set_theme(Theme.{
         color                   = THEMES[chosen_theme],
         alpha                   = ifx translucent 0.4 else 1.0,
@@ -215,10 +223,15 @@ make_ui :: () -> UI_Draw_List {
 
     size := Vector2.{ -1, 30 } * dpi_scale;
 
-    if begin_window(Rect.{ 10, 10, 450, 400 } * dpi_scale, "menu 1") {
+    if window_begin(Rect.{ 10, 10, 450, 400 } * dpi_scale, "menu 1") {
 
-        dt_fmt  := FormatFloat.{ value = dt * 1000, trailing_width = 0 };
-        gpu_fmt := FormatFloat.{ value = get_last_frame_gpu_time() * 1000, trailing_width = 1 };
+        if (frame_count % 8 == 0) {
+            cpu_time = dt * 1000;
+            gpu_time = get_last_frame_gpu_time() * 1000;
+        }
+
+        dt_fmt  := FormatFloat.{ value = cpu_time, trailing_width = 0 };
+        gpu_fmt := FormatFloat.{ value = gpu_time, trailing_width = 1 };
 
         ui_label(tprint("CPU % / GPU %", dt_fmt, gpu_fmt));
         ui_label(tprint("Draw calls: %", last_draw_calls));
@@ -275,10 +288,10 @@ make_ui :: () -> UI_Draw_List {
             ui_label(tprint("YOU ARE ON TAB NUMBER %", current_tab));
         }
 
-        end_window();
+        window_end();
     }
 
-    if begin_window(Rect.{ 600, 10, 250, 400 } * dpi_scale, "menu 2") {
+    if window_begin(Rect.{ 600, 10, 250, 400 } * dpi_scale, "menu 2") {
         ui_separator(1 * dpi_scale);
 
         if ui_radio(enum_names(Color_Themes), *chosen_theme) {
@@ -289,17 +302,17 @@ make_ui :: () -> UI_Draw_List {
 
 
 
-        end_window();
+        window_end();
     }
 
 
     if show_color_picker {
-        if begin_window(Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
+        if window_begin(Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
             if ui_button("OK!", size) {
                 log("click!");
             }
 
-            end_window();
+            window_end();
         }
 
     }

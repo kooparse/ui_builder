@@ -4,12 +4,18 @@
 
 
     TODO:
-    - rename many things, ui_id...
-    - no allocation for stack, clips etc? (not sure it's needed...).
-
     - better understanding for scrollbar
     - better understanding for rounded corner.
     - Should makes radius samples relative to size.
+
+    - Bug when we scroll then resize the area, the content is scrolled even tho we have the space.
+    - Do button behavior
+    - Finish input text
+    - Get proper color state.
+    - framerate in example check every 2 secs.
+    - we can do a better job with ley delay/rate (the code is too complex/big for what it does).
+    - design tab area. (another background too?).
+    - have collapser area (with another background?)
 
     Blog post:
 
@@ -60,13 +66,6 @@ UV_DISCARD :: Vector2.{ 0, 0 };
 
 UI_ID      :: int;
 UI_Texture :: *void;
-
-UI_Modifiers :: enum_flags {
-    CTRL;
-    SHIFT;
-    ALT;
-}
-
 
 
 key_count       :: #run enum_names(UI_Key).count;
@@ -424,7 +423,7 @@ get_draw_list :: () -> UI_Draw_List {
     return draw_list;
 }
 
-begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
+window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     id    := ui_id(loc, "_full_region");
     state := get_widget_state(Window_State, id, default_rect = region);
 
@@ -507,24 +506,24 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
     resizer_rect.h  = theme.resize_size;
 
     bg_color     := ifx is_topmost then theme.color.bg else darken(theme.color.bg, 5);
-
     draw_rect(state.rect, bg_color, .ROUND_ALL);
 
     // Draw title bar.
-    title_color := theme.color.fg;
+    if title {
+        title_color := theme.color.fg;
 
-    text_size := theme.window_title_bar_height * 0.5;
-    title_width, title_height := get_text_extents_v2(font, title, xx text_size);
+        text_size := theme.window_title_bar_height * 0.5;
+        title_width, title_height := get_text_extents_v2(font, title, xx text_size);
 
-    x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
-    y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
+        x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
+        y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
 
-    draw_rect(title_rect, title_color, .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER);
-    draw_text(title, x, y, text_size, theme.color.text);
+        draw_rect(title_rect, title_color, .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER);
+        draw_text(title, x, y, text_size, theme.color.text);
+    }
 
     // Draw resizer.
     draw_rect(resizer_rect, theme.resizer.normal.bg_color, .ROUND_ALL);
-
     draw_outline(state.rect, theme.color.border, theme.border_width, .ROUND_ALL);
 
     layer_rect   := state.rect;
@@ -544,8 +543,7 @@ begin_window :: (region: Rect, title: string, loc := #caller_location) -> bool {
     return state.open;
 }
 
-// rename window_end().
-end_window :: () {
+window_end :: () {
     pop_clip();
     pop_layout();
     pop_layer();
@@ -633,7 +631,6 @@ ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
     active_tab_color.fg = theme.color.accent;
 
     for tabs {
-
         color := ifx it_index == tab_index.* active_tab_color else theme.color;
 
         if ui_button(it, .{ -1, 50 }, color = *color) {
@@ -1340,7 +1337,7 @@ alloc_space :: (widget_size: Vector2) -> Rect {
                 }
         }
     } else {
-        // I don't like this tho....
+
         if order == .COLUMNS {
             col_width := (layout.rect.w) / max(1, columns);
             size.x     = col_width - theme.margin_x;
