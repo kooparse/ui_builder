@@ -32,7 +32,7 @@
 #load "font.jai";
 
 // Context.
-theme            := DEFAULT_THEME;
+theme := DEFAULT_THEME;
 
 UI_Key :: enum {
     ESCAPE;
@@ -277,23 +277,23 @@ pop_id :: inline () {
 
 
 
-ui_set_theme :: (given_theme: Theme) {
+set_theme :: (given_theme: Theme) {
     theme = given_theme;
 }
 
-ui_set_font :: (font_to_set: *Font, texture_atlas: *void) {
+set_font :: (font_to_set: *Font, texture_atlas: *void) {
     font            = font_to_set;
     current_texture = texture_atlas;
 }
 
-ui_set_mouse_press :: (left: bool, right := false) {
+set_mouse_press :: (left: bool, right := false) {
     prev_left_pressed = left_pressed;
 
     left_pressed      = left;
     right_pressed     = right;
 }
 
-ui_set_mouse :: (x: float, y: float) {
+set_mouse :: (x: float, y: float) {
     delta_x = x - mouse_x;
     delta_y = y - mouse_y;
 
@@ -301,7 +301,7 @@ ui_set_mouse :: (x: float, y: float) {
     mouse_y = y;
 }
 
-ui_set_wheel :: (x: float, y: float) {
+set_wheel :: (x: float, y: float) {
     wheel_x = x;
     wheel_y = y;
 }
@@ -655,7 +655,7 @@ ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
 
         color := ifx it_index == tab_index.* active_tab_color else theme.color;
 
-        if ui_button(it, .{ -1, 50 }, color = *color) {
+        if button(it, .{ -1, 50 }, color = *color) {
             tab_index.* = it_index;
             modified = true;
         }
@@ -665,7 +665,7 @@ ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
 
 }
 
-ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) -> int {
+select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) -> int {
     id      := ui_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 
@@ -737,7 +737,7 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
             push_id(it_index);
             defer pop_id();
 
-            if ui_button(it, size) { // @todo: fix id.
+            if button(it, size) { // @todo: fix id.
                 value       = it_index;
                 state.open  = false;
             }
@@ -755,16 +755,16 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
     return value;
 }
 
-ui_label :: (label: string, label_size := 0., loc := #caller_location) {
+label :: (text: string, label_size := 0., loc := #caller_location) {
     text_size := ifx label_size <= 0 theme.text_size else label_size;
 
-    width, height := get_text_extents_v2(font, label, xx text_size);
+    width, height := get_text_extents_v2(font, text, xx text_size);
     rect := alloc_space(xy(width, height));
 
-    draw_text(label, rect.x, rect.y, text_size, theme.color.text);
+    draw_text(text, rect.x, rect.y, text_size, theme.color.text);
 }
 
-ui_separator :: (height: float) {
+separator :: (height: float) {
     layout := current_layout();
 
     rect := alloc_space(.{ layout.rect.w, height + theme.content_padding * 2 });
@@ -781,7 +781,7 @@ send_text_codepoint :: (codepoint: string) {
     text_codepoint = copy_string(codepoint);
 }
 
-ui_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_location) -> modified: bool, new_string: string {
+text_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_location) -> modified: bool, new_string: string {
     id              := ui_id(loc);
     state, is_new   := get_widget_state(Input_State, id);
 
@@ -901,7 +901,7 @@ ui_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_location
     return false, state.text;
 }
 
-ui_radio :: (items: [] string, index: *int, loc := #caller_location) -> bool {
+radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> bool {
     changed := false;
 
     for items {
@@ -910,12 +910,12 @@ ui_radio :: (items: [] string, index: *int, loc := #caller_location) -> bool {
 
         checked := it_index == index.*;
 
-        if ui_checkbox(*checked) {
+        if checkbox(*checked) {
             changed = true;
         }
 
         set_layout_order(.INLINE);
-        ui_label(it);
+        label(it);
         set_layout_order(.STACK);
 
         if checked {
@@ -927,7 +927,7 @@ ui_radio :: (items: [] string, index: *int, loc := #caller_location) -> bool {
 }
 
 // @todo: we don't need state for that...
-ui_checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
+checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
     id      := ui_id(loc);
     state   := get_widget_state(Widget_State, id);
 
@@ -960,7 +960,7 @@ ui_checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
     return changed;
 }
 
-ui_button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, color : *Color_Theme = null) -> bool {
+button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, color : *Color_Theme = null) -> bool {
     id          := ui_id(loc, label);
     using state := get_widget_state(Widget_State, id);
 

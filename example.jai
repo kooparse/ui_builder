@@ -141,11 +141,10 @@ main :: () {
                     if event.window.event == .SDL_WINDOWEVENT_RESIZED {
                         window_width  = xx event.window.data1;
                         window_height = xx event.window.data2;
-                        log("WINDOW RESIZE! :: % :: %", window_width, window_height);
                     }
 
                 case SDL_MOUSEWHEEL;
-                    ui_set_wheel(cast(float) event.wheel.x, cast(float) event.wheel.y);
+                    set_wheel(cast(float) event.wheel.x, cast(float) event.wheel.y);
 
                 case SDL_MOUSEBUTTONUP;
                     if event.button.button == SDL_BUTTON_LEFT {
@@ -164,8 +163,8 @@ main :: () {
         mouse_x, mouse_y: s32;
         SDL_GetMouseState(*mouse_x, *mouse_y);
 
-        ui_set_mouse_press(left_down);
-        ui_set_mouse(xx mouse_x * dpi_scale, xx mouse_y * dpi_scale);
+        set_mouse_press(left_down);
+        set_mouse(xx mouse_x * dpi_scale, xx mouse_y * dpi_scale);
 
 
         draw_list := make_ui();
@@ -209,7 +208,8 @@ current_tab := TABS.TAB_1;
 THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, LIPKO ];
 
 make_ui :: () -> UI_Draw_List {
-    ui_set_theme(Theme.{
+
+    set_theme(Theme.{
         color                   = THEMES[chosen_theme],
         alpha                   = ifx translucent 0.4 else 1.0,
 
@@ -225,7 +225,7 @@ make_ui :: () -> UI_Draw_List {
         input_cursor_size       = DEFAULT_THEME.input_cursor_size       * dpi_scale,
     });
 
-    ui_set_font(our_font, *font_atlas_texture);
+    set_font(our_font, *font_atlas_texture);
 
     if our_font.modified {
         our_font.modified = false;
@@ -246,9 +246,9 @@ make_ui :: () -> UI_Draw_List {
         dt_fmt  := FormatFloat.{ value = cpu_time, trailing_width = 0 };
         gpu_fmt := FormatFloat.{ value = gpu_time, trailing_width = 1 };
 
-        ui_label(tprint("CPU % / GPU %", dt_fmt, gpu_fmt));
-        ui_label(tprint("Draw calls: %", last_draw_calls));
-        ui_label(tprint("Vertex count: %", last_vertex_count));
+        label(tprint("CPU % / GPU %", dt_fmt, gpu_fmt));
+        label(tprint("Draw calls: %", last_draw_calls));
+        label(tprint("Vertex count: %", last_vertex_count));
 
 
         if ui_tab(enum_names(TABS), xx *current_tab) {
@@ -257,32 +257,32 @@ make_ui :: () -> UI_Draw_List {
 
         if current_tab == .TAB_1 {
             placeholder := "Choose...";
-            selected     = ui_select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
+            selected     = select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
 
-            ui_label("Input");
+            label("Input");
             set_layout_order(.INLINE);
-            ui_input(mutate_text);
+            text_input(mutate_text);
             set_layout_order(.STACK);
 
-            ui_checkbox(*show_color_picker);
+            checkbox(*show_color_picker);
             set_layout_order(.INLINE);
-            ui_label("Show Color Picker");
+            label("Show Color Picker");
 
-
-            set_layout_order(.STACK);
-
-            ui_checkbox(*translucent);
-            set_layout_order(.INLINE);
-            ui_label("Translucent");
 
             set_layout_order(.STACK);
 
-            if ui_button("Alex + Ola = ♥", size) {
+            checkbox(*translucent);
+            set_layout_order(.INLINE);
+            label("Translucent");
+
+            set_layout_order(.STACK);
+
+            if button("Alex + Ola = ♥", size) {
                 log("click!");
             }
 
             if begin_collapse("My collapser!") {
-                if ui_button("Ola ♥") {
+                if button("Ola ♥") {
                     log("click!");
                 }
 
@@ -292,28 +292,26 @@ make_ui :: () -> UI_Draw_List {
             for 1..15 {
                 set_layout_order(.COLUMNS, 2);
 
-                if ui_button(tprint("button %", it), size) {
+                if button(tprint("button %", it), size) {
                     log("click! %", it);
                 }
             }
 
         } else {
-            ui_label(tprint("YOU ARE ON TAB NUMBER %", current_tab));
+            label(tprint("YOU ARE ON TAB NUMBER %", current_tab));
         }
 
         window_end();
     }
 
     if window_begin(Rect.{ 600, 10, 250, 400 } * dpi_scale, "menu 2") {
-        ui_separator(1 * dpi_scale);
+        separator(1 * dpi_scale);
 
-        if ui_radio(enum_names(Color_Themes), *chosen_theme) {
+        if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
             log("Theme choosen: %", enum_names(Color_Themes)[chosen_theme]);
         }
 
-        ui_separator(1 * dpi_scale);
-
-
+        separator(1 * dpi_scale);
 
         window_end();
     }
@@ -321,7 +319,7 @@ make_ui :: () -> UI_Draw_List {
 
     if show_color_picker {
         if window_begin(Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
-            if ui_button("OK!", size) {
+            if button("OK!", size) {
                 log("click!");
             }
 
@@ -503,7 +501,7 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
 #import "Hash";
 #import "Pixel_Maker"(MAX_FRAME_IN_FLIGHT = MAX_FRAME_IN_FLIGHT);
 
-using UI :: #import, file "./src/module.jai";
+#import, file "./src/module.jai";
 
 using, except(NO) SDL :: #import "SDL";
 
