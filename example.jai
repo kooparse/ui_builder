@@ -32,7 +32,7 @@ window_height   := 800.;
 
 left_down   : bool;
 
-cascadia: *Font;
+our_font: *Font;
 
 dpi_scale := 1.;
 
@@ -44,6 +44,8 @@ dt          : float;
 
 cpu_time        : float;
 gpu_time        : float;
+
+font_atlas_texture      : GFX_Texture;
 
 
 main :: () {
@@ -89,7 +91,12 @@ main :: () {
         assert(background_texture.handle != null);
     }
 
-    cascadia = bake_font("cascadia_mono", "./cascadia_mono.ttf");
+    {
+        our_font = bake_font("./cascadia_mono.ttf", white_2x2_pixel = true);
+
+        bitmap, width, height := get_raw_bitmap_texture(our_font);
+        font_atlas_texture     = create_texture_2d_rgba8("cascadia_modo", xx bitmap, xx width, xx height, mipmapped=false);
+    }
 
     while !quit {
         reset_temporary_storage();
@@ -109,7 +116,6 @@ main :: () {
         ui_begin();
 
         event: SDL_Event;
-
         while SDL_PollEvent(*event) {
 
             if event.type == {
@@ -219,7 +225,14 @@ make_ui :: () -> UI_Draw_List {
         input_cursor_size       = DEFAULT_THEME.input_cursor_size       * dpi_scale,
     });
 
-    ui_set_font(cascadia);
+    ui_set_font(our_font, *font_atlas_texture);
+
+    if our_font.modified {
+        our_font.modified = false;
+
+        bitmap, width, height := get_raw_bitmap_texture(our_font);
+        replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
+    }
 
     size := Vector2.{ -1, 30 } * dpi_scale;
 
@@ -490,16 +503,8 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
 #import "Hash";
 #import "Pixel_Maker"(MAX_FRAME_IN_FLIGHT = MAX_FRAME_IN_FLIGHT);
 
+using UI :: #import, file "./src/module.jai";
+
 using, except(NO) SDL :: #import "SDL";
 
 #load "shader.jai";
-#load "src/module.jai";
-
-// @incomplete: this is not correct for all cases, but works for most
-round_pixel :: inline (x : float) -> float {
-    if x < 0 {
-        return cast(float) cast(int) (x - 0.5);
-    } else {
-        return cast(float) cast(int) (x + 0.5);
-    }
-}

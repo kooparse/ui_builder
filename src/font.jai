@@ -4,14 +4,9 @@
 
         - Should implement kerning.
         - Should store texture packer on heap.
-        - texture_atlas is GFX_Texture, it should be backend agnostic.
 */
 
-#scope_file;
-
-font_catalog : Table(string, Font);
-
-#scope_module;
+#scope_export;
 
 DEFAULT_FT_SIZE :: 18;
 
@@ -23,11 +18,11 @@ Font :: struct {
     ttf_file      : string;
 
     glyph_table   : Table(u32, Glyph_Info);
+    modified      : bool;
 
-    font_atlas      : Font_Atlas;
-    texture_atlas   : GFX_Texture;
+    font_atlas    : Font_Atlas;
 
-    white_pixel     : Vector2;
+    white_pixel_position : Vector2;
 }
 
 Glyph_Info :: struct {
@@ -35,7 +30,7 @@ Glyph_Info :: struct {
     pos_in_atlas: Rect_Pos;
 }
 
-bake_font :: (font_name: string, ttf_filepath: string) -> *Font {
+bake_font :: (ttf_filepath: string, white_2x2_pixel := false) -> *Font {
     content := read_entire_file(ttf_filepath);
     count32 := cast,trunc(s32) content.count;
 
@@ -51,19 +46,21 @@ bake_font :: (font_name: string, ttf_filepath: string) -> *Font {
     }
 
 
-    WHITE_PIXELS :: u8.[255, 255, 255, 255];
-    white_pos := push_white_bitmap_and_set_alpha_values(*font_atlas, 2, 2, xx *WHITE_PIXELS);
+    if white_2x2_pixel {
+        WHITE_PIXELS :: u8.[255, 255, 255, 255];
+        white_pos := push_white_bitmap_and_set_alpha_values(*font_atlas, 2, 2, xx *WHITE_PIXELS);
 
-    font.white_pixel = Vector2.{
-        (white_pos.x + 0.5) / cast(float) font_atlas.total_width,
-        (white_pos.y + 0.5) / cast(float) font_atlas.total_height,
-    };
+        font.white_pixel_position = Vector2.{
+            (white_pos.x + 0.5) / cast(float) font_atlas.total_width,
+            (white_pos.y + 0.5) / cast(float) font_atlas.total_height,
+        };
+    }
 
-    texture_name := tprint("Font Atlas %", font_name);
-    texture_atlas = create_texture_2d_rgba8(texture_name, xx font_atlas.bitmap.data, xx font_atlas.total_width, xx font_atlas.total_height, mipmapped=false);
+    return font;
+}
 
-    new_font := table_add(*font_catalog, font_name, font.*);
-    return new_font;
+get_raw_bitmap_texture :: (font: *Font) -> *void, int, int {
+    return font.font_atlas.bitmap, font.font_atlas.total_width, font.font_atlas.total_height;
 }
 
 find_or_add_glyph :: (using font: *Font, char: u32, font_size: int) -> Glyph_Info {
@@ -105,23 +102,12 @@ find_or_add_glyph :: (using font: *Font, char: u32, font_size: int) -> Glyph_Inf
         advance = advance,
     };
 
-    replace_texture_region(
-        *texture_atlas,
-        .{0,0,0},
-        .{xx font_atlas.total_width, xx font_atlas.total_height, 1},
-        0, 0,
-        *font_atlas.bitmap
-    );
+    modified = true;
 
     return glyph.*;
 }
 
-get_font :: (font_name: string) -> *Font {
-    font := table_find_pointer(*font_catalog, font_name);
-    assert(font != null);
 
-    return font;
-}
 
 Font_Metrics :: struct {
     pixel_size  : u32;
@@ -148,14 +134,6 @@ get_font_metrics :: (using font : *Font, font_size : u32) -> Font_Metrics {
 
     return result;
 }
-
-get_font_metrics :: inline (font_name : string, size : u32) -> Font_Metrics {
-    font := get_font(font_name);
-    assert (font != null);
-
-    return get_font_metrics(font, size);
-}
-
 
 /// @Note: If text has more than one line, it returns the width of the longest one.
 get_text_extents_v2 :: (using font: *Font, text : string, size : int) -> width: float, height: float {
@@ -250,7 +228,7 @@ Rect_Pos :: struct {
 Texture_Packer :: struct($WIDTH: s64, $HEIGHT: s64) {
     total_width   : int = WIDTH;
     total_height  : int = HEIGHT;
-    bitmap        : [WIDTH][HEIGHT]u32;
+    bitmap        : *[WIDTH][HEIGHT]u32;
     cursor        : struct { x, y: int; };
 
     largest_height_in_row: int;
@@ -259,8 +237,12 @@ Texture_Packer :: struct($WIDTH: s64, $HEIGHT: s64) {
 push_white_bitmap_and_set_alpha_values :: (using texture_packer: *Texture_Packer,
 width: int, height: int, data: *u8) -> Rect_Pos {
 
+    if bitmap == null {
+        bitmap = New([WIDTH][HEIGHT]u32, true);
+    }
+
     if width > total_width || height > total_height {
-        crash("Given bitmap is too large.");
+        assert(false, "Given bitmap is too large.");
     }
 
     if cursor.x + width > total_width {
@@ -270,7 +252,7 @@ width: int, height: int, data: *u8) -> Rect_Pos {
     }
 
     if cursor.y + height >= total_height {
-        crash("Texture Packer is full.");
+        assert(false, "Texture Packer is full.");
     }
 
     largest_height_in_row = max(height, largest_height_in_row);
@@ -291,7 +273,7 @@ width: int, height: int, data: *u8) -> Rect_Pos {
             a := data[j * width + i];
             value := cast(u32) 0x00ffffff;
             value |= (cast(u32) a) << 24;
-            bitmap[rect_pos.y + j][rect_pos.x + i] = value;
+            bitmap.*[rect_pos.y + j][rect_pos.x + i] = value;
             j += 1;
         }
 
@@ -339,5 +321,7 @@ check_if_should_wrap :: (using font: *Font, position: Vector2, size: int, word: 
     return false;
 }
 
+#import "File";
 #import "freetype";
 #import "Unicode";
+#import "Math";

@@ -16,6 +16,7 @@
     - we can do a better job with ley delay/rate (the code is too complex/big for what it does).
     - design tab area. (another background too?).
     - have collapser area (with another background?)
+    - fix id!!
 
     Blog post:
 
@@ -26,6 +27,9 @@
 
 */
 
+
+#load "theme.jai";
+#load "font.jai";
 
 // Context.
 theme            := DEFAULT_THEME;
@@ -265,9 +269,9 @@ ui_set_theme :: (given_theme: Theme) {
     theme = given_theme;
 }
 
-ui_set_font :: (font_to_set: *Font) {
+ui_set_font :: (font_to_set: *Font, texture_atlas: *void) {
     font            = font_to_set;
-    current_texture = *font.texture_atlas;
+    current_texture = texture_atlas;
 }
 
 ui_set_mouse_press :: (left: bool, right := false) {
@@ -523,8 +527,8 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     }
 
     // Draw resizer.
-    draw_rect(resizer_rect, theme.resizer.normal.bg_color, .ROUND_ALL);
-    draw_outline(state.rect, theme.color.border, theme.border_width, .ROUND_ALL);
+    draw_rect(resizer_rect, theme.color.fg, .ROUND_ALL);
+    // draw_outline(state.rect, theme.color.border, theme.border_width, .ROUND_ALL);
 
     layer_rect   := state.rect;
     layer_rect.x += theme.content_padding;
@@ -1400,6 +1404,14 @@ pad_rect :: (rect: Rect, pad_x : float, pad_y : float) -> Rect {
     };
 }
 
+// @incomplete: this is not correct for all cases, but works for most
+round_pixel :: inline (x : float) -> float {
+    if x < 0 {
+        return cast(float) cast(int) (x - 0.5);
+    } else {
+        return cast(float) cast(int) (x + 0.5);
+    }
+}
 
 
 
@@ -1766,12 +1778,6 @@ draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vect
             word.data   = line.data + word_start_index;
             word.count  = word_end_index - word_start_index;
 
-            // if check_if_should_wrap(font, position, size, word, pen.x, max_line_width) {
-            //     prev_char    = 0;
-            //     pen.x        = 0;
-            //     pen.y       += line_height;
-            // }
-
             while word.count > 0 {
                 codepoint, _ := utf8_next_character(*word);
                 defer prev_char = codepoint;
@@ -1843,11 +1849,13 @@ internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
 }
 
 
+
 #scope_file;
 
 // @todo: should import font.
-#load "font.jai";
-#load "theme.jai";
 
+#import "Basic";
+#import "Hash_Table";
+#import "Hash";
 #import "Sort";
 #import "String";
