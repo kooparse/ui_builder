@@ -12,11 +12,11 @@
     - Do button behavior
     - Finish input text
     - Get proper color state.
-    - framerate in example check every 2 secs.
     - we can do a better job with ley delay/rate (the code is too complex/big for what it does).
     - design tab area. (another background too?).
     - have collapser area (with another background?)
-    - fix id!!
+    - text_codepoint in io struct... ?
+    - remove font as dependency.
 
     Blog post:
 
@@ -85,6 +85,8 @@ widget_states   : Table(UI_ID, *Widget_State);
 active_widget   : UI_ID = -1; // I want a pointer to the state directly....
 hovered_layer   : UI_ID = -1;
 
+// @todo: explain that.
+context_ids     : [..] UI_ID;
 
 text_codepoint : string;
 
@@ -100,9 +102,9 @@ wheel_x  : float;
 wheel_y  : float;
 
 // The current font.
-font     : *Font;
+font : *Font;
 
-current_depth := 0;
+current_depth := 0; // for layers
 
 // @todo: rename those variables.
 prev_left_pressed  : bool;
@@ -265,6 +267,16 @@ operator == :: (a: Rect, b: Rect) -> bool {
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
+push_id :: inline (id: int) {
+    array_add(*context_ids, id);
+}
+
+pop_id :: inline () {
+    if context_ids then pop(*context_ids);
+}
+
+
+
 ui_set_theme :: (given_theme: Theme) {
     theme = given_theme;
 }
@@ -356,6 +368,9 @@ ui_begin :: () {
     // Reset flat vertices.
     array_reset_keeping_memory(*draw_list.vertices);
     array_reset_keeping_memory(*draw_list.draw_calls);
+
+    // Reset our stack of contextual ids.
+    array_reset_keeping_memory(*context_ids);
 
     {
         swap(*prev_layer_list, *curr_layer_list);
@@ -635,6 +650,9 @@ ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
     active_tab_color.fg = theme.color.accent;
 
     for tabs {
+        push_id(it_index);
+        defer pop_id();
+
         color := ifx it_index == tab_index.* active_tab_color else theme.color;
 
         if ui_button(it, .{ -1, 50 }, color = *color) {
@@ -716,6 +734,9 @@ ui_select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, plac
         size := Vector2.{ layer_rect.w , 60 };
 
         for items {
+            push_id(it_index);
+            defer pop_id();
+
             if ui_button(it, size) { // @todo: fix id.
                 value       = it_index;
                 state.open  = false;
@@ -884,6 +905,9 @@ ui_radio :: (items: [] string, index: *int, loc := #caller_location) -> bool {
     changed := false;
 
     for items {
+        push_id(it_index);
+        defer pop_id();
+
         checked := it_index == index.*;
 
         if ui_checkbox(*checked) {
@@ -1218,7 +1242,12 @@ ui_id :: (loc: Source_Code_Location, extra := "") -> u32 {
     h  = sdbm_hash(*loc.line_number, size_of(type_of(loc.line_number)), h);
     h  = sdbm_hash(*loc.character_number, size_of(type_of(loc.character_number)), h);
 
-    if extra != "" {
+    if context_ids {
+        id := peek(context_ids);
+        h  = sdbm_hash(*id, size_of(type_of(UI_ID)), h);
+    }
+
+    if extra {
         h = sdbm_hash(extra.data, size_of(u8) * extra.count, h);
     }
 
@@ -1851,8 +1880,6 @@ internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
 
 
 #scope_file;
-
-// @todo: should import font.
 
 #import "Basic";
 #import "Hash_Table";
