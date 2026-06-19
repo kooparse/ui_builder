@@ -9,7 +9,6 @@
     - Should makes radius samples relative to size.
 
     - Bug when we scroll then resize the area, the content is scrolled even tho we have the space.
-    - Do button behavior
     - Finish input text
     - Get proper color state.
     - we can do a better job with key delay/rate (the code is too complex/big for what it does).
@@ -440,7 +439,7 @@ get_draw_list :: () -> UI_Draw_List {
 }
 
 window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
-    id    := ui_id(loc, "_full_region");
+    id    := make_id(loc, "_full_region");
     state := get_widget_state(Window_State, id, default_rect = region);
 
     is_new := push_layer(id, state.rect);
@@ -552,7 +551,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
 
     push_layout(layer_rect);
 
-    ui_scrollbar(loc);
+    internal_scrollbar(loc);
 
     push_clip(layer_rect);
 
@@ -566,7 +565,7 @@ window_end :: () {
 }
 
 begin_collapse :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
-    id          := ui_id(loc);
+    id          := make_id(loc);
     state, new  := get_widget_state(Collapse_State, id);
 
     if new state.open = open_by_default;
@@ -577,7 +576,7 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
     rect := alloc_space(size);
     mutate_state(state, rect);
 
-    bg_color, border_color, text_color := get_colors(state.status, theme.color.fg);
+    bg_color := get_color(state.status, theme.color.fg);
 
     font_size                 := size.y * 0.5;
     text_width, text_height   := get_text_extents_v2(font, title, xx font_size);
@@ -596,8 +595,8 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
     if state.open flags = .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER;
 
     draw_rect(rect, bg_color, flags);
-    draw_outline(rect, border_color, theme.border_width, flags);
-    draw_text(title, x, y, font_size, text_color);
+    draw_outline(rect, theme.color.border, theme.border_width, flags);
+    draw_text(title, x, y, font_size, theme.color.text);
 
 
     // Draw arrow.
@@ -622,7 +621,7 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
             p2 = Vector2.{ arrow_rect.x + arrow_rect.w * 0.5, arrow_rect.y };
         }
 
-        push_triangle(p0, p1, p2, border_color);
+        push_triangle(p0, p1, p2, theme.color.border);
     }
 
     if state.open {
@@ -663,7 +662,7 @@ ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
 }
 
 select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) -> int {
-    id      := ui_id(loc);
+    id      := make_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 
     placeholder_text := ifx placeholder placeholder else "<Choose>";
@@ -673,7 +672,7 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
     rect := alloc_space(size);
     mutate_state(state, rect);
 
-    bg_color, border_color, text_color := get_colors(state.status, theme.color.fg);
+    bg_color := get_color(state.status, theme.color.fg);
 
     font_size                 := size.y * 0.5;
     text_width, text_height   := get_text_extents_v2(font, button_label, xx font_size);
@@ -693,8 +692,8 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
     if state.open flags = .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER;
 
     draw_rect(rect, bg_color, flags);
-    draw_outline(rect, border_color, theme.border_width, flags);
-    draw_text(button_label, x, y, font_size, text_color);
+    draw_outline(rect, theme.color.border, theme.border_width, flags);
+    draw_text(button_label, x, y, font_size, theme.color.text);
 
     value := selected;
 
@@ -726,7 +725,7 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
         push_layout(layer_rect);
         defer pop_layout();
 
-        ui_scrollbar(loc);
+        internal_scrollbar(loc);
 
         size := Vector2.{ layer_rect.w , 60 };
 
@@ -734,13 +733,13 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
             push_id(it_index);
             defer pop_id();
 
-            if button(it, size) { // @todo: fix id.
+            if button(it, size) {
                 value       = it_index;
                 state.open  = false;
             }
         }
 
-        draw_outline(dropdown_rect, border_color, theme.border_width, dropdown_flags);
+        draw_outline(dropdown_rect, theme.color.border, theme.border_width, dropdown_flags);
 
         // If click outside the dropdown, we close the dropdown.
         if is_pressed(.MOUSE_LEFT) && (state.status == .NONE) && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
@@ -779,7 +778,7 @@ send_text_codepoint :: (codepoint: string) {
 }
 
 text_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_location) -> modified: bool, new_string: string {
-    id              := ui_id(loc);
+    id              := make_id(loc);
     state, is_new   := get_widget_state(Input_State, id);
 
     if is_new {
@@ -841,10 +840,10 @@ text_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_locati
         }
     }
 
-    bg_color, border_color, text_color := get_colors(state.status, theme.color.fg);
+    bg_color := get_color(state.status, theme.color.fg);
 
     draw_rect(state.rect, bg_color);
-    draw_outline(state.rect, border_color, theme.border_width);
+    draw_outline(state.rect, theme.color.border, theme.border_width);
 
     font_size                 := size.y * 0.5;
     text_width, text_height   := get_text_extents_v2(font, state.text, xx font_size);
@@ -885,11 +884,11 @@ text_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_locati
         blink_speed     := 8.0;
         alpha           := cast(float) (sin(elapsed * blink_speed) + 1.0) * 0.5;
 
-        cursor_color  := lighten(text_color, 20);
+        cursor_color  := lighten(theme.color.text, 20);
         cursor_color.w = alpha;
 
 
-        draw_text(state.text, x, y, font_size, text_color);
+        draw_text(state.text, x, y, font_size, theme.color.text);
         draw_rect(cursor_rect, cursor_color);
     } else {
         draw_text(state.text, x, y, font_size);
@@ -925,7 +924,7 @@ radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> boo
 
 // @todo: we don't need state for that...
 checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
-    id      := ui_id(loc);
+    id      := make_id(loc);
     state   := get_widget_state(Widget_State, id);
 
     checkbox_size := ifx size <= 0 xy(theme.checkbox_size) else xy(size);
@@ -940,7 +939,7 @@ checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
         checked.* = !checked.*;
     }
 
-    inner_color := get_colors(state.status, ifx checked.* then theme.color.accent else theme.color.text_muted);
+    inner_color := get_color(state.status, ifx checked.* then theme.color.accent else theme.color.text_muted);
 
     pos     := xy(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
     radius  := checkbox_size.x * 0.5;
@@ -958,9 +957,8 @@ checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
 }
 
 button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, color : *Color_Theme = null) -> bool {
-    id          := ui_id(loc, label);
+    id          := make_id(loc, label);
     using state := get_widget_state(Widget_State, id);
-
 
     font_size                 := size.y * 0.5;
     text_width, text_height   := get_text_extents_v2(font, label, xx font_size);
@@ -977,12 +975,12 @@ button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, c
 
     colors := ifx color then color.* else theme.color;
 
-    active_btn := status == .FOCUSED || status == .PRESSED;
-    bg_color, _, text_color := get_colors(status, ifx active_btn then colors.accent else colors.fg);
-    _, border_color, _:= get_colors(status, ifx active_btn then colors.accent else colors.border);
+    is_activated := status == .FOCUSED || status == .PRESSED;
+
+    bg_color     := get_color(status, ifx is_activated then colors.accent else colors.fg);
+    border_color := colors.border;
 
     draw_rect(rect, bg_color, .ROUND_ALL);
-    // draw_outline(rect, border_color, theme.border_width, .ROUND_ALL);
 
     text_rect := pad_rect(rect, theme.button_padding, 0);
 
@@ -991,39 +989,21 @@ button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, c
     y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
 
     if text_too_big push_clip(rect);
-    draw_text(label, x, y, font_size, text_color);
+    draw_text(label, x, y, font_size, colors.text);
     if text_too_big pop_clip();
 
     return state.pressed;
 }
 
-get_colors :: (status: Widget_Status, base_color: Vector4) -> Vector4, Vector4, Vector4 {
-    bg_color        := base_color;
-    border_color    := darken(bg_color, 40);
-    text_color      := lighten(bg_color, 90);
-
+get_color :: (status: Widget_Status, color: Vector4) -> Vector4 {
     if status == {
-        case .HOVERED;
-            bg_color     = lighten(bg_color, 10);
-            border_color = lighten(border_color, 10);
-
-            return bg_color, border_color, text_color;
-        case .FOCUSED;
-            bg_color     = lighten(bg_color, 25);
-            border_color = lighten(border_color, 25);
-
-            return bg_color, border_color, text_color;
-
-        case .DOWN; #through;
-        case .PRESSED;
-            bg_color     = lighten(bg_color, 25);
-            border_color = lighten(border_color, 25);
-
-            return bg_color, border_color, text_color;
-        case .DISABLED;
+        case .HOVERED; return lighten(color, 10);
+        case .FOCUSED; return lighten(color, 25);
+        case .DOWN;    #through;
+        case .PRESSED; return lighten(color, 25);
     }
 
-    return bg_color, border_color, text_color;
+    return color;
 }
 
 set_layout_order:: (order: Layout_Order, columns := 0) {
@@ -1090,14 +1070,12 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
     return status;
 }
 
-// @note: Not sure about the name "ui_" ?
-ui_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
-
+internal_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
     if current_layer.prev_layouts.count < current_layer.layouts.count {
         return null;
     }
 
-    id      := ui_id(loc, "_scrollbar");
+    id      := make_id(loc, "_scrollbar");
     state   := get_widget_state(Scrollbar_State, id);
 
     layout := current_layout();
@@ -1137,7 +1115,7 @@ ui_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
 
     mutate_state(state, handle, check_layout = false);
 
-    bg_color, _, _ := get_colors(state.status, ifx state.status != 0 theme.color.accent else theme.color.text_muted);
+    bg_color := get_color(state.status, ifx state.status != 0 theme.color.accent else theme.color.text_muted);
 
     if active_widget == -1 || active_widget == id {
         is_dragging := active_widget == id;
@@ -1234,7 +1212,7 @@ push_triangle :: (p0: Vector2, p1: Vector2, p2: Vector2, color: Vector4, uv0 := 
     array_add(vertices, .{ position = p2, uv = uv2, color = c });
 }
 
-ui_id :: (loc: Source_Code_Location, extra := "") -> u32 {
+make_id :: (loc: Source_Code_Location, extra := "") -> u32 {
     h := sdbm_hash(loc.fully_pathed_filename.data, loc.fully_pathed_filename.count);
     h  = sdbm_hash(*loc.line_number, size_of(type_of(loc.line_number)), h);
     h  = sdbm_hash(*loc.character_number, size_of(type_of(loc.character_number)), h);
