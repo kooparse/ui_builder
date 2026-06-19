@@ -146,13 +146,14 @@ main :: () {
                 case SDL_MOUSEWHEEL;
                     set_wheel(cast(float) event.wheel.x, cast(float) event.wheel.y);
 
-                case SDL_MOUSEBUTTONUP;
-                    if event.button.button == SDL_BUTTON_LEFT {
-                        left_down = false;
-                    }
+                case SDL_MOUSEBUTTONUP; #through;
                 case SDL_MOUSEBUTTONDOWN;
-                    if event.button.button == SDL_BUTTON_LEFT {
-                        left_down = true;
+                    down := event.button.state == SDL_PRESSED;
+
+                    if event.button.button == {
+                        case SDL_BUTTON_LEFT;   set_key_event(.MOUSE_LEFT, down);
+                        case SDL_BUTTON_RIGHT;  set_key_event(.MOUSE_RIGHT, down);
+                        case SDL_BUTTON_MIDDLE; set_key_event(.MOUSE_MIDDLE, down);
                     }
 
                 case SDL_QUIT; quit = true;
@@ -163,9 +164,7 @@ main :: () {
         mouse_x, mouse_y: s32;
         SDL_GetMouseState(*mouse_x, *mouse_y);
 
-        set_mouse_press(left_down);
-        set_mouse(xx mouse_x * dpi_scale, xx mouse_y * dpi_scale);
-
+        set_mouse_position(xx mouse_x * dpi_scale, xx mouse_y * dpi_scale);
 
         draw_list := make_ui();
         do_gpu_stuff(draw_list);

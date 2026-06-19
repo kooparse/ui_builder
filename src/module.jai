@@ -12,7 +12,7 @@
     - Do button behavior
     - Finish input text
     - Get proper color state.
-    - we can do a better job with ley delay/rate (the code is too complex/big for what it does).
+    - we can do a better job with key delay/rate (the code is too complex/big for what it does).
     - design tab area. (another background too?).
     - have collapser area (with another background?)
     - text_codepoint in io struct... ?
@@ -45,6 +45,10 @@ UI_Key :: enum {
     UP;
     DOWN;
 
+    MOUSE_LEFT;
+    MOUSE_RIGHT;
+    MOUSE_MIDDLE;
+
     KEY_C;
     KEY_V;
     KEY_X;
@@ -53,7 +57,6 @@ UI_Key :: enum {
 };
 
 UI_Key_State :: struct {
-    once         : bool;
     down         : bool;
 
     repeat_duration   : float;
@@ -106,11 +109,6 @@ font : *Font;
 
 current_depth := 0; // for layers
 
-// @todo: rename those variables.
-prev_left_pressed  : bool;
-left_pressed       : bool;
-right_pressed      : bool;
-
 // @todo I don't like the name here...
 Draw_Marker :: struct {
     clip_rect    : Rect;
@@ -162,15 +160,13 @@ Layer :: struct {
     clip_stack   : [..] Rect;
 };
 
-Widget_Status :: enum_flags u32 {
-    HOVERED     :: (1 << 0);
-
-    PRESSED     :: (1 << 1);
-
-    FOCUSED     :: (1 << 2);
-    DISABLED    :: (1 << 3);
-
-    ONCE        :: (1 << 4);
+Widget_Status :: enum {
+    NONE;
+    HOVERED;
+    DOWN;
+    PRESSED;
+    FOCUSED;
+    DISABLED;
 };
 
 Widget_State :: struct {
@@ -178,6 +174,8 @@ Widget_State :: struct {
     kind    : Type;
     rect    : Rect;
     status  : Widget_Status;
+
+    pressed : bool; // pressed once.
 };
 
 Window_State :: struct {
@@ -286,14 +284,7 @@ set_font :: (font_to_set: *Font, texture_atlas: *void) {
     current_texture = texture_atlas;
 }
 
-set_mouse_press :: (left: bool, right := false) {
-    prev_left_pressed = left_pressed;
-
-    left_pressed      = left;
-    right_pressed     = right;
-}
-
-set_mouse :: (x: float, y: float) {
+set_mouse_position :: (x: float, y: float) {
     delta_x = x - mouse_x;
     delta_y = y - mouse_y;
 
@@ -304,6 +295,12 @@ set_mouse :: (x: float, y: float) {
 set_wheel :: (x: float, y: float) {
     wheel_x = x;
     wheel_y = y;
+}
+
+is_down :: (key: UI_Key) -> bool {
+    state := key_state[key];
+
+    return state.down;
 }
 
 is_pressed :: (key: UI_Key, repeat := true) -> bool {
@@ -455,7 +452,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     mutate_state(state, state.rect, check_layout = false);
     // If we click somewhere on the layer, we want to raise it to the top of
     // the stack.
-    want_raise := !is_new && !is_topmost && (state.status & .ONCE != 0) && active_widget == -1;
+    want_raise := !is_new && !is_topmost && state.pressed && active_widget == -1;
     if want_raise then raise_layer(id);
 
 
@@ -468,7 +465,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     resizer_rect.w  = theme.resize_size;
     resizer_rect.h  = theme.resize_size;
 
-    dragging_allowed := active_widget == -1 && is_topmost && state.dragging == .NONE && left_pressed;
+    dragging_allowed := active_widget == -1 && is_topmost && state.dragging == .NONE && is_down(.MOUSE_LEFT);
 
     // Start title bar dragging.
     if dragging_allowed && !is_occluded(title_rect) && cursor_vs_rect(title_rect) {
@@ -490,7 +487,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
         }
     }
 
-    if state.dragging != .NONE && !left_pressed {
+    if state.dragging != .NONE && !is_down(.MOUSE_LEFT) {
         active_widget   = -1;
         state.dragging  = .NONE;
         log("Stop moving/resizer!");
@@ -591,7 +588,7 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
     y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
 
 
-    if state.status & .ONCE {
+    if state.pressed  {
         state.open = !state.open;
     }
 
@@ -688,7 +685,7 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
 
 
 
-    if state.status & .ONCE {
+    if state.pressed {
         state.open = !state.open;
     }
 
@@ -746,7 +743,7 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
         draw_outline(dropdown_rect, border_color, theme.border_width, dropdown_flags);
 
         // If click outside the dropdown, we close the dropdown.
-        if left_pressed && (state.status & .PRESSED == 0) && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
+        if is_pressed(.MOUSE_LEFT) && (state.status == .NONE) && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
             state.open = false;
         }
 
@@ -792,7 +789,7 @@ text_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_locati
 
     mutate_state(state, alloc_space(size));
 
-    if !state.focused && state.status & .ONCE {
+    if !state.focused && state.pressed {
         active_widget = id;
         state.focused = true;
         state.focused_start_time = xx seconds_since_init();
@@ -800,7 +797,7 @@ text_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_locati
 
 
     if state.focused {
-        click_outside := !cursor_vs_rect(state.rect) && left_pressed;
+        click_outside := !cursor_vs_rect(state.rect) && is_pressed(.MOUSE_LEFT);
 
         if is_pressed(.RETURN) {
             active_widget = -1;
@@ -938,7 +935,7 @@ checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
 
     changed := false;
 
-    if state.status & .ONCE {
+    if state.pressed {
         changed   = true;
         checked.* = !checked.*;
     }
@@ -980,8 +977,9 @@ button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, c
 
     colors := ifx color then color.* else theme.color;
 
-    bg_color, _, text_color := get_colors(status, ifx (status & .FOCUSED) || (status & .PRESSED) then colors.accent else colors.fg);
-    _, border_color, _:= get_colors(status, ifx (status & .FOCUSED) || (status & .PRESSED) then colors.accent else colors.border);
+    active_btn := status == .FOCUSED || status == .PRESSED;
+    bg_color, _, text_color := get_colors(status, ifx active_btn then colors.accent else colors.fg);
+    _, border_color, _:= get_colors(status, ifx active_btn then colors.accent else colors.border);
 
     draw_rect(rect, bg_color, .ROUND_ALL);
     // draw_outline(rect, border_color, theme.border_width, .ROUND_ALL);
@@ -996,7 +994,7 @@ button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, c
     draw_text(label, x, y, font_size, text_color);
     if text_too_big pop_clip();
 
-    return status & .ONCE != 0;
+    return state.pressed;
 }
 
 get_colors :: (status: Widget_Status, base_color: Vector4) -> Vector4, Vector4, Vector4 {
@@ -1004,30 +1002,29 @@ get_colors :: (status: Widget_Status, base_color: Vector4) -> Vector4, Vector4, 
     border_color    := darken(bg_color, 40);
     text_color      := lighten(bg_color, 90);
 
-    if status & .FOCUSED {
-        bg_color     = lighten(bg_color, 25);
-        border_color = lighten(border_color, 25);
+    if status == {
+        case .HOVERED;
+            bg_color     = lighten(bg_color, 10);
+            border_color = lighten(border_color, 10);
 
-        return bg_color, border_color, text_color;
-    }
+            return bg_color, border_color, text_color;
+        case .FOCUSED;
+            bg_color     = lighten(bg_color, 25);
+            border_color = lighten(border_color, 25);
 
-    if status & .PRESSED {
-        bg_color     = lighten(bg_color, 25);
-        border_color = lighten(border_color, 25);
+            return bg_color, border_color, text_color;
 
-        return bg_color, border_color, text_color;
-    }
+        case .DOWN; #through;
+        case .PRESSED;
+            bg_color     = lighten(bg_color, 25);
+            border_color = lighten(border_color, 25);
 
-    if status & .HOVERED {
-        bg_color     = lighten(bg_color, 10);
-        border_color = lighten(border_color, 10);
-
-        return bg_color, border_color, text_color;
+            return bg_color, border_color, text_color;
+        case .DISABLED;
     }
 
     return bg_color, border_color, text_color;
 }
-
 
 set_layout_order:: (order: Layout_Order, columns := 0) {
     layout := current_layout();
@@ -1059,13 +1056,13 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
 }
 
 mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true) {
-    state.status = ifx active_widget > -1 && active_widget != state.widget_id then 0x0 else get_status(rect, check_layout);
+    state.status = ifx active_widget > -1 && active_widget != state.widget_id then 0 else get_status(rect, check_layout);
 
     if state.widget_id == active_widget {
-        state.status |= .FOCUSED;
-    } else {
-        state.status &= ~.FOCUSED;
+        state.status = .FOCUSED;
     }
+
+    state.pressed = state.status == .PRESSED;
 
     state.rect   = rect;
 }
@@ -1079,15 +1076,15 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
     within_layout_rect := ifx check_layout cursor_vs_rect(current_layout().rect) else true;
 
     if !is_occluded(rect) && within_widget_rect && within_layer && within_layout_rect {
-        status |= .HOVERED;
+        status = .HOVERED;
     }
 
-    if status & .HOVERED && left_pressed {
-        status |= .PRESSED;
+    if status == .HOVERED && is_down(.MOUSE_LEFT) {
+        status = .DOWN;
     }
 
-    if !prev_left_pressed && status & .PRESSED {
-        status |= .ONCE;
+    if status == .DOWN && is_pressed(.MOUSE_LEFT, repeat = false) {
+        status = .PRESSED;
     }
 
     return status;
@@ -1144,13 +1141,13 @@ ui_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
 
     if active_widget == -1 || active_widget == id {
         is_dragging := active_widget == id;
-        hit         := cursor_vs_rect(handle) && left_pressed;
+        hit         := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
 
         if hit && !is_dragging && abs(delta_y) > 0 {
             active_widget = id;
         }
 
-        if is_dragging && !left_pressed {
+        if is_dragging && !is_down(.MOUSE_LEFT) {
             active_widget = -1;
         }
 
