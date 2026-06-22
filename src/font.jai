@@ -1,9 +1,6 @@
 /*
-
         @todo:
-
         - Should implement kerning.
-        - Should store texture packer on heap.
 */
 
 #scope_export;
@@ -51,8 +48,8 @@ bake_font :: (ttf_filepath: string, white_2x2_pixel := false) -> *Font {
         white_pos := push_white_bitmap_and_set_alpha_values(*font_atlas, 2, 2, xx *WHITE_PIXELS);
 
         font.white_pixel_position = Vector2.{
-            (white_pos.x + 0.5) / cast(float) font_atlas.total_width,
-            (white_pos.y + 0.5) / cast(float) font_atlas.total_height,
+            (white_pos.x + 0.5) / cast(float) font_atlas.WIDTH,
+            (white_pos.y + 0.5) / cast(float) font_atlas.HEIGHT,
         };
     }
 
@@ -60,7 +57,7 @@ bake_font :: (ttf_filepath: string, white_2x2_pixel := false) -> *Font {
 }
 
 get_raw_bitmap_texture :: (font: *Font) -> *void, int, int {
-    return font.font_atlas.bitmap, font.font_atlas.total_width, font.font_atlas.total_height;
+    return font.font_atlas.bitmap.data, font.font_atlas.WIDTH, font.font_atlas.HEIGHT;
 }
 
 find_or_add_glyph :: (using font: *Font, char: u32, font_size: int) -> Glyph_Info {
@@ -107,20 +104,15 @@ find_or_add_glyph :: (using font: *Font, char: u32, font_size: int) -> Glyph_Inf
     return glyph.*;
 }
 
-
-
 Font_Metrics :: struct {
     pixel_size  : u32;
     ascender    : s32;
     descender   : s32;
-    line_height : s32; // ascender - descender
+    line_height : s32; // ascender - descender.
     max_advance : s32;
 }
 
-// @speed (stefan): we could cache this if we end up using many different
-// sizes at once
 get_font_metrics :: (using font : *Font, font_size : u32) -> Font_Metrics {
-
     FT_Set_Pixel_Sizes(ft_face, 0, xx font_size);
 
     result := Font_Metrics.{
@@ -135,8 +127,7 @@ get_font_metrics :: (using font : *Font, font_size : u32) -> Font_Metrics {
     return result;
 }
 
-/// @Note: If text has more than one line, it returns the width of the longest one.
-get_text_extents_v2 :: (using font: *Font, text : string, size : int) -> width: float, height: float {
+get_size :: (using font: *Font, text : string, size : int) -> width: float, height: float {
     if text.count <= 0 return 0, 0;
 
     max_width : float;
@@ -169,48 +160,6 @@ get_text_extents_v2 :: (using font: *Font, text : string, size : int) -> width: 
     return max_width, xx line_height;
 }
 
-// get_text_extents :: (font_name : string, text : string, size := DEFAULT_FT_SIZE, max_line_width := -1, apply_scale_factor := true) -> width: float, height: float {
-//     using font := get_font(font_name);
-//
-//     metrics := get_font_metrics(font_name, xx size);
-//
-//     if apply_scale_factor {
-//         size = cast (int) (size * scale_factor);
-//     }
-//
-//     width       := 0.0;
-//     height      := 0.0;
-//
-//     line_start  := 0;
-//
-//     while line_start < text.count {
-//         line_end := find_index_from_left(text, #char "\n", line_start);
-//
-//         if line_end == -1 {
-//             line_end = text.count;
-//         }
-//
-//         line := string.{line_end - line_start, text.data + line_start};
-//         line_start = line_end + 1;
-//
-//         x := 0.;
-//         i := 0;
-//
-//         while line.count > 0 {
-//             // @todo: We need to take care of wrong conversion here.
-//             codepoint, _ := utf8_next_character(*line);
-//             glyph := find_or_add_glyph(font, codepoint, size);
-//
-//             x += glyph.advance;
-//         }
-//
-//         width   = max(width, x);
-//         height += metrics.line_height;
-//     }
-//
-//     return width, height;
-// }
-
 free_font:: (using font: *Font) {
     FT_Done_Face(ft_face);
     FT_Done_FreeType(ft_library);
@@ -226,54 +175,59 @@ Rect_Pos :: struct {
 }
 
 Texture_Packer :: struct($WIDTH: s64, $HEIGHT: s64) {
-    total_width   : int = WIDTH;
-    total_height  : int = HEIGHT;
-    bitmap        : *[WIDTH][HEIGHT]u32;
+    bitmap        : []u32;
     cursor        : struct { x, y: int; };
 
     largest_height_in_row: int;
 }
 
-push_white_bitmap_and_set_alpha_values :: (using texture_packer: *Texture_Packer,
-width: int, height: int, data: *u8) -> Rect_Pos {
+push_white_bitmap_and_set_alpha_values :: (using packer: *Texture_Packer,
+glyph_w: int, glyph_h: int, data: *u8) -> Rect_Pos {
 
-    if bitmap == null {
-        bitmap = New([WIDTH][HEIGHT]u32, true);
+    if bitmap.data == null {
+        bitmap = NewArray(WIDTH * HEIGHT, u32, true);
     }
 
-    if width > total_width || height > total_height {
+    if glyph_w > WIDTH || glyph_h > HEIGHT {
         assert(false, "Given bitmap is too large.");
     }
 
-    if cursor.x + width > total_width {
+    if cursor.x + glyph_w > WIDTH {
         cursor.y += largest_height_in_row;
         cursor.x = 0;
         largest_height_in_row = 0;
     }
 
-    if cursor.y + height >= total_height {
+    if cursor.y + glyph_h >= HEIGHT {
         assert(false, "Texture Packer is full.");
     }
 
-    largest_height_in_row = max(height, largest_height_in_row);
+    largest_height_in_row = max(glyph_h, largest_height_in_row);
 
     rect_pos := Rect_Pos.{
         x = cursor.x,
         y = cursor.y,
-        w = width,
-        h = height,
+        w = glyph_w,
+        h = glyph_h,
     };
 
-    cursor.x += width;
+    cursor.x += glyph_w;
 
     i := 0;
-    while i < width {
+    while i < glyph_w {
         j := 0;
-        while j < height {
-            a := data[j * width + i];
+
+        while j < glyph_h {
+            a := data[j * glyph_w + i];
+
             value := cast(u32) 0x00ffffff;
             value |= (cast(u32) a) << 24;
-            bitmap.*[rect_pos.y + j][rect_pos.x + i] = value;
+
+            btmp_x := rect_pos.x + i;
+            btmp_y := rect_pos.y + j;
+
+            bitmap[btmp_y * WIDTH + btmp_x] = value;
+
             j += 1;
         }
 
@@ -281,44 +235,6 @@ width: int, height: int, data: *u8) -> Rect_Pos {
     }
 
     return rect_pos;
-}
-
-check_if_should_wrap :: (using font: *Font, position: Vector2, size: int, word: string, pen := 0., max_line_wrap : int) -> should_wrap: bool {
-    if max_line_wrap <= 0 || word.count == 0 {
-        return false;
-    }
-
-    using metrics := get_font_metrics(font, xx size);
-
-    prev_char: u32;
-    while word.count > 0 {
-        codepoint, _ := utf8_next_character(*word);
-        defer prev_char = codepoint;
-
-        glyph := find_or_add_glyph(font, codepoint, pixel_size);
-
-        if prev_char > 0 {
-            delta: FT_Vector;
-            FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
-            pen += xx (delta.x >> 6);
-        }
-
-        defer pen += glyph.advance;
-
-        glyph_pos := pen + glyph.bearing_x;
-
-        rect_x := glyph_pos;
-        rect_x += position.x;
-        rect_x  = round_pixel(rect_x);
-
-        rect_w := glyph.pos_in_atlas.w;
-
-        if rect_x + rect_w > position.x + max_line_wrap {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 #import "File";

@@ -139,8 +139,6 @@ UI_Layout :: struct {
     align      := Layout_Align.PIXEL_LEFT;
     columns    := 0;
 
-    // collapser_offset : float;
-
     scrollbar        : *Scrollbar_State;
 
     // For auto layout.
@@ -546,7 +544,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
         title_color := theme.color.fg;
 
         text_size := theme.window_title_bar_height * 0.5;
-        title_width, title_height := get_text_extents_v2(font, title, xx text_size);
+        title_width, title_height := get_size(font, title, xx text_size);
 
         x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
         y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
@@ -597,7 +595,7 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
     bg_color := get_color(state.status, theme.color.fg);
 
     font_size                 := size.y * 0.5;
-    text_width, text_height   := get_text_extents_v2(font, title, xx font_size);
+    text_width, text_height   := get_size(font, title, xx font_size);
     text_rect                 := pad_rect(rect, theme.button_padding, 0);
 
     // Center text in button rect.
@@ -621,12 +619,13 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
     if state.open {
         bg_region  := rect;
         bg_region.y = rect.y + rect.h;
-        bg_region.h = state.computed_height + theme.margin_y;;
+        bg_region.h = state.computed_height + theme.margin_y;
 
         color   := theme.color.border;
         color.w  = 0.6;
 
         borders := Rect_Flags.LEFT | .RIGHT | .BOTTOM | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
+        draw_rect(bg_region, lighten(theme.color.bg, 2), 0x0);
         draw_outline(bg_region, color, theme.border_width, borders);
 
         layout_rect := Rect.{
@@ -729,7 +728,7 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
     bg_color := get_color(state.status, theme.color.fg);
 
     font_size                 := size.y * 0.5;
-    text_width, text_height   := get_text_extents_v2(font, button_label, xx font_size);
+    text_width, text_height   := get_size(font, button_label, xx font_size);
     text_rect                 := pad_rect(rect, theme.button_padding, 0);
 
     // Center text in button rect.
@@ -807,7 +806,7 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
 label :: (text: string, label_size := 0., loc := #caller_location) {
     text_size := ifx label_size <= 0 theme.text_size else label_size;
 
-    width, height := get_text_extents_v2(font, text, xx text_size);
+    width, height := get_size(font, text, xx text_size);
     rect := alloc_space(xy(width, height));
 
     draw_text(text, rect.x, rect.y, text_size, theme.color.text);
@@ -818,7 +817,7 @@ separator :: (text := "") {
 
     if text {
         text_size := theme.text_size * 0.7;
-        text_width, text_height := get_text_extents_v2(font, text, xx text_size);
+        text_width, text_height := get_size(font, text, xx text_size);
 
         rect := alloc_space(.{ layout.rect.w, text_height  });
 
@@ -934,7 +933,7 @@ text_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_locati
     draw_outline(state.rect, theme.color.border, theme.border_width);
 
     font_size                 := size.y * 0.5;
-    text_width, text_height   := get_text_extents_v2(font, state.text, xx font_size);
+    text_width, text_height   := get_size(font, state.text, xx font_size);
 
 
     x := state.rect.x + theme.input_padding + theme.border_width;
@@ -957,7 +956,7 @@ text_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_locati
         }
 
         cursor_height    := size.y * 0.5;
-        to_cursor_width  := get_text_extents_v2(font, cursor_text, xx font_size);
+        to_cursor_width  := get_size(font, cursor_text, xx font_size);
 
         input_width := state.rect.w - (theme.border_width * 2);
         cursor_size := theme.input_cursor_size;
@@ -1048,7 +1047,7 @@ button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, c
     using state := get_widget_state(Widget_State, id);
 
     font_size                 := size.y * 0.5;
-    text_width, text_height   := get_text_extents_v2(font, label, xx font_size);
+    text_width, text_height   := get_size(font, label, xx font_size);
 
     button_size := size;
 
@@ -1757,7 +1756,6 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
     bottom_right := Rect.{ r.x + r.w - radius, r.y + r.h - radius, radius, radius };
 
     if flags & .ROUND_TOP_LEFT {
-
         p0 := xy(top_left.x + top_left.w, top_left.y + top_left.h);
 
         prev := p0 + xy(0, -radius);                 // angle 0, top
@@ -1817,8 +1815,8 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
         internal_draw_rect(bottom_right, color);
     }
 
-    // To fill up the rest of the belly of the rounded corner, we can do that with only
-    // 3 rects.
+    // To fill up the rest of the belly of the rounded corner, we can do that
+    // with only 3 rects.
 
     center_middle := Rect.{ r.x + radius, r.y, r.w - (2 * radius), r.h };
     internal_draw_rect(center_middle, color);
@@ -1919,17 +1917,10 @@ draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vect
                 rect.x = round_pixel(rect.x);
                 rect.y = round_pixel(rect.y);
 
-                // uv_rect := Rect.{
-                //     pos_in_atlas.x / cast(float) font_atlas.total_width,
-                //     pos_in_atlas.y / cast(float) font_atlas.total_height,
-                //     pos_in_atlas.w / cast(float) font_atlas.total_width,
-                //     pos_in_atlas.h / cast(float) font_atlas.total_height,
-                // };
-
-                u0 := pos_in_atlas.x / cast(float) font_atlas.total_width;
-                v0 := pos_in_atlas.y / cast(float) font_atlas.total_height;
-                u1 := (pos_in_atlas.x + pos_in_atlas.w) / cast(float) font_atlas.total_width;
-                v1 := (pos_in_atlas.y + pos_in_atlas.h) / cast(float) font_atlas.total_height;
+                u0 := pos_in_atlas.x / cast(float) font_atlas.WIDTH;
+                v0 := pos_in_atlas.y / cast(float) font_atlas.HEIGHT;
+                u1 := (pos_in_atlas.x + pos_in_atlas.w) / cast(float) font_atlas.WIDTH;
+                v1 := (pos_in_atlas.y + pos_in_atlas.h) / cast(float) font_atlas.HEIGHT;
 
                 uv_rect := Rect.{ u0, v0, u1, v1 };
 
