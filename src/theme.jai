@@ -45,6 +45,15 @@ GRUVBOX_LIGHT :: Color_Theme.{
     accent      = #run hex(0x45707a),
 };
 
+NORD :: Color_Theme.{
+    bg          = #run hex(0x2e3440),
+    fg          = #run hex(0x3b4252),
+    text        = #run hex(0xeceff4),
+    text_muted  = #run hex(0x4c566a),
+    border      = #run hex(0x4c566a),
+    accent      = #run hex(0x88c0d0),
+};
+
 Theme :: struct {
     ui_scaler               := 1.0;
     alpha                   := 1.0;
@@ -54,7 +63,6 @@ Theme :: struct {
 
     content_padding         := 4.;
     window_title_bar_height := 30.;
-    resize_size             := 16.;
     scrollbar_width         := 12.;
     corner_radius           := 8.;
     radius_sample           := 20;

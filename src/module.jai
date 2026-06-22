@@ -100,6 +100,15 @@ mouse_y  : float;
 delta_x  : float;
 delta_y  : float;
 
+Cursor_Icon :: enum {
+    ARROW;
+    RESIZE_ARROW;
+    HAND;
+}
+
+prev_cursor_icon := Cursor_Icon.ARROW;
+curr_cursor_icon := Cursor_Icon.ARROW;
+
 wheel_x  : float;
 wheel_y  : float;
 
@@ -326,6 +335,10 @@ set_key_event :: (key: UI_Key, down: bool) {
     state.down = down;
 }
 
+get_cursor_icon :: () -> Cursor_Icon {
+    return prev_cursor_icon;
+}
+
 KEY_REPEAT_DELAY    :: 0.275;
 KEY_REPEAT_RATE     :: 0.020;
 
@@ -371,6 +384,9 @@ ui_begin :: () {
 
     // Reset our stack of contextual ids.
     array_reset_keeping_memory(*context_ids);
+
+    swap(*prev_cursor_icon, *curr_cursor_icon);
+    curr_cursor_icon = Cursor_Icon.ARROW;
 
     {
         swap(*prev_layer_list, *curr_layer_list);
@@ -462,10 +478,10 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     title_rect.h    = theme.window_title_bar_height;
 
     resizer_rect   := state.rect;
-    resizer_rect.x += state.rect.w - theme.resize_size;
-    resizer_rect.y += state.rect.h - theme.resize_size;
-    resizer_rect.w  = theme.resize_size;
-    resizer_rect.h  = theme.resize_size;
+    resizer_rect.x += state.rect.w - theme.border_width;
+    resizer_rect.y += state.rect.h - theme.border_width;
+    resizer_rect.w  = theme.border_width * 6;
+    resizer_rect.h  = theme.border_width * 6;
 
     dragging_allowed := active_widget == -1 && is_topmost && state.dragging == .NONE && is_down(.MOUSE_LEFT);
 
@@ -479,10 +495,13 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
         }
     }
 
+
     // Start resizer dragging.
-    if dragging_allowed && !is_occluded(resizer_rect) && cursor_vs_rect(resizer_rect) {
+    if !is_occluded(resizer_rect) && cursor_vs_rect(resizer_rect) {
+        curr_cursor_icon = .RESIZE_ARROW;
+
         // Prevent to mix clicking and dragging behavior.
-        if (abs(delta_x) > 0 || abs(delta_y) > 0) {
+        if dragging_allowed && (abs(delta_x) > 0 || abs(delta_y) > 0) {
             active_widget   = id;
             state.dragging  = .RESIZE_WINDOW;
             log("Start resizer!");
@@ -502,7 +521,8 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     }
 
     if state.dragging == .RESIZE_WINDOW {
-        log("resizing !");
+        curr_cursor_icon = .RESIZE_ARROW;
+       log("resizing !");
         state.rect.w += delta_x;
         state.rect.h += delta_y;
     }
@@ -516,12 +536,6 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
 
     title_rect     = state.rect;
     title_rect.h    = theme.window_title_bar_height;
-
-    resizer_rect    = state.rect;
-    resizer_rect.x += state.rect.w - theme.resize_size;
-    resizer_rect.y += state.rect.h - theme.resize_size;
-    resizer_rect.w  = theme.resize_size;
-    resizer_rect.h  = theme.resize_size;
 
     bg_color     := ifx is_topmost then theme.color.bg else darken(theme.color.bg, 5);
     draw_rect(state.rect, bg_color, .ROUND_ALL);
@@ -539,9 +553,6 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
         draw_rect(title_rect, title_color, .TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
         draw_text(title, x, y, text_size, theme.color.text);
     }
-
-    // Draw resizer.
-    draw_rect(resizer_rect, theme.color.fg, .ROUND_ALL);
 
     layer_rect   := state.rect;
     layer_rect.x += theme.content_padding;

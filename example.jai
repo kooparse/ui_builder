@@ -115,6 +115,16 @@ main :: () {
 
         ui_begin();
 
+
+        cursor : *SDL_SystemCursor;
+
+        if get_cursor_icon() == {
+            case .ARROW;        cursor = SDL_CreateSystemCursor(SDL_SystemCursor.ARROW);
+            case .RESIZE_ARROW; cursor = SDL_CreateSystemCursor(SDL_SystemCursor.SIZENWSE);
+        }
+
+        SDL_SetCursor(cursor);
+
         event: SDL_Event;
         while SDL_PollEvent(*event) {
 
@@ -183,6 +193,7 @@ chosen_theme := 0;
 Color_Themes :: enum {
     GRUVBOX_DARK;
     GRUVBOX_LIGHT;
+    NORD;
     LIPKO;
 };
 
@@ -204,7 +215,7 @@ TABS :: enum {
 };
 current_tab := TABS.TAB_1;
 
-THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, LIPKO ];
+THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, NORD, LIPKO ];
 
 make_ui :: () -> UI_Draw_List {
 
@@ -213,7 +224,6 @@ make_ui :: () -> UI_Draw_List {
         alpha                   = ifx translucent 0.4 else 1.0,
 
         window_title_bar_height = DEFAULT_THEME.window_title_bar_height * dpi_scale,
-        resize_size             = DEFAULT_THEME.resize_size             * dpi_scale,
         scrollbar_width         = DEFAULT_THEME.scrollbar_width         * dpi_scale,
         content_padding         = DEFAULT_THEME.content_padding         * dpi_scale,
         margin_x                = DEFAULT_THEME.margin_x                * dpi_scale,
