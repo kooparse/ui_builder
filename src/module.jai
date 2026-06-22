@@ -209,7 +209,7 @@ Scrollbar_State :: struct {
     has_scroll      : bool;
 };
 
-Collapse_State :: struct {
+Expander_State :: struct {
     #as using state : Widget_State;
 
     open            : bool;
@@ -566,18 +566,18 @@ window_end :: () {
 }
 
 
-curr_collapser : *Collapse_State;
+curr_expander : *Expander_State;
 
-begin_collapse :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
+begin_expander :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
     id          := make_id(loc);
-    state, new  := get_widget_state(Collapse_State, id);
+    state, new  := get_widget_state(Expander_State, id);
 
-    curr_collapser = state;
+    curr_expander = state;
 
     if new state.open = open_by_default;
 
     layout := current_layout();
-    size := Vector2.{ layout.rect.w - theme.scrollbar_width - theme.content_padding, 40. };
+    size := Vector2.{ layout.rect.w, 40. };
 
     rect := alloc_space(size);
     mutate_state(state, rect);
@@ -661,21 +661,21 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
     return state.open;
 }
 
-end_collapse :: () {
-    assert(curr_collapser != null);
+end_expander :: () {
+    assert(curr_expander != null);
 
-    if curr_collapser.open {
+    if curr_expander.open {
         collapser_layout := current_layout().*;
         content_height   := collapser_layout.cursor.y + collapser_layout.prev_widget_size.y;
 
-        curr_collapser.computed_height = content_height;
+        curr_expander.computed_height = content_height;
 
-        restore_layout(curr_collapser.prev_layout);
+        restore_layout(curr_expander.prev_layout);
 
         current_layer.layout.cursor.y += content_height + theme.margin_y;
     }
 
-    curr_collapser = null;
+    curr_expander = null;
 }
 
 ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {

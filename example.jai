@@ -280,7 +280,7 @@ make_ui :: () -> UI_Draw_List {
                 log("click!");
             }
 
-            if begin_collapse("My collapser!") {
+            if begin_expander("Click to expand!") {
                 if button("Ola ♥") {
                     log("click!");
                 }
@@ -291,7 +291,7 @@ make_ui :: () -> UI_Draw_List {
                     if button(tprint("%", it)) then log("click! %", it);
                 }
             }
-            end_collapse();
+            end_expander();
 
             for 1..15 {
                 set_layout_order(.COLUMNS, 2);
@@ -329,7 +329,6 @@ make_ui :: () -> UI_Draw_List {
 
             window_end();
         }
-
     }
 
 
