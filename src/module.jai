@@ -151,8 +151,8 @@ Layer :: struct {
     widget_id    : UI_ID;
     depth        : int; // Used to sort the layer list.
 
-    layouts       : [..] UI_Layout;
-    prev_layouts  : [] UI_Layout;
+    layout       : UI_Layout;
+    prev_layout  : UI_Layout;
 
     vertices     : [..] UI_Vertex;
     draw_markers : [..] Draw_Marker;
@@ -380,7 +380,6 @@ ui_begin :: () {
             array_reset(*it.vertices);
             array_reset(*it.draw_markers);
             array_reset(*it.clip_stack);
-            array_reset(*it.prev_layouts);
         }
 
         array_reset_keeping_memory(*curr_layer_list);
@@ -552,7 +551,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
 
     layer_rect = pad_rect(layer_rect, theme.border_width, theme.border_width);
 
-    push_layout(layer_rect);
+    set_layout(layer_rect);
 
     internal_scrollbar(loc);
 
@@ -563,7 +562,6 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
 
 window_end :: () {
     pop_clip();
-    pop_layout();
     pop_layer();
 }
 
@@ -601,7 +599,6 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
 
 
 
-
     flags := Rect_Flags.ROUND_ALL;
     if state.open then flags = .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT | .TOP | .LEFT | .RIGHT;
 
@@ -609,41 +606,30 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
     draw_outline(rect, theme.color.border, theme.border_width, flags);
     draw_text(title, x, y, font_size, theme.color.text);
 
-    // @note for future alex:
-    // I was trying to make the push_layout/pop_layout work properly in order
-    // to simply pop a new layout for the collapser with proper new rect
-    // constraint (x padding, and proper width for the column layout for
-    // example.
-    //
-    //  But right now, it doesnt work... we have to fix that!
-
     if state.open {
-        // bg_region  := rect;
-        // bg_region.y = rect.y + rect.h;
-        // bg_region.h = state.computed_height;
-        //
+        bg_region  := rect;
+        bg_region.y = rect.y + rect.h;
+        bg_region.h = state.computed_height + theme.margin_y;;
+
         color   := theme.color.border;
         color.w  = 0.6;
-        //
-        borders := Rect_Flags.LEFT | .RIGHT | .BOTTOM | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
-        // draw_outline(bg_region, color, theme.border_width, borders);
 
-        layout_rect   := Rect.{
-            rect.x,
+        borders := Rect_Flags.LEFT | .RIGHT | .BOTTOM | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
+        draw_outline(bg_region, color, theme.border_width, borders);
+
+        layout_rect := Rect.{
+            rect.x + theme.collapser_offset,
             rect.y + rect.h,
-            rect.w,
-            layout.rect.h
+            rect.w - theme.collapser_offset * 2,
+            layout.rect.h - rect.y,
         };
 
-        // layout_rect.x += theme.collapser_offset;
-        // layout_rect.y += rect.h;
-        // layout_rect.w -= theme.collapser_offset;
-        // layout_rect.h -= rect.h
+        // draw_outline(layout_rect, color, theme.border_width, borders);
 
-        draw_outline(layout_rect, color, theme.border_width, borders);
+        prev_layout      := set_layout(layout_rect);
+        state.prev_layout = prev_layout;
 
-        state.prev_layout = layout.*;
-        push_layout(layout_rect);
+        current_layout().cursor.y += theme.margin_y;
     }
 
 
@@ -679,34 +665,17 @@ end_collapse :: () {
     assert(curr_collapser != null);
 
     if curr_collapser.open {
-        content_height := current_layout().cursor.y + current_layout().prev_widget_size.y;
-        pop_layout();
+        collapser_layout := current_layout().*;
+        content_height   := collapser_layout.cursor.y + collapser_layout.prev_widget_size.y;
 
-        // push_layout(curr_collapser.prev_layout.rect);
-        //
-        // prev_layout := curr_collapser.prev_layout;
-        //
-        // layout := current_layout();
-        // layout.* = prev_layout;
+        curr_collapser.computed_height = content_height;
 
-        current_layout().cursor.y += content_height;
+        restore_layout(curr_collapser.prev_layout);
+
+        current_layer.layout.cursor.y += content_height + theme.margin_y;
     }
 
-
-
     curr_collapser = null;
-    // layout := current_layout();
-
-    // if curr_collapser != null {
-    //     start := curr_collapser.rect.y + curr_collapser.rect.h;
-    //     end   := layout.rect.y + layout.cursor.y + layout.prev_widget_size.y + theme.margin_y;
-    //
-    //     curr_collapser.computed_height = end - start;
-    //     curr_collapser = null;
-    // }
-
-    // layout.cursor.y         += theme.margin_y;
-    // layout.collapser_offset  = .{};
 }
 
 ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
@@ -795,8 +764,7 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
         layer_rect.w -= theme.content_padding + theme.scrollbar_width + theme.border_width * 2;
         layer_rect.h -= theme.content_padding + theme.border_width * 2;
 
-        push_layout(layer_rect);
-        defer pop_layout();
+        set_layout(layer_rect);
 
         internal_scrollbar(loc);
 
@@ -1144,10 +1112,6 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
 }
 
 internal_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
-    // if current_layer.prev_layouts.count < current_layer.layouts.count {
-    //     return null;
-    // }
-
     id      := make_id(loc, "_scrollbar");
     state   := get_widget_state(Scrollbar_State, id);
 
@@ -1155,15 +1119,12 @@ internal_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
     layout.scrollbar = state;
 
     scroll      := *state.scroll;
-    // prev_layout := current_layer.prev_layouts[current_layer.layouts.count - 1];
-
+    prev_layout := current_layer.prev_layout;
 
     // We compute the actual content size from the previous frame.
-    content_h   := layout.cursor.y + layout.prev_widget_size.y;
+    content_h   := prev_layout.cursor.y + prev_layout.prev_widget_size.y;
     visible_h   := layout.rect.h;
     max_scroll  := max(0.0, content_h - visible_h);
-
-    log("handle: %", max_scroll);
 
     // @todo: Perhaps add again mouse wheel for scrolling content...
     // if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
@@ -1224,13 +1185,13 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
     is_new      := false;
     depth       := -1;
 
-    prev_layouts : [] UI_Layout;
+    prev_layout : UI_Layout;
 
     // Find old z order.
     for prev_layer_list {
         if it.widget_id == id {
             depth        = it.depth;
-            prev_layouts = it.layouts;
+            prev_layout  = it.layout;
             break;
         }
     }
@@ -1248,7 +1209,7 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
         widget_id   = id,
         rect        = rect,
         depth       = depth,
-        prev_layouts = prev_layouts,
+        prev_layout = prev_layout,
     });
 
     array_add(*layer_stack, index);
@@ -1305,16 +1266,18 @@ make_id :: (loc: Source_Code_Location, extra := "") -> u32 {
 }
 
 current_layout :: () -> *UI_Layout {
-    assert(current_layer.layouts.count > 0, "No layout found.");
-    return *current_layer.layouts[current_layer.layouts.count - 1];
+    return *current_layer.layout;
 }
 
-push_layout :: (layout_rect: Rect) {
-    array_add(*current_layer.layouts, .{ rect = layout_rect });
+set_layout :: (layout_rect: Rect) -> prev: UI_Layout {
+    prev_layout          := current_layer.layout;
+    current_layer.layout = .{ rect = layout_rect };
+
+    return prev_layout;
 }
 
-pop_layout :: () {
-    _ := pop(*current_layer.layouts);
+restore_layout :: (layout: UI_Layout) {
+    current_layer.layout = layout;
 }
 
 get_vertices :: () -> *[..] UI_Vertex {
