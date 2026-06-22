@@ -104,6 +104,7 @@ Cursor_Icon :: enum {
     ARROW;
     RESIZE_ARROW;
     HAND;
+    TEXT_EDIT;
 }
 
 prev_cursor_icon := Cursor_Icon.ARROW;
@@ -812,14 +813,47 @@ label :: (text: string, label_size := 0., loc := #caller_location) {
     draw_text(text, rect.x, rect.y, text_size, theme.color.text);
 }
 
-separator :: (height: float) {
+separator :: (text := "") {
     layout := current_layout();
 
-    rect := alloc_space(.{ layout.rect.w, height + theme.content_padding * 2 });
+    if text {
+        text_size := theme.text_size * 0.5;
+        text_width, text_height := get_text_extents_v2(font, text, xx text_size);
 
-    sep_rect := Rect.{ rect.x + theme.content_padding, rect.y + theme.content_padding, rect.w - theme.content_padding * 2, height };
+        rect := alloc_space(.{ layout.rect.w, text_height  });
 
-    draw_rect(sep_rect, theme.color.text_muted);
+        // draw_rect(rect, theme.color.fg);
+
+        x := rect.x + theme.content_padding;
+
+        line_height := min(text_size * 0.5, theme.separator_size);
+
+        first_line := Rect.{
+            x,
+            rect.y + (rect.h * 0.5) - (line_height * 0.5),
+            rect.w * 0.05,
+            line_height,
+        };
+
+        x += first_line.w + theme.margin_x;
+
+        draw_rect(first_line, theme.color.text_muted);
+        draw_text(text, x, rect.y + rect.h * 0.5 - text_height * 0.5, xx text_size, theme.color.text);
+
+        x += text_width + theme.margin_x;
+
+        second_line := Rect.{
+            x, first_line.y,
+            (rect.x + rect.w) - x, // leftover.
+            line_height
+        };
+
+        draw_rect(second_line, theme.color.text_muted);
+    } else {
+        rect     := alloc_space(.{ layout.rect.w, theme.separator_size + theme.content_padding * 2 });
+        sep_rect := Rect.{ rect.x + theme.content_padding, rect.y + theme.content_padding, rect.w - theme.content_padding * 2, theme.separator_size };
+        draw_rect(sep_rect, theme.color.text_muted);
+    }
 }
 
 send_text_codepoint :: (codepoint: string) {
@@ -840,12 +874,14 @@ text_input :: (value: string, size := Vector2.{ 200, 60 }, loc := #caller_locati
 
     mutate_state(state, alloc_space(size));
 
+
     if !state.focused && state.pressed {
         active_widget = id;
         state.focused = true;
         state.focused_start_time = xx seconds_since_init();
     }
 
+    if state.status & .HOVERED || state.focused then curr_cursor_icon = .TEXT_EDIT;
 
     if state.focused {
         click_outside := !cursor_vs_rect(state.rect) && is_pressed(.MOUSE_LEFT);
@@ -998,7 +1034,6 @@ checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
 
     draw_circle(pos, radius, theme.color.bg);
     draw_circle_outline(pos, radius, theme.border_width, inner_color);
-
 
     if checked.* == true {
         radius = radius * 0.5;

@@ -61,6 +61,8 @@ Theme :: struct {
     input_padding           := 4.;
     input_cursor_size       := 2.;
 
+    separator_size          := 1.0;
+
     content_padding         := 4.;
     window_title_bar_height := 30.;
     scrollbar_width         := 12.;

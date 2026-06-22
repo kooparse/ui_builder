@@ -121,6 +121,8 @@ main :: () {
         if get_cursor_icon() == {
             case .ARROW;        cursor = SDL_CreateSystemCursor(SDL_SystemCursor.ARROW);
             case .RESIZE_ARROW; cursor = SDL_CreateSystemCursor(SDL_SystemCursor.SIZENWSE);
+            case .HAND;         cursor = SDL_CreateSystemCursor(SDL_SystemCursor.HAND);
+            case .TEXT_EDIT;    cursor = SDL_CreateSystemCursor(SDL_SystemCursor.IBEAM);
         }
 
         SDL_SetCursor(cursor);
@@ -232,6 +234,7 @@ make_ui :: () -> UI_Draw_List {
         text_size               = DEFAULT_THEME.text_size               * dpi_scale,
         input_padding           = DEFAULT_THEME.input_padding           * dpi_scale,
         input_cursor_size       = DEFAULT_THEME.input_cursor_size       * dpi_scale,
+        separator_size          = DEFAULT_THEME.separator_size          * dpi_scale,
     });
 
     set_font(our_font, *font_atlas_texture);
@@ -268,11 +271,10 @@ make_ui :: () -> UI_Draw_List {
             placeholder := "Choose...";
             selected     = select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
 
-            label("Input");
-            set_layout_order(.INLINE);
+            separator("Inputs");
             text_input(mutate_text);
-            set_layout_order(.STACK);
 
+            separator("Checkboxes");
             checkbox(*show_color_picker);
             set_layout_order(.INLINE);
             label("Show Color Picker");
@@ -319,13 +321,13 @@ make_ui :: () -> UI_Draw_List {
     }
 
     if window_begin(Rect.{ 600, 10, 250, 400 } * dpi_scale, "menu 2") {
-        separator(1 * dpi_scale);
+        separator("Theme");
 
         if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
             log("Theme choosen: %", enum_names(Color_Themes)[chosen_theme]);
         }
 
-        separator(1 * dpi_scale);
+        separator();
 
         window_end();
     }
