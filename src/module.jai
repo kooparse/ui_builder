@@ -817,7 +817,7 @@ separator :: (text := "") {
     layout := current_layout();
 
     if text {
-        text_size := theme.text_size * 0.5;
+        text_size := theme.text_size * 0.7;
         text_width, text_height := get_text_extents_v2(font, text, xx text_size);
 
         rect := alloc_space(.{ layout.rect.w, text_height  });
