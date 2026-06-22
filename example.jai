@@ -288,19 +288,11 @@ make_ui :: () -> UI_Draw_List {
 
             set_layout_order(.STACK);
 
-            if button("Alex + Ola = ♥", size) {
-                log("click!");
-            }
-
-            if begin_expander("Click to expand!") {
-                if button("Ola ♥") {
-                    log("click!");
-                }
-
+            if begin_expander("Expand to see buttons!") {
                 set_layout_order(.COLUMNS, 2);
 
-                for 1..4 {
-                    if button(tprint("%", it)) then log("click! %", it);
+                for 1..2000 {
+                    if button(tprint("%", it)) then log("button %", it);
                 }
             }
             end_expander();
@@ -320,8 +312,7 @@ make_ui :: () -> UI_Draw_List {
         window_end();
     }
 
-    if window_begin(Rect.{ 600, 10, 250, 400 } * dpi_scale, "menu 2") {
-        separator("Theme");
+    if window_begin(Rect.{ 600, 10, 250, 400 } * dpi_scale, "Themes") {
 
         if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
             log("Theme choosen: %", enum_names(Color_Themes)[chosen_theme]);

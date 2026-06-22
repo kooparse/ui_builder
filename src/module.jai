@@ -15,7 +15,6 @@
     - design tab area. (another background too?).
     - have collapser area (with another background?)
     - text_codepoint in io struct... ?
-    - remove font as dependency.
 
     Blog post:
 
@@ -1057,6 +1056,9 @@ button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, c
 
     mutate_state(state, alloc_space(button_size));
 
+    clip := peek(current_layer.clip_stack);
+    if !rect_vs_rect(state.rect, clip) return state.pressed;
+
     text_too_big := rect.w < button_size.x;
 
     colors := ifx color then color.* else theme.color;
@@ -1108,8 +1110,9 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
     state, new := find_or_add(*widget_states, id);
 
     if new {
-        ptr     := New(T);
-        state.*  = cast(*Window_State) ptr;
+        ptr         := New(T, initialized = true);
+        state.*      = cast(*Widget_State) ptr;
+        state.*.kind = T;
 
         if default_rect.w > 0 || default_rect.h > 0 {
             state.*.rect = default_rect;

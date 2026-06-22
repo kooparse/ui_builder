@@ -31,7 +31,8 @@ bake_font :: (ttf_filepath: string, white_2x2_pixel := false) -> *Font {
     content := read_entire_file(ttf_filepath);
     count32 := cast,trunc(s32) content.count;
 
-    font := New(Font,, temp);
+    font := New(Font);
+
     using font;
 
     if FT_Init_FreeType(*ft_library) {
