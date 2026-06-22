@@ -285,8 +285,13 @@ make_ui :: () -> UI_Draw_List {
                     log("click!");
                 }
 
-                end_collapse();
+                set_layout_order(.COLUMNS, 4);
+
+                for 1..4 {
+                    if button(tprint("%", it)) then log("click! %", it);
+                }
             }
+            end_collapse();
 
             for 1..15 {
                 set_layout_order(.COLUMNS, 2);
@@ -303,17 +308,17 @@ make_ui :: () -> UI_Draw_List {
         window_end();
     }
 
-    if window_begin(Rect.{ 600, 10, 250, 400 } * dpi_scale, "menu 2") {
-        separator(1 * dpi_scale);
-
-        if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
-            log("Theme choosen: %", enum_names(Color_Themes)[chosen_theme]);
-        }
-
-        separator(1 * dpi_scale);
-
-        window_end();
-    }
+    // if window_begin(Rect.{ 600, 10, 250, 400 } * dpi_scale, "menu 2") {
+    //     separator(1 * dpi_scale);
+    //
+    //     if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
+    //         log("Theme choosen: %", enum_names(Color_Themes)[chosen_theme]);
+    //     }
+    //
+    //     separator(1 * dpi_scale);
+    //
+    //     window_end();
+    // }
 
 
     if show_color_picker {

@@ -69,6 +69,8 @@ Theme :: struct {
 
     text_size               := 16.;
 
+    collapser_offset        := 30.;
+
     color := LIPKO;
 
     button_color    := Vector4.{ 0.3, 0.3, 0.9, 1 };

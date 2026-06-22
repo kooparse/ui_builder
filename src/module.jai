@@ -129,7 +129,7 @@ UI_Layout :: struct {
     align      := Layout_Align.PIXEL_LEFT;
     columns    := 0;
 
-    collapser_offset : Vector2;
+    // collapser_offset : float;
 
     scrollbar        : *Scrollbar_State;
 
@@ -204,13 +204,17 @@ Input_State :: struct {
 
 Scrollbar_State :: struct {
     #as using state : Widget_State;
+
     scroll          : Vector2;
     has_scroll      : bool;
 };
 
 Collapse_State :: struct {
     #as using state : Widget_State;
+
     open            : bool;
+    prev_layout     : UI_Layout;
+    computed_height : float;
 };
 
 #scope_export;
@@ -533,13 +537,12 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
         x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
         y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
 
-        draw_rect(title_rect, title_color, .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER);
+        draw_rect(title_rect, title_color, .TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
         draw_text(title, x, y, text_size, theme.color.text);
     }
 
     // Draw resizer.
     draw_rect(resizer_rect, theme.color.fg, .ROUND_ALL);
-    // draw_outline(state.rect, theme.color.border, theme.border_width, .ROUND_ALL);
 
     layer_rect   := state.rect;
     layer_rect.x += theme.content_padding;
@@ -564,9 +567,14 @@ window_end :: () {
     pop_layer();
 }
 
+
+curr_collapser : *Collapse_State;
+
 begin_collapse :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
     id          := make_id(loc);
     state, new  := get_widget_state(Collapse_State, id);
+
+    curr_collapser = state;
 
     if new state.open = open_by_default;
 
@@ -591,12 +599,52 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
         state.open = !state.open;
     }
 
+
+
+
     flags := Rect_Flags.ROUND_ALL;
-    if state.open flags = .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER;
+    if state.open then flags = .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT | .TOP | .LEFT | .RIGHT;
 
     draw_rect(rect, bg_color, flags);
     draw_outline(rect, theme.color.border, theme.border_width, flags);
     draw_text(title, x, y, font_size, theme.color.text);
+
+    // @note for future alex:
+    // I was trying to make the push_layout/pop_layout work properly in order
+    // to simply pop a new layout for the collapser with proper new rect
+    // constraint (x padding, and proper width for the column layout for
+    // example.
+    //
+    //  But right now, it doesnt work... we have to fix that!
+
+    if state.open {
+        // bg_region  := rect;
+        // bg_region.y = rect.y + rect.h;
+        // bg_region.h = state.computed_height;
+        //
+        color   := theme.color.border;
+        color.w  = 0.6;
+        //
+        borders := Rect_Flags.LEFT | .RIGHT | .BOTTOM | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
+        // draw_outline(bg_region, color, theme.border_width, borders);
+
+        layout_rect   := Rect.{
+            rect.x,
+            rect.y + rect.h,
+            rect.w,
+            layout.rect.h
+        };
+
+        // layout_rect.x += theme.collapser_offset;
+        // layout_rect.y += rect.h;
+        // layout_rect.w -= theme.collapser_offset;
+        // layout_rect.h -= rect.h
+
+        draw_outline(layout_rect, color, theme.border_width, borders);
+
+        state.prev_layout = layout.*;
+        push_layout(layout_rect);
+    }
 
 
     // Draw arrow.
@@ -624,16 +672,41 @@ begin_collapse :: (title : string, open_by_default := false, loc := #caller_loca
         push_triangle(p0, p1, p2, theme.color.border);
     }
 
-    if state.open {
-        layout.collapser_offset = Vector2.{ 60, 0 };
-    }
-
     return state.open;
 }
 
 end_collapse :: () {
-    layout := current_layout();
-    layout.collapser_offset = .{};
+    assert(curr_collapser != null);
+
+    if curr_collapser.open {
+        content_height := current_layout().cursor.y + current_layout().prev_widget_size.y;
+        pop_layout();
+
+        // push_layout(curr_collapser.prev_layout.rect);
+        //
+        // prev_layout := curr_collapser.prev_layout;
+        //
+        // layout := current_layout();
+        // layout.* = prev_layout;
+
+        current_layout().cursor.y += content_height;
+    }
+
+
+
+    curr_collapser = null;
+    // layout := current_layout();
+
+    // if curr_collapser != null {
+    //     start := curr_collapser.rect.y + curr_collapser.rect.h;
+    //     end   := layout.rect.y + layout.cursor.y + layout.prev_widget_size.y + theme.margin_y;
+    //
+    //     curr_collapser.computed_height = end - start;
+    //     curr_collapser = null;
+    // }
+
+    // layout.cursor.y         += theme.margin_y;
+    // layout.collapser_offset  = .{};
 }
 
 ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
@@ -689,7 +762,7 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
     }
 
     flags := Rect_Flags.ROUND_ALL;
-    if state.open flags = .ROUND_TOP_LEFT_CORNER | .ROUND_TOP_RIGHT_CORNER;
+    if state.open flags = .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT | .TOP | .LEFT | .RIGHT;
 
     draw_rect(rect, bg_color, flags);
     draw_outline(rect, theme.color.border, theme.border_width, flags);
@@ -698,7 +771,7 @@ select :: (selected: int, items: [] string, size := Vector2.{ 100, 40 }, placeho
     value := selected;
 
     if state.open {
-        dropdown_flags := Rect_Flags.ROUND_BOTTOM_LEFT_CORNER | .ROUND_BOTTOM_RIGHT_CORNER;
+        dropdown_flags := Rect_Flags.LEFT | .RIGHT | .BOTTOM | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
         dropdown_rect  := Rect.{ rect.x, rect.y + rect.h, rect.w, 300 };
 
         is_new := push_layer(id, dropdown_rect);
@@ -1071,9 +1144,9 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
 }
 
 internal_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
-    if current_layer.prev_layouts.count < current_layer.layouts.count {
-        return null;
-    }
+    // if current_layer.prev_layouts.count < current_layer.layouts.count {
+    //     return null;
+    // }
 
     id      := make_id(loc, "_scrollbar");
     state   := get_widget_state(Scrollbar_State, id);
@@ -1082,13 +1155,15 @@ internal_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
     layout.scrollbar = state;
 
     scroll      := *state.scroll;
-    prev_layout := current_layer.prev_layouts[current_layer.layouts.count - 1];
+    // prev_layout := current_layer.prev_layouts[current_layer.layouts.count - 1];
 
 
     // We compute the actual content size from the previous frame.
-    content_h   := prev_layout.cursor.y + prev_layout.prev_widget_size.y;
+    content_h   := layout.cursor.y + layout.prev_widget_size.y;
     visible_h   := layout.rect.h;
     max_scroll  := max(0.0, content_h - visible_h);
+
+    log("handle: %", max_scroll);
 
     // @todo: Perhaps add again mouse wheel for scrolling content...
     // if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
@@ -1239,7 +1314,7 @@ push_layout :: (layout_rect: Rect) {
 }
 
 pop_layout :: () {
-    // _ := pop(*current_layer.layouts);
+    _ := pop(*current_layer.layouts);
 }
 
 get_vertices :: () -> *[..] UI_Vertex {
@@ -1356,8 +1431,8 @@ alloc_space :: (widget_size: Vector2) -> Rect {
 
     if layout.scrollbar then scroll = layout.scrollbar.scroll;
 
-    base_x := layout.collapser_offset.x + layout.rect.x - scroll.x;
-    base_y := layout.collapser_offset.y + layout.rect.y - scroll.y;
+    base_x := layout.rect.x - scroll.x;
+    base_y := layout.rect.y - scroll.y;
 
     r := Rect.{ base_x + cursor.x, base_y + cursor.y, size.x, size.y };
 
@@ -1430,16 +1505,19 @@ round_pixel :: inline (x : float) -> float {
 */
 
 Rect_Flags :: enum_flags u32 {
-    NONE                        :: 0x00;
-    ROUND_TOP_LEFT_CORNER       :: (1 << 0);
-    ROUND_TOP_RIGHT_CORNER      :: (1 << 1);
-    ROUND_BOTTOM_LEFT_CORNER    :: (1 << 2);
-    ROUND_BOTTOM_RIGHT_CORNER   :: (1 << 3);
+    NONE   :: 0x00;
+    TOP    :: (1 << 0);
+    LEFT   :: (1 << 1);
+    RIGHT  :: (1 << 2);
+    BOTTOM :: (1 << 3);
 
-    ROUND_ALL :: ROUND_TOP_LEFT_CORNER      |
-                 ROUND_TOP_RIGHT_CORNER     |
-                 ROUND_BOTTOM_LEFT_CORNER   |
-                 ROUND_BOTTOM_RIGHT_CORNER;
+    ROUND_TOP_LEFT     :: (1 << 4);
+    ROUND_TOP_RIGHT    :: (1 << 5);
+    ROUND_BOTTOM_LEFT  :: (1 << 6);
+    ROUND_BOTTOM_RIGHT :: (1 << 7);
+
+    ALL_SIDES :: TOP | LEFT | RIGHT | BOTTOM;
+    ROUND_ALL :: ROUND_TOP_LEFT | ROUND_TOP_RIGHT | ROUND_BOTTOM_LEFT | ROUND_BOTTOM_RIGHT | ALL_SIDES;
 };
 
 draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags = 0x00) {
@@ -1459,6 +1537,12 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
         return;
     }
 
+
+    top    := (flags & .TOP);
+    left   := (flags & .LEFT);
+    right  := (flags & .RIGHT);
+    bottom := (flags & .BOTTOM);
+
     // For rounded corners:
     radius := theme.corner_radius;
     radius  = min(radius, r.w * 0.5);
@@ -1469,7 +1553,14 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
     bottom_left  := Rect.{ r.x, r.y + r.h - radius, radius, radius };
     bottom_right := Rect.{ r.x + r.w - radius, r.y + r.h - radius, radius, radius };
 
-    if flags & .ROUND_TOP_LEFT_CORNER {
+    // We want to round the corner only if its adjacent side are present.
+    round_tl := (flags & .ROUND_TOP_LEFT)     && top    && left;
+    round_tr := (flags & .ROUND_TOP_RIGHT)    && top    && right;
+    round_bl := (flags & .ROUND_BOTTOM_LEFT)  && bottom && left;
+    round_br := (flags & .ROUND_BOTTOM_RIGHT) && bottom && right;
+
+
+    if round_tl {
         p0 := xy(top_left.x + top_left.w, top_left.y + top_left.h);
 
         prev := p0 + xy(0, -radius);                 // angle 0, top
@@ -1491,15 +1582,9 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
             prev = p2;
         }
 
-    } else {
-        a := Rect.{ r.x, r.y, border_width, radius };
-        b := Rect.{ r.x + border_width, r.y, border_width, radius - border_width };
-
-        internal_draw_rect(a, color);
-        internal_draw_rect(b, color);
     }
 
-    if flags & .ROUND_TOP_RIGHT_CORNER {
+    if round_tr {
         p0 := xy(top_right.x, top_right.y + top_right.h);
 
         prev := p0 + xy(0, -radius);
@@ -1519,16 +1604,9 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
 
             prev = p2;
         }
-    } else {
-        a := Rect.{ r.x + r.w - radius, r.y, radius, border_width};
-        b := Rect.{ r.x + r.w - border_width, r.y + border_width, border_width, radius - border_width };
-
-        internal_draw_rect(a, color);
-        internal_draw_rect(b, color);
-
     }
 
-    if flags & .ROUND_BOTTOM_LEFT_CORNER {
+    if round_bl {
         p0 := xy(bottom_left.x + bottom_left.w, bottom_left.y);
 
         prev := p0 + xy(0, radius);
@@ -1548,15 +1626,9 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
 
             prev = p2;
         }
-    } else {
-        a := Rect.{ r.x, r.y + r.h - radius, border_width, radius };
-        b := Rect.{ r.x + border_width, r.y + r.h - border_width, radius - border_width, border_width };
-
-        internal_draw_rect(a, color);
-        internal_draw_rect(b, color);
     }
 
-    if flags & .ROUND_BOTTOM_RIGHT_CORNER {
+    if round_br {
         p0   := xy(bottom_right.x, bottom_right.y);
         prev := p0 + xy(0, radius);
 
@@ -1576,25 +1648,47 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
 
             prev = p2;
         }
-    } else {
-        a := Rect.{ r.x + r.w - border_width, r.y + r.h - radius, border_width, radius};
-        b := Rect.{ r.x + r.w - radius, r.y + r.h - border_width, radius - border_width, border_width };
-
-        internal_draw_rect(a, color);
-        internal_draw_rect(b, color);
     }
 
-    top_line := Rect.{ r.x + border_width, r.y, r.w - border_width * 2, border_width };
-    internal_draw_rect(top_line, color);
+    if top {
+        x0 := r.x;
+        x1 := r.x + r.w;
 
-    left_line := Rect.{ r.x, r.y + border_width, border_width, r.h - border_width * 2};
-    internal_draw_rect(left_line, color);
+        if round_tl       x0 += radius; else if left  x0 += border_width;
+        if round_tr       x1 -= radius; else if right x1 -= border_width;
 
-    right_line := Rect.{ r.x + r.w - border_width, r.y + border_width, border_width, r.h - border_width * 2};
-    internal_draw_rect(right_line, color);
+        internal_draw_rect(Rect.{ x0, r.y, x1 - x0, border_width }, color);
+    }
 
-    bottom_line := Rect.{ r.x + border_width, r.y + r.h - border_width, r.w - border_width * 2, border_width };
-    internal_draw_rect(bottom_line, color);
+    if bottom {
+        x0 := r.x;
+        x1 := r.x + r.w;
+
+        if round_bl       x0 += radius; else if left  x0 += border_width;
+        if round_br       x1 -= radius; else if right x1 -= border_width;
+
+        internal_draw_rect(Rect.{ x0, r.y + r.h - border_width, x1 - x0, border_width }, color);
+    }
+
+    if left {
+        y0 := r.y;
+        y1 := r.y + r.h;
+
+        if round_tl       y0 += radius; else if top    y0 += border_width;
+        if round_bl       y1 -= radius; else if bottom y1 -= border_width;
+
+        internal_draw_rect(Rect.{ r.x, y0, border_width, y1 - y0 }, color);
+    }
+
+    if right {
+        y0 := r.y;
+        y1 := r.y + r.h;
+
+        if round_tr       y0 += radius; else if top    y0 += border_width;
+        if round_br       y1 -= radius; else if bottom y1 -= border_width;
+
+        internal_draw_rect(Rect.{ r.x + r.w - border_width, y0, border_width, y1 - y0 }, color);
+    }
 }
 
 draw_circle :: (pos: Vector2, radius: float, color: Vector4) {
@@ -1653,7 +1747,7 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
     bottom_left  := Rect.{ r.x, r.y + r.h - radius, radius, radius };
     bottom_right := Rect.{ r.x + r.w - radius, r.y + r.h - radius, radius, radius };
 
-    if flags & .ROUND_TOP_LEFT_CORNER {
+    if flags & .ROUND_TOP_LEFT {
 
         p0 := xy(top_left.x + top_left.w, top_left.y + top_left.h);
 
@@ -1672,7 +1766,7 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
         internal_draw_rect(top_left, color);
     }
 
-    if flags & .ROUND_TOP_RIGHT_CORNER {
+    if flags & .ROUND_TOP_RIGHT {
         p0 := xy(top_right.x, top_right.y + top_right.h);
 
         prev := p0 + xy(0, -radius);
@@ -1686,7 +1780,7 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
         internal_draw_rect(top_right, color);
     }
 
-    if flags & .ROUND_BOTTOM_LEFT_CORNER {
+    if flags & .ROUND_BOTTOM_LEFT {
         p0 := xy(bottom_left.x + bottom_left.w, bottom_left.y);
 
         prev := p0 + xy(0, radius);
@@ -1700,7 +1794,7 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = 0x00) {
         internal_draw_rect(bottom_left, color);
     }
 
-    if flags & .ROUND_BOTTOM_RIGHT_CORNER {
+    if flags & .ROUND_BOTTOM_RIGHT {
         p0 := xy(bottom_right.x, bottom_right.y);
 
         prev := p0 + xy(0, radius);
