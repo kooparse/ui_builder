@@ -201,7 +201,7 @@ Color_Themes :: enum {
 
 mutate_text     : string = "I'm an input text!";
 
-show_color_picker := false;
+show_color_picker := true;
 translucent       := false;
 last_draw_calls   : int;
 last_vertex_count : int;
@@ -217,7 +217,19 @@ TABS :: enum {
 };
 current_tab := TABS.TAB_1;
 
+Entity_Flags :: enum_flags u64 {
+    SOLID          :: 1 << 0;
+    PICKABLE       :: 1 << 1;
+    INTERACTIVE    :: 1 << 2;
+};
+
 THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, NORD, LIPKO ];
+
+my_float     := 12.4;
+my_int       := 4;
+my_color     := Vector4.{ 1, 0, 1, 1 };
+my_hex       : u32 = 0xffffee;
+my_enum_flag := Entity_Flags.SOLID;
 
 make_ui :: () -> UI_Draw_List {
 
@@ -248,8 +260,7 @@ make_ui :: () -> UI_Draw_List {
 
     size := Vector2.{ -1, 30 } * dpi_scale;
 
-    if window_begin(Rect.{ 10, 10, 450, 400 } * dpi_scale, "menu 1") {
-
+    if window_begin(Rect.{ 10, 10, 450, 400 } * dpi_scale, "Widgets") {
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
             gpu_time = get_last_frame_gpu_time() * 1000;
@@ -268,11 +279,22 @@ make_ui :: () -> UI_Draw_List {
         }
 
         if current_tab == .TAB_1 {
+            set_layout_order(.STACK);
+
             placeholder := "Choose...";
-            selected     = select(selected, items, .{ 200, 30 } * dpi_scale, placeholder);
+            select(*selected, items, .{ 200, 30 } * dpi_scale, placeholder);
+
+            flag_select(*my_enum_flag, .{ 200, 30 } * dpi_scale, placeholder);
 
             separator("Inputs");
+
             text_input(mutate_text);
+
+            number_input(*my_float);
+            label(tprint("my_float: %", my_float));
+
+            number_input(*my_int);
+            label(tprint("my_int: %", my_int));
 
             separator("Checkboxes");
             checkbox(*show_color_picker);
@@ -326,9 +348,10 @@ make_ui :: () -> UI_Draw_List {
 
     if show_color_picker {
         if window_begin(Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
-            if button("OK!", size) {
-                log("click!");
-            }
+
+            separator("Channels inputs");
+            rgba_input(*my_color);
+            hexcolor_input(*my_hex);
 
             window_end();
         }

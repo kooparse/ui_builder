@@ -128,7 +128,7 @@ get_font_metrics :: (using font : *Font, font_size : u32) -> Font_Metrics {
     return result;
 }
 
-get_size :: (using font: *Font, text : string, size : int) -> width: float, height: float {
+get_size :: (using font: *Font, text : string, size : float) -> width: float, height: float {
     if text.count <= 0 return 0, 0;
 
     max_width : float;

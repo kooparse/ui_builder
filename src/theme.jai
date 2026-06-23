@@ -7,24 +7,19 @@ Color_Theme :: struct {
     text          : Vector4;
     accent        : Vector4;
     text_muted    : Vector4;
+
+    blue          : Vector4;
+    red           : Vector4;
+    green         : Vector4;
 };
 
 hex :: (hex: u32) -> Vector4 {
-    r := (cast(float) (hex >> 16) & 0xFF) / 255.0;
-    g := (cast(float) (hex >> 8) & 0xFF)  / 255.0;
-    b := (cast(float) (hex >> 0) & 0xFF)  / 255.0;
+    r := (cast(float) (hex >> 16) & 0xFF)  / 255.0;
+    g := (cast(float) (hex >> 8)  & 0xFF)  / 255.0;
+    b := (cast(float) (hex >> 0)  & 0xFF)  / 255.0;
 
     return xyzw(r, g, b, 1.0);
 }
-
-GRUVBOX_DARK :: Color_Theme.{
-    bg          = #run hex(0x1d2021),
-    fg          = #run hex(0x3c3836),
-    text        = #run hex(0xebdbb2),
-    text_muted  = #run hex(0x928374),
-    border      = #run hex(0x504945),
-    accent      = #run hex(0x7daea3),
-};
 
 LIPKO :: Color_Theme.{
     bg          = #run hex(0x427b58),
@@ -32,26 +27,54 @@ LIPKO :: Color_Theme.{
 
     text        = #run hex(0xebdbb2),
     text_muted  = #run hex(0x928374),
-    border      = #run hex(0x076678),
+    border      = #run hex(0x504945),
     accent      = #run hex(0xd79921),
+
+    red         = #run hex(0xfb4934),
+    green       = #run hex(0xb8bb26),
+    blue        = #run hex(0x83a598),
+};
+
+GRUVBOX_DARK :: Color_Theme.{
+    bg          = #run hex(0x1d2021),
+    fg          = #run hex(0x3c3836),
+
+    text        = #run hex(0xebdbb2),
+    text_muted  = #run hex(0x928374),
+    border      = #run hex(0x504945),
+    accent      = #run hex(0x7daea3),
+
+    red         = #run hex(0xfb4934),
+    green       = #run hex(0xb8bb26),
+    blue        = #run hex(0x83a598),
 };
 
 GRUVBOX_LIGHT :: Color_Theme.{
     bg          = #run hex(0xfbf1c7),
-    fg          = #run hex(0xa89984),
+    fg          = #run hex(0xebdbb2),
+
     text        = #run hex(0x654735),
-    text_muted  = #run hex(0xa89984),
+    text_muted  = #run hex(0x7c6f64),
     border      = #run hex(0xbdae93),
     accent      = #run hex(0x45707a),
+
+    red         = #run hex(0x9d0006),
+    green       = #run hex(0x79740e),
+    blue        = #run hex(0x076678),
 };
 
 NORD :: Color_Theme.{
     bg          = #run hex(0x2e3440),
     fg          = #run hex(0x3b4252),
+
     text        = #run hex(0xeceff4),
-    text_muted  = #run hex(0x4c566a),
+    text_muted  = #run hex(0xd8dee9),
     border      = #run hex(0x4c566a),
     accent      = #run hex(0x88c0d0),
+
+    red         = #run hex(0xbf616a),
+    green       = #run hex(0xa3be8c),
+    blue        = #run hex(0x5e81ac),
 };
 
 Theme :: struct {
