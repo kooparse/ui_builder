@@ -2,8 +2,6 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
-    - review/refacto scrollbar once and for all
-    - (and then impl horizontal scrollbar)
     - font in export_file, and use just a table inthis lib...
     - use some pool allocator
     - set layout order also, we want to set and unset after one alloc (very often).
@@ -78,7 +76,6 @@ UV_DISCARD :: Vector2.{ 0, 0 };
 UI_ID      :: int;
 UI_Texture :: *void;
 
-
 key_count       :: #run enum_names(UI_Key).count;
 key_state       : [key_count] UI_Key_State;
 
@@ -104,6 +101,9 @@ mouse_x  : float;
 mouse_y  : float;
 delta_x  : float;
 delta_y  : float;
+
+curr_window_scroll : *Scrollbar_State;
+curr_expander      : *Expander_State;
 
 Cursor_Icon :: enum {
     ARROW;
@@ -144,7 +144,10 @@ UI_Layout :: struct {
     align      := Layout_Align.PIXEL_LEFT;
     columns    := 0;
 
-    scrollbar        : *Scrollbar_State;
+    max_height : float;
+    max_width  : float;
+
+    scroll : Vector2;
 
     // For auto layout.
     curr_column      := 0;
@@ -232,7 +235,9 @@ Scrollbar_State :: struct {
     #as using state : Widget_State;
 
     scroll          : Vector2;
-    has_scroll      : bool;
+
+    dragging_x : bool;
+    dragging_y : bool;
 };
 
 Expander_State :: struct {
@@ -523,7 +528,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
 
     if state.dragging == .RESIZE_WINDOW {
         curr_cursor_icon = .RESIZE_ARROW;
-       log("resizing !");
+        log("resizing !");
         state.rect.w += delta_x;
         state.rect.h += delta_y;
     }
@@ -559,26 +564,28 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     layer_rect.x += theme.content_padding;
     layer_rect.y += theme.window_title_bar_height + theme.content_padding;
     layer_rect.w -= theme.scrollbar_width + theme.content_padding * 2;
-    layer_rect.h -= (theme.window_title_bar_height + theme.content_padding);
+    layer_rect.h -= (theme.scrollbar_width + theme.window_title_bar_height + theme.content_padding * 2);
 
     layer_rect = pad_rect(layer_rect, theme.border_width, theme.border_width);
 
     set_layout(layer_rect);
 
-    internal_scrollbar(loc);
+    curr_window_scroll = begin_scroll(loc);
 
     push_clip(layer_rect);
 
     return state.open;
 }
 
-window_end :: () {
+window_end :: (loc := #caller_location) {
     pop_clip();
+
+    if curr_window_scroll then end_scroll(curr_window_scroll);
     pop_layer();
 }
 
 
-curr_expander : *Expander_State;
+
 
 begin_expander :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
     id          := make_id(loc);
@@ -716,10 +723,11 @@ ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
 
 }
 
-flag_select :: (flag: *$T, size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) -> modified: bool {
+flag_select :: (flag: *$T, size := Vector2.{ 100, 40 }, placeholder := "", max_items := 3, loc := #caller_location) -> modified: bool {
     id      := make_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 
+    item_height := size.y * 0.8;
 
     ti := cast(*Type_Info_Enum) T;
 
@@ -788,8 +796,9 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, 40 }, placeholder := "", loc :
 
 
     if state.open {
+        dropdown_height := cast(float, max_items) * (item_height + theme.content_padding * 2);
         dropdown_flags := Rect_Flags.LEFT | .RIGHT | .BOTTOM | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
-        dropdown_rect  := Rect.{ rect.x, rect.y + rect.h, rect.w, 300 };
+        dropdown_rect  := Rect.{ rect.x, rect.y + rect.h, rect.w, dropdown_height };
 
         is_new := push_layer(id, dropdown_rect);
         defer pop_layer();
@@ -814,12 +823,11 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, 40 }, placeholder := "", loc :
 
         set_layout(layer_rect);
 
-        internal_scrollbar(loc);
-
-        size := Vector2.{ layer_rect.w , 60 };
 
         selected_color := theme.color;
         selected_color.fg = theme.color.accent;
+
+        scroll := begin_scroll(loc);
 
         for ti.names {
             push_id(it_index);
@@ -830,11 +838,13 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, 40 }, placeholder := "", loc :
 
             color := ifx selected selected_color else theme.color;
 
-            if button(it, size, color = *color) {
+            if button(it, .{ layer_rect.w, item_height }, color = *color) {
                 if selected then flag.* &= ~enum_val; else flag.* |= enum_val;
                 modified    = true;
             }
         }
+
+        end_scroll(scroll);
 
         draw_outline(dropdown_rect, theme.color.border, theme.border_width, dropdown_flags);
 
@@ -848,7 +858,7 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, 40 }, placeholder := "", loc :
     return modified;
 }
 
-select :: (selected: *int, items: [] string, size := Vector2.{ 100, 40 }, placeholder := "", loc := #caller_location) -> bool {
+select :: (selected: *int, items: [] string, size := Vector2.{ 100, 40 }, placeholder := "", max_items := 3, loc := #caller_location) -> bool {
     id      := make_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 
@@ -856,6 +866,8 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, 40 }, placeh
 
     modified     := false;
     button_label := ifx selected.* >= 0 items[selected.*] else placeholder_text;
+
+    item_height := size.y * 0.8;
 
     rect := alloc_space(size);
     mutate_state(state, rect);
@@ -909,8 +921,9 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, 40 }, placeh
 
 
     if state.open {
+        dropdown_height := (item_height + theme.content_padding * 2) * (cast(float) max_items);
         dropdown_flags := Rect_Flags.LEFT | .RIGHT | .BOTTOM | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
-        dropdown_rect  := Rect.{ rect.x, rect.y + rect.h, rect.w, 300 };
+        dropdown_rect  := Rect.{ rect.x, rect.y + rect.h, rect.w, dropdown_height };
 
         is_new := push_layer(id, dropdown_rect);
         defer pop_layer();
@@ -935,20 +948,20 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, 40 }, placeh
 
         set_layout(layer_rect);
 
-        internal_scrollbar(loc);
-
-        size := Vector2.{ layer_rect.w , 60 };
+        scroll := begin_scroll(loc);
 
         for items {
             push_id(it_index);
             defer pop_id();
 
-            if button(it, size) {
+            if button(it, .{ layer_rect.w, item_height }) {
                 selected.*  = it_index;
                 modified    = true;
                 state.open  = false;
             }
         }
+
+        end_scroll(scroll);
 
         draw_outline(dropdown_rect, theme.color.border, theme.border_width, dropdown_flags);
 
@@ -1471,69 +1484,137 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
     return status;
 }
 
-internal_scrollbar :: (loc := #caller_location) -> *Scrollbar_State {
-    id      := make_id(loc, "_scrollbar");
+begin_scroll :: (loc := #caller_location) -> *Scrollbar_State {
+    id      := make_id(loc, "scrollbar");
     state   := get_widget_state(Scrollbar_State, id);
 
+    current_layout().scroll = state.scroll;
+
+    return state;
+}
+
+end_scroll :: (state: *Scrollbar_State) {
+    id := state.widget_id;
+
     layout := current_layout();
-    layout.scrollbar = state;
 
     scroll      := *state.scroll;
     prev_layout := current_layer.prev_layout;
 
-    // We compute the actual content size from the previous frame.
-    content_h   := prev_layout.cursor.y + prev_layout.prev_widget_size.y;
-    visible_h   := layout.rect.h;
-    max_scroll  := max(0.0, content_h - visible_h);
 
-    // @todo: Perhaps add again mouse wheel for scrolling content...
-    // if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
-    //     scroll.y += xx wheel_y;
-    //     scroll.y = clamp(scroll.y, 0.0, max_scroll);
-    // }
+    {
+        // We compute the actual content size from the previous frame.
+        content_h   := layout.max_height;
+        visible_h   := layout.rect.h;
+
+        // max_scroll offset?
+        max_scroll  := max(0.0, content_h - visible_h);
+        scroll.y     = clamp(scroll.y, 0.0, max_scroll);
+
+        // @todo: Perhaps add again mouse wheel for scrolling content...
+        // if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
+        //     scroll.y += xx wheel_y;
+        //     scroll.y = clamp(scroll.y, 0.0, max_scroll);
+        // }
+
+        if max_scroll > 0 {
+            track_h  := layout.rect.h;
+
+            ratio    := clamp(visible_h / content_h, 0.0, 1.0);
+            handle_h := max(20., track_h * ratio); // @todo, set the min size in theme.
+            travel   := track_h - handle_h;
+            scroll_t := ifx max_scroll > 0 scroll.y / max_scroll else 0.0;
 
 
+            handle := Rect.{
+                layout.rect.x + layout.rect.w + theme.content_padding * 0.5,
+                layout.rect.y + scroll_t * travel,
+                theme.scrollbar_width,
+                handle_h,
+            };
 
-    track_h  := layout.rect.h;
+            status   := get_status(handle, check_layout = false);
+            bg_color := get_color(status, ifx state.dragging_y then theme.color.accent else theme.color.text_muted);
 
-    ratio    := clamp(visible_h / content_h, 0.0, 1.0);
-    handle_h := max(20., track_h * ratio); // @todo, set the min size in theme.
-    travel   := track_h - handle_h;
-    scroll_t := scroll.y / max_scroll;
+            if !state.dragging_x && (active_widget == -1 || active_widget == id) {
+                is_dragging := active_widget == id;
+                hit         := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
 
+                if hit && !is_dragging && abs(delta_y) > 0 {
+                    active_widget = id;
+                    state.dragging_y = true;
+                }
 
-    handle := Rect.{
-        layout.rect.x + layout.rect.w + theme.content_padding * 0.5,
-        layout.rect.y + scroll_t * travel,
-        theme.scrollbar_width,
-        handle_h,
-    };
+                if is_dragging && !is_down(.MOUSE_LEFT) {
+                    active_widget = -1;
+                    state.dragging_y = false;
+                }
 
-    mutate_state(state, handle, check_layout = false);
+                if is_dragging && travel > 0 {
+                    scroll.y += delta_y * (max_scroll / travel);
+                    scroll.y  = clamp(scroll.y, 0.0, max_scroll);
+                }
+            }
 
-    bg_color := get_color(state.status, ifx state.status != 0 theme.color.accent else theme.color.text_muted);
-
-    if active_widget == -1 || active_widget == id {
-        is_dragging := active_widget == id;
-        hit         := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
-
-        if hit && !is_dragging && abs(delta_y) > 0 {
-            active_widget = id;
+            draw_rect(handle, bg_color, .ROUND_ALL);
         }
 
-        if is_dragging && !is_down(.MOUSE_LEFT) {
-            active_widget = -1;
-        }
-
-        if is_dragging && travel > 0 {
-            scroll.y += delta_y * (max_scroll / travel);
-            scroll.y  = clamp(scroll.y, 0.0, max_scroll);
-        }
     }
 
-    draw_rect(handle, bg_color, .ROUND_ALL);
+    {
+        // We compute the actual content size from the previous frame.
+        content_w   := layout.max_width;
+        visible_w   := layout.rect.w;
 
-    return state;
+        max_scroll  := max(0.0, content_w - visible_w);
+        scroll.x     = clamp(scroll.x, 0.0, max_scroll);
+
+        if max_scroll > 6 {
+            track_w  := layout.rect.w;
+
+            ratio    := clamp(visible_w / content_w, 0.0, 1.0);
+            handle_w := max(20., track_w * ratio); // @todo, set the min size in theme.
+            travel   := track_w - handle_w;
+            scroll_t := ifx max_scroll > 0 scroll.x / max_scroll else 0;
+
+
+            handle := Rect.{
+                layout.rect.x + scroll_t * travel,
+                layout.rect.y + layout.rect.h + theme.content_padding * 0.5,
+                handle_w,
+                theme.scrollbar_width,
+            };
+
+            status := get_status(handle, check_layout = false);
+
+            bg_color := get_color(status, ifx state.dragging_x then theme.color.accent else theme.color.text_muted);
+
+            if !state.dragging_y && (active_widget == -1 || active_widget == id) {
+                is_dragging := active_widget == id;
+                hit         := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
+
+                if hit && !is_dragging && abs(delta_x) > 0 {
+                    active_widget = id;
+                    state.dragging_x = true;
+                }
+
+                if is_dragging && !is_down(.MOUSE_LEFT) {
+                    active_widget = -1;
+                    state.dragging_x = false;
+                }
+
+                if is_dragging && travel > 0 {
+                    scroll.x += delta_x * (max_scroll / travel);
+                    scroll.x  = clamp(scroll.x, 0.0, max_scroll);
+                }
+            }
+
+            draw_rect(handle, bg_color, .ROUND_ALL);
+
+        }
+
+    }
+
 }
 
 // @todo: inline this func.
@@ -1757,12 +1838,8 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
         }
     }
 
-    scroll : Vector2;
-
-    if layout.scrollbar then scroll = layout.scrollbar.scroll;
-
-    base_x := layout.rect.x - scroll.x;
-    base_y := layout.rect.y - scroll.y;
+    base_x := layout.rect.x - layout.scroll.x;
+    base_y := layout.rect.y - layout.scroll.y;
 
     r := Rect.{ base_x + cursor.x, base_y + cursor.y, size.x, size.y };
 
@@ -1772,6 +1849,9 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
     r.h = round_pixel(r.h);
 
     prev_widget_size = Vector2.{ size.x, size.y };
+
+    layout.max_width  = max(layout.max_width, cursor.x + size.x);
+    layout.max_height = max(layout.max_height, cursor.y + size.y);
 
     return r;
 }

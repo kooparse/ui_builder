@@ -191,7 +191,9 @@ main :: () {
 
 selected        := -1;
 radio_selected  := 0;
-items           := string.[ "Apple", "Peach", "Banana", "Chocolate", "Tea" ];
+items           := string.[ "Apple", "Peach", "Banana",
+                            "Chocolate", "Tea", "Raspberry",
+                            "Orange", "Cucumber", "Potato" ];
 
 chosen_theme := 0;
 Color_Themes :: enum {
@@ -284,7 +286,7 @@ make_ui :: () -> UI_Draw_List {
             set_layout_order(.STACK);
 
             placeholder := "Choose...";
-            select(*selected, items, .{ 200, 30 } * dpi_scale, placeholder);
+            select(*selected, items, .{ 200, 30 } * dpi_scale, placeholder, max_items = 4);
 
             flag_select(*my_enum_flag, .{ 200, 30 } * dpi_scale, placeholder);
 
