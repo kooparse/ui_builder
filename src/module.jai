@@ -2,6 +2,13 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
+    - review/refacto scrollbar once and for all
+    - (and then impl horizontal scrollbar)
+    - font in export_file, and use just a table inthis lib...
+    - use some pool allocator
+    - set layout order also, we want to set and unset after one alloc (very often).
+
+
     TODO:
     - better understanding for scrollbar
     - better understanding for rounded corner.
@@ -12,7 +19,6 @@
     - Get proper color state.
     - we can do a better job with key delay/rate (the code is too complex/big for what it does).
     - design tab area. (another background too?).
-    - have collapser area (with another background?)
     - text_codepoint in io struct... ?
     - clear memory of hashtable.
 
@@ -203,13 +209,6 @@ Text_Input_State :: struct {
     focused : bool;
     focused_start_time : float;
 
-    text_offset  := 0;
-    should_clip : bool;
-    cursor_rect : Rect;
-    cursor_color : Vector4;
-    text_x : float;
-    text_y : float;
-
     cursor_start  := -1;
     cursor_end    := -1;
 };
@@ -325,22 +324,6 @@ set_mouse_position :: (x: float, y: float) {
 set_wheel :: (x: float, y: float) {
     wheel_x = x;
     wheel_y = y;
-}
-
-is_down :: (key: UI_Key) -> bool {
-    state := key_state[key];
-
-    return state.down;
-}
-
-is_pressed :: (key: UI_Key, repeat := true) -> bool {
-    state := key_state[key];
-
-    if !repeat {
-        return state.down && state.down_duration == 0;
-    } else {
-        return state.down && state.down_duration == 0 || state.down && state.repeat_duration == 0;
-    }
 }
 
 set_key_event :: (key: UI_Key, down: bool) {
@@ -1038,23 +1021,25 @@ send_text_codepoint :: (codepoint: string) {
     text_codepoint = copy_string(codepoint);
 }
 
-hexcolor_input :: (value: *u32, size := Vector2.{ 200, 60 }) -> modified: bool {
+hexa_input :: (color: *Vector4, size := Vector2.{ 200, 60 }) -> modified: bool {
+    hexa := color_to_hexa(color.*);
 
-    s := sprint("#%", formatInt(value.*, base=16, minimum_digits=6));
-    defer free(s);
+    hexa_str := sprint("#%", formatInt(hexa, base = 16, minimum_digits = 6));
+    defer free(hexa_str);
 
-    modified, new_str := text_input(s, size);
+    modified, new_str := text_input(hexa_str, size);
 
     if modified && new_str.count >= 1 {
         advance(*new_str, 1);
+
         result, success := string_to_int(new_str, 16, u32);
-        if success then value.* = result;
+        if success then color.* = hexa_to_color(result);
     }
 
     set_layout_order(.INLINE);
 
     rect := alloc_space(Vector2.{ size.y, size.y }, true);
-    draw_rect(rect, hex(value.*), .ROUND_ALL);
+    draw_rect(rect, color.*, .ROUND_ALL);
     draw_outline(rect, theme.color.border, theme.border_width, .ROUND_ALL);
 
     set_layout_order(.STACK);
@@ -1062,11 +1047,15 @@ hexcolor_input :: (value: *u32, size := Vector2.{ 200, 60 }) -> modified: bool {
     return modified;
 }
 
-rgba_input :: (value : *Vector4, size := Vector2.{ 80, 60 }, loc := #caller_location) -> modified: bool {
+Color_Format :: enum {
+    FLOAT;
+    U8;
+};
+
+rgba_input :: (value : *Vector4, size := Vector2.{ 120, 60 }, format := Color_Format.FLOAT, loc := #caller_location) -> modified: bool {
     layout := current_layout();
 
     for * value.component {
-
         push_id(it_index);
         defer pop_id();
 
@@ -1106,7 +1095,25 @@ rgba_input :: (value : *Vector4, size := Vector2.{ 80, 60 }, loc := #caller_loca
         draw_text(text, rect.x + rect.w * 0.5 - text_width * 0.5, rect.y + rect.h * 0.5 - text_height * 0.5, text_size, lighten(color, 90));
 
         flags := Rect_Flags.TOP | .RIGHT | .BOTTOM | .ROUND_TOP_RIGHT | .ROUND_BOTTOM_RIGHT;
-        number_input(it, size, flags, loc);
+
+        if format == {
+            case .FLOAT;
+                val := clamp(it.*, 0, 1);
+                if number_input(*val, size, flags, loc) {
+                    it.* = val;
+                }
+
+            case .U8;
+                val := ifx it_index < 3 then clamp(it.* * 255, 0, 255) else clamp(it.*, 0, 1);
+
+                if number_input(*val, size, flags, loc) {
+                    if it_index < 3 {
+                        it.* = val / 255;
+                    } else {
+                        it.* = val;
+                    }
+                }
+        }
 
         layout.cursor.x += theme.margin_x;
     }
@@ -1149,16 +1156,95 @@ number_input :: (value: *$T, size := Vector2.{ 200, 60 }, flags := Rect_Flags.AL
     return true;
 }
 
-text_input :: (value: string, size := Vector2.{ 200, 60 }, flags := Rect_Flags.ALL_SIDES, loc := #caller_location) -> modified: bool, new_string: string {
-    input_rect      := alloc_space(size, false);
-    modified, state := input_behavior(input_rect, value, loc);
+text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flags.ALL_SIDES, loc := #caller_location) -> modified: bool, new_string: string {
+    id              := make_id(loc);
+    state, is_new   := get_widget_state(Text_Input_State, id);
 
     using state;
 
-    bg_color := get_color(status, theme.color.fg);
+    input_rect      := alloc_space(size, false);
+    mutate_state(state, input_rect);
 
+    // Sync string when we are typing.
+    if !state.focused {
+        if user_str != state.text then state.cursor_start = user_str.count;
+
+        str_copied := copy_string(user_str);
+
+        if state.text then free(state.text);
+        state.text = str_copied;
+    }
+
+
+    if !state.focused && state.pressed {
+        active_widget = id;
+        state.focused = true;
+        state.focused_start_time = xx seconds_since_init();
+    }
+
+    if state.status & .HOVERED || state.focused then curr_cursor_icon = .TEXT_EDIT;
+
+    modified := false;
+
+    if state.focused {
+        click_outside := !cursor_vs_rect(state.rect) && is_pressed(.MOUSE_LEFT);
+
+        if is_pressed(.RETURN) {
+            active_widget = -1;
+            state.focused = false;
+            modified = true;
+        }
+
+        if is_pressed(.ESCAPE) || click_outside {
+            active_widget = -1;
+            state.focused = false;
+            modified = true;
+        }
+
+        if is_pressed(.BACKSPACE, true) && state.cursor_start > 0 {
+            for state.cursor_start..state.text.count - 1 {
+                state.text[it - 1] = state.text[it];
+            }
+
+            if state.cursor_start > 0 then state.cursor_start -= 1;
+            if state.text.count   > 0 then state.text.count   -= 1;
+        }
+
+        if is_pressed(.RIGHT) && state.cursor_start <= state.text.count {
+            state.cursor_start += 1;
+        }
+
+        if is_pressed(.LEFT) && state.cursor_start > 0 {
+            state.cursor_start -= 1;
+        }
+
+        if text_codepoint && text_codepoint != state.text {
+            begin := slice(state.text, 0, state.cursor_start);
+            end   := slice(state.text, state.cursor_start, state.text.count);
+
+            new_value := join(begin, text_codepoint, end);
+            state.cursor_start += 1;
+
+            if state.text {
+                free(state.text);
+            }
+
+            state.text = new_value;
+        }
+    }
+
+
+    bg_color := get_color(status, theme.color.fg);
     draw_rect(rect, bg_color, flags);
     draw_outline(rect, theme.color.border, theme.border_width, flags);
+
+    font_size                 := input_rect.h * 0.5;
+    text_width, text_height   := get_size(font, state.text, xx font_size);
+
+    text_x := rect.x + theme.input_padding + theme.border_width;
+    text_y := rect.y + state.rect.h * 0.5 - text_height * 0.5;
+
+    should_clip  := text_x + text_width > state.rect.w - theme.border_width;
 
     clip_rect    := rect;
 
@@ -1170,7 +1256,35 @@ text_input :: (value: string, size := Vector2.{ 200, 60 }, flags := Rect_Flags.A
     if should_clip       then push_clip(clip_rect);
     defer if should_clip then pop_clip();
 
-    if focused {
+    if state.focused {
+        cursor_text := state.text;
+
+        if state.cursor_start < state.text.count {
+            cursor_text = slice(state.text, 0, state.cursor_start);
+        }
+
+        cursor_height    := rect.h * 0.5;
+        to_cursor_width  := get_size(font, cursor_text, xx font_size);
+
+        input_width := state.rect.w - (theme.border_width * 2);
+        cursor_size := theme.input_cursor_size;
+
+        offset := (to_cursor_width + cursor_size + theme.input_padding) - input_width;
+        if offset >= 0 then text_x -= offset;
+
+        cursor_rect := Rect.{
+            text_x + to_cursor_width, state.rect.y + state.rect.h * 0.5 - cursor_height * 0.5,
+            cursor_size, cursor_height
+        };
+
+        now             := cast(float) seconds_since_init();
+        elapsed         := state.focused_start_time - now;
+        blink_speed     := 8.0;
+        alpha           := cast(float) (sin(elapsed * blink_speed) + 1.0) * 0.5;
+
+        cursor_color  := lighten(theme.color.text, 20);
+        cursor_color.w = alpha;
+
         draw_text(text, text_x, text_y, size.y * 0.5, theme.color.text);
         draw_rect(cursor_rect, cursor_color);
     } else {
@@ -1662,129 +1776,21 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
     return r;
 }
 
+is_down :: (key: UI_Key) -> bool {
+    state := key_state[key];
 
-// @note: We should put it inside text_input.
-input_behavior :: (rect: Rect, value: string, loc := #caller_location) -> modified: bool, state: Text_Input_State {
-    id              := make_id(loc);
-    state, is_new   := get_widget_state(Text_Input_State, id);
-
-    if is_new {
-        state.text         = copy_string(value);
-        state.cursor_start = state.text.count;
-    }
-
-    mutate_state(state, rect);
-
-    if is_new {
-        state.text         = copy_string(value);
-        state.cursor_start = state.text.count;
-    }
-
-    if !state.focused && state.pressed {
-        active_widget = id;
-        state.focused = true;
-        state.focused_start_time = xx seconds_since_init();
-    }
-
-    if state.status & .HOVERED || state.focused then curr_cursor_icon = .TEXT_EDIT;
-
-    modified := false;
-
-    if state.focused {
-        click_outside := !cursor_vs_rect(state.rect) && is_pressed(.MOUSE_LEFT);
-
-        if is_pressed(.RETURN) {
-            active_widget = -1;
-            state.focused = false;
-            modified = true;
-        }
-
-        if is_pressed(.ESCAPE) || click_outside {
-            active_widget = -1;
-            state.focused = false;
-        }
-
-        if is_pressed(.BACKSPACE, true) && state.cursor_start > 0 {
-            for state.cursor_start..state.text.count - 1 {
-                state.text[it - 1] = state.text[it];
-            }
-
-            if state.cursor_start > 0 then state.cursor_start -= 1;
-            if state.text.count   > 0 then state.text.count   -= 1;
-        }
-
-        if is_pressed(.RIGHT) && state.cursor_start <= state.text.count {
-            state.cursor_start += 1;
-        }
-
-        if is_pressed(.LEFT) && state.cursor_start > 0 {
-            state.cursor_start -= 1;
-        }
-
-        if text_codepoint && text_codepoint != state.text {
-            begin := slice(state.text, 0, state.cursor_start);
-            end   := slice(state.text, state.cursor_start, state.text.count);
-
-            new_value := join(begin, text_codepoint, end);
-            state.cursor_start += 1;
-
-            if state.text {
-                free(state.text);
-            }
-
-            state.text = new_value;
-        }
-    }
-
-
-    font_size                 := rect.h * 0.5;
-    text_width, text_height   := get_size(font, state.text, xx font_size);
-
-
-    text_x := state.rect.x + theme.input_padding + theme.border_width;
-    text_y := state.rect.y + state.rect.h * 0.5 - text_height * 0.5;
-
-    state.should_clip  = text_x + text_width > state.rect.w - theme.border_width;
-
-    if state.focused {
-        cursor_text := state.text;
-
-        if state.cursor_start < state.text.count {
-            cursor_text = slice(state.text, 0, state.cursor_start);
-        }
-
-        cursor_height    := rect.h * 0.5;
-        to_cursor_width  := get_size(font, cursor_text, xx font_size);
-
-        input_width := state.rect.w - (theme.border_width * 2);
-        cursor_size := theme.input_cursor_size;
-
-        offset := (to_cursor_width + cursor_size + theme.input_padding) - input_width;
-        if offset >= 0 then text_x -= offset;
-
-        state.cursor_rect = Rect.{
-            text_x + to_cursor_width, state.rect.y + state.rect.h * 0.5 - cursor_height * 0.5,
-            cursor_size, cursor_height
-        };
-
-        now             := cast(float) seconds_since_init();
-        elapsed         := state.focused_start_time - now;
-        blink_speed     := 8.0;
-        alpha           := cast(float) (sin(elapsed * blink_speed) + 1.0) * 0.5;
-
-        cursor_color  := lighten(theme.color.text, 20);
-        cursor_color.w = alpha;
-
-        state.cursor_color = cursor_color;
-    }
-
-    state.text_x = text_x;
-    state.text_y = text_y;
-
-    return modified, state;
+    return state.down;
 }
 
+is_pressed :: (key: UI_Key, repeat := true) -> bool {
+    state := key_state[key];
 
+    if !repeat {
+        return state.down && state.down_duration == 0;
+    } else {
+        return state.down && state.down_duration == 0 || state.down && state.repeat_duration == 0;
+    }
+}
 
 
 

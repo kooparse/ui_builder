@@ -98,6 +98,8 @@ main :: () {
         font_atlas_texture     = create_texture_2d_rgba8("cascadia_modo", xx bitmap, xx width, xx height, mipmapped=false);
     }
 
+    my_string = sprint("I'm an input text!");
+
     while !quit {
         reset_temporary_storage();
 
@@ -199,7 +201,6 @@ Color_Themes :: enum {
     LIPKO;
 };
 
-mutate_text     : string = "I'm an input text!";
 
 show_color_picker := true;
 translucent       := false;
@@ -225,6 +226,7 @@ Entity_Flags :: enum_flags u64 {
 
 THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, NORD, LIPKO ];
 
+my_string    : string; // Alloc on the heap.
 my_float     := 12.4;
 my_int       := 4;
 my_color     := Vector4.{ 1, 0, 1, 1 };
@@ -288,7 +290,11 @@ make_ui :: () -> UI_Draw_List {
 
             separator("Inputs");
 
-            text_input(mutate_text);
+            modified, changed_str := text_input(my_string);
+            if modified {
+                free(my_string);
+                my_string = copy_string(changed_str);
+            }
 
             number_input(*my_float);
             label(tprint("my_float: %", my_float));
@@ -349,9 +355,12 @@ make_ui :: () -> UI_Draw_List {
     if show_color_picker {
         if window_begin(Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
 
-            separator("Channels inputs");
-            rgba_input(*my_color);
-            hexcolor_input(*my_hex);
+            separator("Channels inputs, floating RGBA");
+            rgba_input(*my_color, format = .FLOAT);
+            separator("Channels inputs, integer RGBA");
+            rgba_input(*my_color, format = .U8);
+            separator("Channels inputs, hexadecimal");
+            hexa_input(*my_color);
 
             window_end();
         }
