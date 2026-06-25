@@ -313,14 +313,11 @@ make_ui :: () -> UI_Draw_List {
         label(tprint("Draw calls: %", last_draw_calls));
         label(tprint("Vertex count: %", last_vertex_count));
 
-
         if ui_tab(enum_names(TABS), xx *current_tab) {
             log("Select Tab: %", enum_names(TABS)[current_tab]);
         }
 
         if current_tab == .TAB_1 {
-            set_layout_order(.STACK);
-
             placeholder := "Choose...";
             select(*selected, items, .{ 200, 30 } * dpi_scale, placeholder, max_items = 4);
 
@@ -333,14 +330,12 @@ make_ui :: () -> UI_Draw_List {
                 log("click!");
             }
 
-            set_layout_order(.INLINE);
+            same_line();
 
             ratio = cast(float, xbox_icon.width) / cast(float, xbox_icon.height);
             if button(texture = xx *xbox_icon, size = .{ 40 * ratio * dpi_scale, 40 * dpi_scale }) {
                 log("click!");
             }
-
-            set_layout_order(.STACK);
 
             separator("Inputs");
 
@@ -351,41 +346,40 @@ make_ui :: () -> UI_Draw_List {
             }
 
             number_input(*my_float);
+            same_line();
             label(tprint("my_float: %", my_float));
 
             number_input(*my_int);
+            same_line();
             label(tprint("my_int: %", my_int));
 
             separator("Checkboxes");
+
             checkbox(*show_color_picker);
-            set_layout_order(.INLINE);
+            same_line();
             label("Show Color Picker");
 
-
-            set_layout_order(.STACK);
-
             checkbox(*translucent);
-            set_layout_order(.INLINE);
+            same_line();
             label("Translucent");
 
-            set_layout_order(.STACK);
 
             if begin_expander("Expand to see buttons!") {
-                set_layout_order(.COLUMNS, 2);
-
+                begin_column(3);
                 for 1..2000 {
                     if button(tprint("%", it)) then log("button %", it);
                 }
+                end_column();
             }
             end_expander();
 
+            begin_column(2);
             for 1..15 {
-                set_layout_order(.COLUMNS, 2);
-
                 if button(tprint("button %", it), size) {
                     log("click! %", it);
                 }
             }
+            end_column();
 
         } else {
             label(tprint("YOU ARE ON TAB NUMBER %", current_tab));

@@ -145,6 +145,8 @@ UI_Layout :: struct {
     order      := Layout_Order.STACK;
     columns    := 0;
 
+    should_inline := false;
+
     // We compute after each space allocation the total space our widgets takes
     // within its layout rect. Used notably for the scrollbar.
     content_height : float;
@@ -218,8 +220,6 @@ Text_Input_State :: struct {
     cursor_start  := -1;
     cursor_end    := -1;
 };
-
-
 
 Scrollbar_State :: struct {
     #as using state : Widget_State;
@@ -464,10 +464,10 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     title_rect.h    = theme.window_title_bar_height;
 
     resizer_rect   := state.rect;
-    resizer_rect.x += state.rect.w - theme.border_width;
-    resizer_rect.y += state.rect.h - theme.border_width;
-    resizer_rect.w  = theme.border_width * 6;
-    resizer_rect.h  = theme.border_width * 6;
+    resizer_rect.x += state.rect.w - theme.content_padding * 4;
+    resizer_rect.y += state.rect.h - theme.content_padding * 4;
+    resizer_rect.w  = (theme.content_padding + theme.border_width) * 4;
+    resizer_rect.h  = (theme.content_padding + theme.border_width) * 4;
 
     dragging_allowed := active_widget == -1 && is_topmost && state.dragging == .NONE && is_down(.MOUSE_LEFT);
 
@@ -525,7 +525,6 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
 
     draw_rect(state.rect, theme.color.bg, .ROUND_ALL);
 
-
     border_color    := theme.color.border;
     border_color.w   = 0.6;
 
@@ -574,7 +573,7 @@ window_end :: (loc := #caller_location) {
     pop_clip();
 
     // Draw opacity gradiant at the bottom.
-    {
+    if theme.alpha >= 1.0 {
         layout := current_layout();
 
         c1 := theme.color.bg;
@@ -713,16 +712,16 @@ end_expander :: () {
 }
 
 ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
-    set_layout_order(.COLUMNS, tabs.count);
-    defer set_layout_order(.STACK);
-
     modified := false;
 
+    layout := current_layout();
     for tabs {
         push_id(it_index);
         defer pop_id();
 
-        if tab(it, it_index == tab_index.*, .{ -1, 50 }) {
+        if it_index > 0 same_line();
+
+        if tab(it, it_index == tab_index.*, .{ (layout.rect.w - theme.margin_x * tabs.count) / tabs.count, 50 }) {
             tab_index.* = it_index;
             modified = true;
         }
@@ -986,11 +985,25 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, 40 }, placeh
 
 label :: (text: string, label_size := 0., loc := #caller_location) {
     text_size := ifx label_size <= 0 theme.text_size else label_size;
+    text_width, text_height := get_size(font, text, xx text_size);
 
-    width, height := get_size(font, text, xx text_size);
-    rect := alloc_space(xy(width, height));
+    height := text_height;
+    center_on_previous_widget := false;
 
-    draw_text(text, rect.x, rect.y, text_size, theme.color.text);
+    layout := current_layout();
+    if layout.should_inline {
+        center_on_previous_widget = true;
+        height = max(height, layout.prev_widget_size.y);
+    }
+
+    rect   := alloc_space(xy(text_width, height));
+    y      := rect.y;
+
+    if center_on_previous_widget {
+        y += layout.prev_widget_size.y * 0.5 - text_height * 0.5;
+    }
+
+    draw_text(text, rect.x, y, text_size, theme.color.text);
 }
 
 separator :: (text := "") {
@@ -1058,13 +1071,11 @@ hexa_input :: (color: *Vector4, size := Vector2.{ 200, 60 }) -> modified: bool {
         if success then color.* = hexa_to_color(result);
     }
 
-    set_layout_order(.INLINE);
+    same_line();
 
     rect := alloc_space(Vector2.{ size.y, size.y }, true);
     draw_rect(rect, color.*, .ROUND_ALL);
     draw_outline(rect, theme.color.border, theme.border_width, .ROUND_ALL);
-
-    set_layout_order(.STACK);
 
     return modified;
 }
@@ -1081,9 +1092,9 @@ rgba_input :: (value : *Vector4, size := Vector2.{ 120, 60 }, format := Color_Fo
         push_id(it_index);
         defer pop_id();
 
-        rect := alloc_space(Vector2.{ size.y * 0.4, size.y }, false);
+        if it_index > 0 same_line();
 
-        set_layout_order(.INLINE);
+        rect := alloc_space(Vector2.{ size.y * 0.4, size.y }, false);
 
         mask := (Rect_Flags.ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT);
 
@@ -1118,17 +1129,19 @@ rgba_input :: (value : *Vector4, size := Vector2.{ 120, 60 }, format := Color_Fo
 
         flags := Rect_Flags.TOP | .RIGHT | .BOTTOM | .ROUND_TOP_RIGHT | .ROUND_BOTTOM_RIGHT;
 
+        same_line();
+
         if format == {
             case .FLOAT;
                 val := clamp(it.*, 0, 1);
-                if number_input(*val, size, flags, loc) {
+                if number_input(*val, size = size, flags, loc) {
                     it.* = val;
                 }
 
             case .U8;
                 val := ifx it_index < 3 then clamp(it.* * 255, 0, 255) else clamp(it.*, 0, 1);
 
-                if number_input(*val, size, flags, loc) {
+                if number_input(*val, size = size, flags, loc) {
                     if it_index < 3 {
                         it.* = val / 255;
                     } else {
@@ -1140,11 +1153,11 @@ rgba_input :: (value : *Vector4, size := Vector2.{ 120, 60 }, format := Color_Fo
         layout.cursor.x += theme.margin_x;
     }
 
+    same_line();
+
     rect := alloc_space(Vector2.{ size.y, size.y }, true);
     draw_rect(rect, value.*, .ROUND_ALL);
     draw_outline(rect, theme.color.border, theme.border_width, .ROUND_ALL);
-
-    set_layout_order(.STACK);
 
     return false;
 }
@@ -1329,9 +1342,9 @@ radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> boo
             changed = true;
         }
 
-        set_layout_order(.INLINE);
+        same_line();
+
         label(it);
-        set_layout_order(.STACK);
 
         if checked {
             index.* = it_index;
@@ -1478,15 +1491,22 @@ get_color :: (status: Widget_Status, color: Vector4) -> Vector4 {
     return color;
 }
 
-set_layout_order:: (order: Layout_Order, columns := 0) {
+same_line :: () {
+    layout := current_layout();
+    layout.should_inline = true;
+}
+
+begin_column :: (col_count : int) {
+    layout := current_layout();
+    layout.columns = col_count;
+}
+
+end_column :: () {
     layout := current_layout();
 
-    if layout.order != order {
-        layout.changed = true;
-    }
-
-    layout.order   = order;
-    layout.columns = columns;
+    layout.columns      = 0;
+    layout.cursor.x     = 0;
+    layout.curr_column  = 0;
 }
 
 #scope_file;
@@ -1854,13 +1874,6 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
 
     size := widget_size;
 
-    if layout.changed {
-        curr_column    = 0;
-        cursor.x       = 0;
-
-        layout.changed = false;
-    }
-
     margin_x := theme.margin_x;
     margin_y := theme.margin_y;
 
@@ -1868,34 +1881,39 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
         margin_x = 0;
     }
 
+
     if prev_widget_size.x > 0 || prev_widget_size.y > 0 {
-        if order == {
-            case .STACK;
-                cursor.y += prev_widget_size.y + margin_y;
-            case .INLINE;
-                cursor.x += prev_widget_size.x + margin_x;
-            case .COLUMNS;
-                layout_width := layout.rect.w;
+        if layout.columns > 0 {
+            layout_width := layout.rect.w;
 
-                col_width := layout.rect.w / max(1, columns);
-                size.x     = col_width - margin_x;
+            col_width := layout.rect.w / max(1, columns);
+            size.x     = col_width - margin_x;
 
-                if curr_column == 0 {
-                    cursor.x     = 0;
-                    cursor.y    += prev_widget_size.y + margin_y;
-                    curr_column += 1;
-                } else {
-                    cursor.x    += ifx curr_column > 0 col_width else 0;
-                    curr_column += 1;
-                }
+            if curr_column == 0 {
+                cursor.x     = 0;
+                cursor.y    += prev_widget_size.y + margin_y;
+                curr_column += 1;
+            } else {
+                cursor.x    += ifx curr_column > 0 col_width else 0;
+                curr_column += 1;
+            }
 
-                if curr_column >= columns {
-                    curr_column = 0;
-                }
+            if curr_column >= columns {
+                curr_column = 0;
+            }
+
+        } else if layout.should_inline {
+            cursor.x += prev_widget_size.x + margin_x;
+            layout.should_inline = false;
+        } else {
+            cursor.x  = 0;
+            cursor.y += prev_widget_size.y + margin_y;
+            layout.should_inline = false;
         }
+
     } else {
 
-        if order == .COLUMNS {
+        if layout.columns > 0 {
             col_width := (layout.rect.w) / max(1, columns);
             size.x     = col_width - margin_x;
         }
