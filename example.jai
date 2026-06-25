@@ -45,7 +45,10 @@ dt          : float;
 cpu_time        : float;
 gpu_time        : float;
 
-font_atlas_texture      : GFX_Texture;
+font_atlas_texture  : GFX_Texture;
+white_texture       : GFX_Texture;
+playstation_icon    : GFX_Texture;
+xbox_icon           : GFX_Texture;
 
 
 main :: () {
@@ -92,10 +95,41 @@ main :: () {
     }
 
     {
+        buffer := read_entire_file("./playstation_icon.png");
+        defer free(buffer);
+
+        width, height : s32;
+        stbi_set_flip_vertically_on_load(0);
+        img := stbi_load_from_memory(buffer.data, xx buffer.count, *width, *height, null, 4);
+        assert(img != null);
+
+        playstation_icon = create_texture_2d_rgba8("playstation_icon", img, width, height, mipmapped = false);
+        assert(playstation_icon.handle != null);
+    }
+
+    {
+        buffer := read_entire_file("./xbox_icon.png");
+        defer free(buffer);
+
+        width, height : s32;
+        stbi_set_flip_vertically_on_load(0);
+        img := stbi_load_from_memory(buffer.data, xx buffer.count, *width, *height, null, 4);
+        assert(img != null);
+
+        xbox_icon = create_texture_2d_rgba8("xbox_icon", img, width, height, mipmapped = false);
+        assert(xbox_icon.handle != null);
+    }
+
+    {
         our_font = bake_font("./cascadia_mono.ttf", white_2x2_pixel = true);
 
         bitmap, width, height := get_raw_bitmap_texture(our_font);
         font_atlas_texture     = create_texture_2d_rgba8("cascadia_modo", xx bitmap, xx width, xx height, mipmapped=false);
+    }
+
+    {
+        WHITE_PIXELS :: u32.[0xffffffff];
+        white_texture = create_texture_2d_rgba8("white pixel", xx WHITE_PIXELS.data, 1, 1, mipmapped=false);
     }
 
     my_string = sprint("I'm an input text!");
@@ -251,10 +285,11 @@ make_ui :: () -> UI_Draw_List {
         input_padding           = DEFAULT_THEME.input_padding           * dpi_scale,
         input_cursor_size       = DEFAULT_THEME.input_cursor_size       * dpi_scale,
         separator_size          = DEFAULT_THEME.separator_size          * dpi_scale,
+
+        corner_radius           = DEFAULT_THEME.corner_radius           * dpi_scale,
     });
 
     set_font(our_font, *font_atlas_texture);
-
     if our_font.modified {
         our_font.modified = false;
 
@@ -265,6 +300,7 @@ make_ui :: () -> UI_Draw_List {
     size := Vector2.{ -1, 30 } * dpi_scale;
 
     if window_begin(Rect.{ 10, 10, 450, 400 } * dpi_scale, "Widgets") {
+
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
             gpu_time = get_last_frame_gpu_time() * 1000;
@@ -290,9 +326,25 @@ make_ui :: () -> UI_Draw_List {
 
             flag_select(*my_enum_flag, .{ 200, 30 } * dpi_scale, placeholder);
 
+            separator("Button with img");
+
+            ratio := cast(float, playstation_icon.width) / cast(float, playstation_icon.height);
+            if button(texture = xx *playstation_icon, size = .{ 40 * ratio * dpi_scale, 40 * dpi_scale }) {
+                log("click!");
+            }
+
+            set_layout_order(.INLINE);
+
+            ratio = cast(float, xbox_icon.width) / cast(float, xbox_icon.height);
+            if button(texture = xx *xbox_icon, size = .{ 40 * ratio * dpi_scale, 40 * dpi_scale }) {
+                log("click!");
+            }
+
+            set_layout_order(.STACK);
+
             separator("Inputs");
 
-            modified, changed_str := text_input(my_string);
+            modified, changed_str := text_input(my_string, .{ 320, 30 * dpi_scale });
             if modified {
                 free(my_string);
                 my_string = copy_string(changed_str);
@@ -445,6 +497,8 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
             for draw_list.draw_calls {
                 if it.texture {
                     set_texture(*pass, frag.immediate_texture, xx it.texture);
+                } else {
+                    set_texture(*pass, frag.immediate_texture, *white_texture);
                 }
 
                 clip := Recti.{

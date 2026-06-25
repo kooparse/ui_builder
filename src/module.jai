@@ -5,14 +5,14 @@
     - font in export_file, and use just a table inthis lib...
     - use some pool allocator
     - set layout order also, we want to set and unset after one alloc (very often).
-
+    - rename margin to gap.
+    - fix input.
 
     TODO:
     - better understanding for scrollbar
     - better understanding for rounded corner.
     - Should makes radius samples relative to size.
 
-    - Bug when we scroll then resize the area, the content is scrolled even tho we have the space.
     - Finish input text
     - Get proper color state.
     - we can do a better job with key delay/rate (the code is too complex/big for what it does).
@@ -70,6 +70,8 @@ UI_Key_State :: struct {
 
 #scope_file;
 
+WHITE :: Vector4.{ 1, 1, 1, 1 };
+
 // @todo: explain.
 UV_DISCARD :: Vector2.{ 0, 0 };
 
@@ -119,7 +121,8 @@ wheel_x  : float;
 wheel_y  : float;
 
 // The current font.
-font : *Font;
+font         : *Font;
+font_texture : UI_Texture;
 
 current_depth := 0; // for layers
 
@@ -134,20 +137,20 @@ UI_Layout :: struct {
     rect         : Rect;
 
     cursor       : Vector2; // @todo: explain that.
-    prev_cursor  : Vector2;
 
     // When layout changed, we have to reset a couple of things, like the
     // "curr_column" or the cursor, and this variable is our way to notice it.
     changed    := false;
 
     order      := Layout_Order.STACK;
-    align      := Layout_Align.PIXEL_LEFT;
     columns    := 0;
 
-    max_height : float;
-    max_width  : float;
+    // We compute after each space allocation the total space our widgets takes
+    // within its layout rect. Used notably for the scrollbar.
+    content_height : float;
+    content_width  : float;
 
-    scroll : Vector2;
+    scroll         : Vector2;
 
     // For auto layout.
     curr_column      := 0;
@@ -216,19 +219,6 @@ Text_Input_State :: struct {
     cursor_end    := -1;
 };
 
-Color_Input_State :: struct {
-    #as using state : Widget_State;
-
-    text    : string;
-    focused : bool;
-    focused_start_time : float;
-
-    offset        := 0;
-
-    cursor_start  := -1;
-    cursor_end    := -1;
-};
-
 
 
 Scrollbar_State :: struct {
@@ -263,17 +253,6 @@ UI_Draw_List  :: struct {
 };
 
 Layout_Order :: enum { STACK; INLINE; COLUMNS; };
-
-Layout_Align :: enum {
-    PIXEL_LEFT;
-    PIXEL_CENTER;
-    PIXEL_RIGHT;
-};
-
-UI_State :: struct {
-    pressed : bool;
-    hovered : bool;
-};
 
 UI_Vertex :: struct {
     position : Vector2; @TEXCOORD;
@@ -313,9 +292,9 @@ set_theme :: (given_theme: Theme) {
     theme = given_theme;
 }
 
-set_font :: (font_to_set: *Font, texture_atlas: *void) {
+set_font :: (font_to_set: *Font, font_texture_atlas: *void) {
     font            = font_to_set;
-    current_texture = texture_atlas;
+    font_texture    = font_texture_atlas;
 }
 
 set_mouse_position :: (x: float, y: float) {
@@ -463,6 +442,7 @@ get_draw_list :: () -> UI_Draw_List {
     return draw_list;
 }
 
+
 window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     id    := make_id(loc, "_full_region");
     state := get_widget_state(Window_State, id, default_rect = region);
@@ -543,12 +523,15 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     title_rect     = state.rect;
     title_rect.h    = theme.window_title_bar_height;
 
-    bg_color     := ifx is_topmost then theme.color.bg else darken(theme.color.bg, 5);
-    draw_rect(state.rect, bg_color, .ROUND_ALL);
+    draw_rect(state.rect, theme.color.bg, .ROUND_ALL);
+
+
+    border_color    := theme.color.border;
+    border_color.w   = 0.6;
 
     // Draw title bar.
     if title {
-        title_color := theme.color.fg;
+        title_color := ifx is_topmost theme.color.fg else darken(theme.color.fg, 20);
 
         text_size := theme.window_title_bar_height * 0.5;
         title_width, title_height := get_size(font, title, xx text_size);
@@ -556,9 +539,19 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
         x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
         y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
 
-        draw_rect(title_rect, title_color, .TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
+        flags := Rect_Flags.TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT;
+        draw_rect(title_rect, title_color, flags);
+
+        draw_outline(title_rect, border_color, theme.border_width, flags);
         draw_text(title, x, y, text_size, theme.color.text);
     }
+
+    content_border := state.rect;
+    content_border.y += theme.window_title_bar_height;
+    content_border.h -= theme.window_title_bar_height;
+
+    flags := Rect_Flags.BOTTOM | .LEFT | .RIGHT | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
+    draw_outline(content_border, border_color, theme.border_width, flags);
 
     layer_rect   := state.rect;
     layer_rect.x += theme.content_padding;
@@ -579,6 +572,27 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
 
 window_end :: (loc := #caller_location) {
     pop_clip();
+
+    // Draw opacity gradiant at the bottom.
+    {
+        layout := current_layout();
+
+        c1 := theme.color.bg;
+        c1.w = 0;
+        c2 := theme.color.bg;
+        c2.w = 0;
+
+        c3 := theme.color.bg;
+        c4 := theme.color.bg;
+
+        height  := 20.;
+
+        rect    := layout.rect;
+        rect.y   = rect.y + rect.h - height;
+        rect.h   = height;
+
+        internal_draw_gradiant(rect, c1, c2, c3, c4);
+    }
 
     if curr_window_scroll then end_scroll(curr_window_scroll);
     pop_layer();
@@ -704,16 +718,11 @@ ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
 
     modified := false;
 
-    active_tab_color := theme.color;
-    active_tab_color.fg = theme.color.accent;
-
     for tabs {
         push_id(it_index);
         defer pop_id();
 
-        color := ifx it_index == tab_index.* active_tab_color else theme.color;
-
-        if button(it, .{ -1, 50 }, color = *color) {
+        if tab(it, it_index == tab_index.*, .{ -1, 50 }) {
             tab_index.* = it_index;
             modified = true;
         }
@@ -1301,7 +1310,7 @@ text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flag
         draw_text(text, text_x, text_y, size.y * 0.5, theme.color.text);
         draw_rect(cursor_rect, cursor_color);
     } else {
-        draw_text(text, text_x, text_y, size.y * 0.5);
+        draw_text(text, text_x, text_y, size.y * 0.5, theme.color.text);
     }
 
     return modified, text;
@@ -1365,7 +1374,47 @@ checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
     return changed;
 }
 
-button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, color : *Color_Theme = null) -> bool {
+tab :: (label: string, active: bool, size := Vector2.{ -1, 30 }, loc := #caller_location) -> bool {
+    id          := make_id(loc, label);
+    using state := get_widget_state(Widget_State, id);
+
+    font_size                 := size.y * 0.5;
+    text_width, text_height   := get_size(font, label, xx font_size);
+
+    button_size := size;
+
+    if size.x <= 0 {
+        button_size.x = text_width + theme.button_padding;
+    }
+
+    mutate_state(state, alloc_space(button_size));
+
+    clip := peek(current_layer.clip_stack);
+    if !rect_vs_rect(state.rect, clip) return state.pressed;
+
+    text_too_big := rect.w < button_size.x;
+
+    is_activated := status == .FOCUSED || status == .PRESSED || active;
+
+    bg_color     := get_color(status, ifx is_activated then theme.color.accent else theme.color.fg);
+    border_color := theme.color.border;
+
+    draw_rect(rect, bg_color, .TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
+
+    text_rect := pad_rect(rect, theme.button_padding, 0);
+
+    // Center text in button rect.
+    x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
+    y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
+
+    if text_too_big push_clip(rect);
+    draw_text(label, x, y, font_size, theme.color.text);
+    if text_too_big pop_clip();
+
+    return state.pressed;
+}
+
+button :: (label := "", size := Vector2.{ -1, 30 }, texture : UI_Texture = null, loc := #caller_location, color : *Color_Theme = null) -> bool {
     id          := make_id(loc, label);
     using state := get_widget_state(Widget_State, id);
 
@@ -1392,17 +1441,28 @@ button :: (label: string, size := Vector2.{ -1, 30 }, loc := #caller_location, c
     bg_color     := get_color(status, ifx is_activated then colors.accent else colors.fg);
     border_color := colors.border;
 
-    draw_rect(rect, bg_color, .ROUND_ALL);
+    if texture {
+        draw_rect(rect, bg_color, .ROUND_ALL);
+        draw_outline(rect, theme.color.border, theme.border_width, .ROUND_ALL);
 
-    text_rect := pad_rect(rect, theme.button_padding, 0);
+        prev := set_texture(texture);
+        draw_rect(rect, WHITE);
+        set_texture(prev);
+    } else {
+        draw_rect(rect, bg_color, .ROUND_ALL);
+    }
 
-    // Center text in button rect.
-    x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
-    y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
+    if label {
+        text_rect := pad_rect(rect, theme.button_padding, 0);
 
-    if text_too_big push_clip(rect);
-    draw_text(label, x, y, font_size, colors.text);
-    if text_too_big pop_clip();
+        // Center text in button rect.
+        x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
+        y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
+
+        if text_too_big push_clip(rect);
+        draw_text(label, x, y, font_size, colors.text);
+        if text_too_big pop_clip();
+    }
 
     return state.pressed;
 }
@@ -1504,7 +1564,7 @@ end_scroll :: (state: *Scrollbar_State) {
 
     {
         // We compute the actual content size from the previous frame.
-        content_h   := layout.max_height;
+        content_h   := layout.content_height;
         visible_h   := layout.rect.h;
 
         // max_scroll offset?
@@ -1563,7 +1623,7 @@ end_scroll :: (state: *Scrollbar_State) {
 
     {
         // We compute the actual content size from the previous frame.
-        content_w   := layout.max_width;
+        content_w   := layout.content_width;
         visible_w   := layout.rect.w;
 
         max_scroll  := max(0.0, content_w - visible_w);
@@ -1727,11 +1787,14 @@ get_vertices :: () -> *[..] UI_Vertex {
 }
 
 // @todo: let's review this func at some point, when we add real texture(not just font).
-set_texture :: (texture: UI_Texture) -> old: UI_Texture {
-    old_texture := current_texture;
-    current_texture = texture;
+set_texture :: (texture: UI_Texture) -> prev: UI_Texture {
+    prev_texture    := current_texture;
+    current_texture  = texture;
 
-    return old_texture;
+    last := peek(current_layer.draw_markers);
+    record_draw_marker(last.clip_rect);
+
+    return prev_texture;
 }
 
 push_clip :: (rect: Rect) {
@@ -1850,8 +1913,8 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
 
     prev_widget_size = Vector2.{ size.x, size.y };
 
-    layout.max_width  = max(layout.max_width, cursor.x + size.x);
-    layout.max_height = max(layout.max_height, cursor.y + size.y);
+    layout.content_width  = max(layout.content_width, cursor.x + size.x);
+    layout.content_height = max(layout.content_height, cursor.y + size.y);
 
     return r;
 }
@@ -2139,9 +2202,26 @@ draw_circle_outline :: (pos: Vector2, radius: float, border_size: float, color: 
     }
 }
 
+get_uv :: (region: Rect, part: Rect) -> Rect {
+    return Rect.{
+        (part.x - region.x) / region.w,
+        (part.y - region.y) / region.h,
+        (part.x + part.w - region.x) / region.w,
+        (part.y + part.h - region.y) / region.h,
+    };
+}
+
+get_uv :: (region: Rect, point: Vector2) -> Vector2 {
+    return .{
+        (point.x - region.x) / region.w,
+        (point.y - region.y) / region.h,
+    };
+}
+
 draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
+
     if flags == .ALL_SIDES {
-        internal_draw_rect(r, color);
+        internal_draw_rect(r, color, get_uv(r, r));
         return;
     }
 
@@ -2168,11 +2248,15 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
             p1     := prev;
             p2     := p0 + xy(-sin(theta) * radius, -cos(theta) * radius);
 
-            push_triangle(p0, p1, p2, color);
+            uv0 := get_uv(r, p0);
+            uv1 := get_uv(r, p1);
+            uv2 := get_uv(r, p2);
+
+            push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
             prev = p2;
         }
     } else {
-        internal_draw_rect(top_left, color);
+        internal_draw_rect(top_left, color, get_uv(r, top_left));
     }
 
     if flags & .ROUND_TOP_RIGHT {
@@ -2180,13 +2264,20 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
 
         prev := p0 + xy(0, -radius);
         for 1..theme.radius_sample {
-            a  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
-            p2 := p0 + xy(sin(a) * radius, -cos(a) * radius);
-            push_triangle(p0, prev, p2, color);
+            theta   := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1      := prev;
+            p2      := p0 + xy(sin(theta) * radius, -cos(theta) * radius);
+
+            uv0 := get_uv(r, p0);
+            uv1 := get_uv(r, p1);
+            uv2 := get_uv(r, p2);
+
+            push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
             prev = p2;
         }
     } else {
-        internal_draw_rect(top_right, color);
+        internal_draw_rect(top_right, color, get_uv(r, top_right));
     }
 
     if flags & .ROUND_BOTTOM_LEFT {
@@ -2194,13 +2285,20 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
 
         prev := p0 + xy(0, radius);
         for 1..theme.radius_sample {
-            a  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
-            p2 := p0 + xy(-sin(a) * radius, cos(a) * radius);
-            push_triangle(p0, prev, p2, color);
+            theta   := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1      := prev;
+            p2      := p0 + xy(-sin(theta) * radius, cos(theta) * radius);
+
+            uv0 := get_uv(r, p0);
+            uv1 := get_uv(r, p1);
+            uv2 := get_uv(r, p2);
+
+            push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
             prev = p2;
         }
     } else {
-        internal_draw_rect(bottom_left, color);
+        internal_draw_rect(bottom_left, color, get_uv(r, bottom_left));
     }
 
     if flags & .ROUND_BOTTOM_RIGHT {
@@ -2208,25 +2306,33 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
 
         prev := p0 + xy(0, radius);
         for 1..theme.radius_sample {
-            a  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
-            p2 := p0 + xy(sin(a) * radius, cos(a) * radius);
-            push_triangle(p0, prev, p2, color);
+            theta   := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1      := prev;
+            p2      := p0 + xy(sin(theta) * radius, cos(theta) * radius);
+
+            uv0 := get_uv(r, p0);
+            uv1 := get_uv(r, p1);
+            uv2 := get_uv(r, p2);
+
+            push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
             prev = p2;
         }
     } else {
-        internal_draw_rect(bottom_right, color);
+        internal_draw_rect(bottom_right, color, get_uv(r, bottom_right));
     }
 
     // To fill up the rest of the belly of the rounded corner, we can do that
     // with only 3 rects.
 
     center_middle := Rect.{ r.x + radius, r.y, r.w - (2 * radius), r.h };
-    internal_draw_rect(center_middle, color);
+    internal_draw_rect(center_middle, color, get_uv(r, center_middle));
 
     right_middle := Rect.{ r.x, r.y + radius, radius, r.h - (2 * radius) };
-    internal_draw_rect(right_middle, color);
+    internal_draw_rect(right_middle, color, get_uv(r, right_middle));
+
     left_middle := Rect.{ r.x + r.w - radius, r.y + radius, radius, r.h - (2 * radius) };
-    internal_draw_rect(left_middle, color);
+    internal_draw_rect(left_middle, color, get_uv(r, left_middle));
 }
 
 draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vector4.{ 1, 1, 1, 1 }) {
@@ -2242,6 +2348,9 @@ draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vect
     pen := Vector2.{ 0, xx ascender };
 
     line_start_index := 0;
+
+    prev := set_texture(font_texture);
+    defer set_texture(prev);
 
     while line_start_index < text.count {
         line_end_index := find_index_from_left(text, #char "\n", line_start_index);
@@ -2332,6 +2441,39 @@ draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vect
     }
 }
 
+internal_draw_gradiant :: (r: Rect, _c0: Vector4, _c1: Vector4, _c2: Vector4, _c3: Vector4, uv := Rect.{}) {
+    p0 := Vector2.{ r.x, r.y };
+    p1 := Vector2.{ r.x + r.w, r.y };
+    p2 := Vector2.{ r.x, r.y + r.h };
+    p3 := Vector2.{ r.x + r.w, r.y + r.h };
+
+    uv0 := Vector2.{ uv.x, uv.y };
+    uv1 := Vector2.{ uv.w, uv.y };
+    uv2 := Vector2.{ uv.x, uv.h };
+    uv3 := Vector2.{ uv.w, uv.h };
+
+    c0 := _c0;
+    c0.w = _c0.w * theme.alpha;
+
+    c1 := _c1;
+    c1.w = _c1.w * theme.alpha;
+
+    c2 := _c2;
+    c2.w = _c2.w * theme.alpha;
+
+    c3 := _c3;
+    c3.w = _c3.w * theme.alpha;
+
+    vertices := get_vertices();
+
+    array_add(vertices, .{ position = p0, uv = uv0, color = c0 });
+    array_add(vertices, .{ position = p1, uv = uv1, color = c1 });
+    array_add(vertices, .{ position = p2, uv = uv2, color = c2 });
+
+    array_add(vertices, .{ position = p2, uv = uv0, color = c2 });
+    array_add(vertices, .{ position = p1, uv = uv1, color = c1 });
+    array_add(vertices, .{ position = p3, uv = uv2, color = c3 });
+}
 
 internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
     p0 := Vector2.{ r.x, r.y };

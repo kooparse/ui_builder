@@ -64,7 +64,7 @@ GRUVBOX_DARK :: Color_Theme.{
 
 GRUVBOX_LIGHT :: Color_Theme.{
     bg          = #run hexa_to_color(0xfbf1c7),
-    fg          = #run hexa_to_color(0xebdbb2),
+    fg          = #run hexa_to_color(0xbdae93),
 
     text        = #run hexa_to_color(0x654735),
     text_muted  = #run hexa_to_color(0x7c6f64),
@@ -104,7 +104,7 @@ Theme :: struct {
     scrollbar_width         := 12.;
     corner_radius           := 8.;
     radius_sample           := 20;
-    circle_sample           := 20;
+    circle_sample           := 30;
     border_width            := 4.;
     checkbox_size           := 40.;
 
