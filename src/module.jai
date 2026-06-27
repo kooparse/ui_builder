@@ -2,9 +2,9 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
+    - set_next_rect to override the alloc_space.
     - font in export_file, and use just a table inthis lib...
     - use some pool allocator
-    - set layout order also, we want to set and unset after one alloc (very often).
     - rename margin to gap.
     - fix input.
 
@@ -58,17 +58,24 @@ UI_Key :: enum {
     CTRL;
 };
 
-UI_Key_State :: struct {
-    down         : bool;
+Key_State :: enum_flags {
+    START       :: 1 << 0;
+    END         :: 1 << 1;
+    DOWN        :: 1 << 2;
+    REPEAT      :: 1 << 3;
+};
 
-    repeat_duration   : float;
-    repeat_start_time : float;
+UI_Key_Info :: struct {
+    state           : Key_State;
 
-    down_start_time : float;
     down_duration   : float;
+    repeat_duration : float;
 };
 
 #scope_file;
+
+dt        := 0.;
+prev_time := 0.;
 
 WHITE :: Vector4.{ 1, 1, 1, 1 };
 
@@ -79,7 +86,7 @@ UI_ID      :: int;
 UI_Texture :: *void;
 
 key_count       :: #run enum_names(UI_Key).count;
-key_state       : [key_count] UI_Key_State;
+key_state       : [key_count] UI_Key_Info;
 
 prev_layer_list  : [..] Layer;
 curr_layer_list  : [..] Layer;
@@ -180,13 +187,12 @@ Layer :: struct {
     clip_stack   : [..] Rect;
 };
 
-Widget_Status :: enum {
-    NONE;
-    HOVERED;
-    DOWN;
-    PRESSED;
-    FOCUSED;
-    DISABLED;
+
+Widget_Status :: enum_flags {
+    HOVERED     :: (1 << 0);
+    DOWN        :: (1 << 1);
+    PRESSED     :: (1 << 2);
+    FOCUSED     :: (1 << 3);
 };
 
 Widget_State :: struct {
@@ -197,6 +203,13 @@ Widget_State :: struct {
 
     pressed : bool; // pressed once.
 };
+
+Button_State :: struct {
+    #as using base: Widget_State;
+
+    press_duration  := 0.;
+    hover_duration  := 0.;
+}
 
 Window_State :: struct {
     #as using state : Widget_State;
@@ -311,13 +324,13 @@ set_wheel :: (x: float, y: float) {
 }
 
 set_key_event :: (key: UI_Key, down: bool) {
-    state := *key_state[key];
+    info := *key_state[key];
 
-    if !state.down && down {
-        state.down_start_time = cast(float) seconds_since_init();
+    if down {
+        info.state |= (.DOWN | .START);
+    } else {
+        info.state |= .END;
     }
-
-    state.down = down;
 }
 
 get_cursor_icon :: () -> Cursor_Icon {
@@ -330,38 +343,37 @@ KEY_REPEAT_RATE     :: 0.020;
 update_io :: () {
     text_codepoint.count = 0;
 
-    now := cast(float) seconds_since_init();
+    mask := ~(Key_State.START | .REPEAT);
 
     for * key_state {
-        if !it.down {
-            it.down_duration        = 0;
-            it.repeat_duration      = -1;
-            it.repeat_start_time    = -1;
+        if (it.state & .END) {
+            it.* = UI_Key_Info.{}; // Reset all.
         } else {
-            it.down_duration    = now - it.down_start_time;
+            it.state &= mask;
+        }
 
-            if it.down_duration >= KEY_REPEAT_DELAY && it.repeat_start_time < 0 {
-                it.repeat_start_time = now;
+        if it.state & .DOWN {
+            it.down_duration += dt;
+        } else {
+            it.down_duration  = 0;
+        }
+
+        if it.down_duration >= KEY_REPEAT_DELAY {
+            if it.repeat_duration >= KEY_REPEAT_RATE {
+                it.state            |= .REPEAT;
                 it.repeat_duration   = 0;
             }
 
-            if it.down_duration >= KEY_REPEAT_DELAY && it.repeat_start_time > 0 {
-                it.repeat_duration  = now - it.repeat_start_time;
-
-                if it.repeat_duration > KEY_REPEAT_RATE {
-                    it.repeat_duration   = 0;
-                    it.repeat_start_time = now;
-                }
-            }
-
+            it.repeat_duration += dt;
         }
-
-
     }
 }
 
 ui_begin :: () {
-    update_io();
+    now      := cast(float) seconds_since_init();
+    dt        = now - prev_time;
+    prev_time = now;
+
 
     // Reset flat vertices.
     array_reset_keeping_memory(*draw_list.vertices);
@@ -436,6 +448,8 @@ ui_end :: () {
 
         global_index += it.vertices.count;
     }
+
+    update_io();
 }
 
 get_draw_list :: () -> UI_Draw_List {
@@ -533,7 +547,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
         title_color := ifx is_topmost theme.color.fg else darken(theme.color.fg, 20);
 
         text_size := theme.window_title_bar_height * 0.5;
-        title_width, title_height := get_size(font, title, xx text_size);
+        title_width, title_height := get_text_size(font, title, xx text_size);
 
         x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
         y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
@@ -617,7 +631,7 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
     bg_color := get_color(state.status, theme.color.fg);
 
     font_size                 := size.y * 0.5;
-    text_width, text_height   := get_size(font, title, xx font_size);
+    text_width, text_height   := get_text_size(font, title, xx font_size);
     text_rect                 := pad_rect(rect, theme.button_padding, 0);
 
     // Center text in button rect.
@@ -657,7 +671,6 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
             layout.rect.h - rect.y,
         };
 
-        // draw_outline(layout_rect, color, theme.border_width, borders);
 
         prev_layout      := set_layout(layout_rect);
         state.prev_layout = prev_layout;
@@ -760,7 +773,7 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, 40 }, placeholder := "", max_i
     bg_color := get_color(state.status, theme.color.fg);
 
     font_size                 := size.y * 0.5;
-    text_width, text_height   := get_size(font, button_label, xx font_size);
+    text_width, text_height   := get_text_size(font, button_label, xx font_size);
     text_rect                 := pad_rect(rect, theme.button_padding, 0);
 
     // Center text in button rect.
@@ -857,7 +870,7 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, 40 }, placeholder := "", max_i
         draw_outline(dropdown_rect, theme.color.border, theme.border_width, dropdown_flags);
 
         // If click outside the dropdown, we close the dropdown.
-        if is_pressed(.MOUSE_LEFT) && (state.status == .NONE) && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
+        if is_pressed(.MOUSE_LEFT) && (state.status == 0x00) && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
             state.open = false;
         }
 
@@ -883,7 +896,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, 40 }, placeh
     bg_color := get_color(state.status, theme.color.fg);
 
     font_size                 := size.y * 0.5;
-    text_width, text_height   := get_size(font, button_label, xx font_size);
+    text_width, text_height   := get_text_size(font, button_label, xx font_size);
     text_rect                 := pad_rect(rect, theme.button_padding, 0);
 
     // Center text in button rect.
@@ -974,7 +987,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, 40 }, placeh
         draw_outline(dropdown_rect, theme.color.border, theme.border_width, dropdown_flags);
 
         // If click outside the dropdown, we close the dropdown.
-        if is_pressed(.MOUSE_LEFT) && (state.status == .NONE) && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
+        if is_pressed(.MOUSE_LEFT) && (state.status == 0x00) && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
             state.open = false;
         }
 
@@ -985,7 +998,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, 40 }, placeh
 
 label :: (text: string, label_size := 0., loc := #caller_location) {
     text_size := ifx label_size <= 0 theme.text_size else label_size;
-    text_width, text_height := get_size(font, text, xx text_size);
+    text_width, text_height := get_text_size(font, text, xx text_size);
 
     height := text_height;
     center_on_previous_widget := false;
@@ -1011,7 +1024,7 @@ separator :: (text := "") {
 
     if text {
         text_size := theme.text_size * 0.7;
-        text_width, text_height := get_size(font, text, xx text_size);
+        text_width, text_height := get_text_size(font, text, xx text_size);
 
         rect := alloc_space(.{ layout.rect.w, text_height  });
 
@@ -1123,7 +1136,7 @@ rgba_input :: (value : *Vector4, size := Vector2.{ 120, 60 }, format := Color_Fo
         draw_outline(rect, c, theme.border_width, .TOP | .BOTTOM | .LEFT | .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT);
 
         text_size := (size.y * 0.3);
-        text_width, text_height := get_size(font, text, text_size);
+        text_width, text_height := get_text_size(font, text, text_size);
 
         draw_text(text, rect.x + rect.w * 0.5 - text_width * 0.5, rect.y + rect.h * 0.5 - text_height * 0.5, text_size, lighten(color, 90));
 
@@ -1217,7 +1230,7 @@ text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flag
         state.focused_start_time = xx seconds_since_init();
     }
 
-    if state.status & .HOVERED || state.focused then curr_cursor_icon = .TEXT_EDIT;
+    if state.status & .HOVERED then curr_cursor_icon = .TEXT_EDIT;
 
     modified := false;
 
@@ -1236,7 +1249,7 @@ text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flag
             modified = true;
         }
 
-        if is_pressed(.BACKSPACE, true) && state.cursor_start > 0 {
+        if is_pressed(.BACKSPACE, repeat = true) && state.cursor_start > 0 {
             for state.cursor_start..state.text.count - 1 {
                 state.text[it - 1] = state.text[it];
             }
@@ -1245,11 +1258,11 @@ text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flag
             if state.text.count   > 0 then state.text.count   -= 1;
         }
 
-        if is_pressed(.RIGHT) && state.cursor_start <= state.text.count {
+        if is_pressed(.RIGHT, repeat = true) && state.cursor_start <= state.text.count {
             state.cursor_start += 1;
         }
 
-        if is_pressed(.LEFT) && state.cursor_start > 0 {
+        if is_pressed(.LEFT, repeat = true) && state.cursor_start > 0 {
             state.cursor_start -= 1;
         }
 
@@ -1274,7 +1287,7 @@ text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flag
     draw_outline(rect, theme.color.border, theme.border_width, flags);
 
     font_size                 := input_rect.h * 0.5;
-    text_width, text_height   := get_size(font, state.text, xx font_size);
+    text_width, text_height   := get_text_size(font, state.text, xx font_size);
 
     text_x := rect.x + theme.input_padding + theme.border_width;
     text_y := rect.y + state.rect.h * 0.5 - text_height * 0.5;
@@ -1299,7 +1312,7 @@ text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flag
         }
 
         cursor_height    := rect.h * 0.5;
-        to_cursor_width  := get_size(font, cursor_text, xx font_size);
+        to_cursor_width  := get_text_size(font, cursor_text, xx font_size);
 
         input_width := state.rect.w - (theme.border_width * 2);
         cursor_size := theme.input_cursor_size;
@@ -1338,13 +1351,9 @@ radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> boo
 
         checked := it_index == index.*;
 
-        if checkbox(*checked) {
+        if checkbox(*checked, text_label = it) {
             changed = true;
         }
-
-        same_line();
-
-        label(it);
 
         if checked {
             index.* = it_index;
@@ -1354,14 +1363,22 @@ radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> boo
     return changed;
 }
 
-// @todo: we don't need state for that...
-checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
-    id      := make_id(loc);
+checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> bool {
+    id      := make_id(loc, text_label);
     state   := get_widget_state(Widget_State, id);
 
-    checkbox_size := ifx size <= 0 xy(theme.checkbox_size) else xy(size);
+    text_width, text_height : float;
+    content_size            := xy(theme.checkbox_size);
 
-    rect := alloc_space(checkbox_size);
+    if text_label {
+        text_width, text_height = get_text_size(font, text_label, theme.text_size);
+
+        content_size.x += text_width + theme.content_padding;
+        content_size.y  = max(theme.checkbox_size, text_height);
+    }
+
+
+    rect := alloc_space(content_size);
     mutate_state(state, rect);
 
     changed := false;
@@ -1373,15 +1390,44 @@ checkbox :: (checked: *bool, size := 0., loc := #caller_location) -> bool {
 
     inner_color := get_color(state.status, ifx checked.* then theme.color.accent else theme.color.text_muted);
 
-    pos     := xy(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
-    radius  := checkbox_size.x * 0.5;
+    radius  := theme.checkbox_size * 0.5;
+    pos     := xy(rect.x + radius, rect.y + rect.h * 0.5);
 
     draw_circle(pos, radius, theme.color.bg);
     draw_circle_outline(pos, radius, theme.border_width, inner_color);
 
     if checked.* == true {
-        radius = radius * 0.5;
-        draw_circle(pos, radius, inner_color);
+        inner_circle := radius * 0.5;
+        draw_circle(pos, inner_circle, inner_color);
+    }
+
+    if text_label {
+        pos.x += theme.checkbox_size - radius + theme.content_padding;
+        pos.y  = rect.y + rect.h * 0.5 - text_height * 0.5;
+
+        leftover    := (rect.x + rect.w - pos.x);
+        text_index  := cursor_to_text_index(font, text_label, theme.text_size, leftover);
+
+        if text_index < 0 {
+            draw_text(text_label, pos.x, pos.y, theme.text_size, theme.color.text);
+        } else {
+            // @note: We want to make sure we can modify the string, so we copy
+            // it. Yup, the underlying string could be in the read-only data
+            // segment of the program.
+            str_copied := copy_string(text_label);
+            defer free(str_copied);
+
+            str_copied = slice(str_copied, 0, str_copied.count - text_index);
+
+            // Put ellipsis at the end of the string.
+            for < * str_copied {
+                index := str_copied.count - 1 - it_index;
+                if index < 3 it.* = #char ".";
+            }
+
+            draw_text(str_copied, pos.x, pos.y, theme.text_size, theme.color.text);
+        }
+
     }
 
     return changed;
@@ -1392,7 +1438,7 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, 30 }, loc := #caller_
     using state := get_widget_state(Widget_State, id);
 
     font_size                 := size.y * 0.5;
-    text_width, text_height   := get_size(font, label, xx font_size);
+    text_width, text_height   := get_text_size(font, label, xx font_size);
 
     button_size := size;
 
@@ -1407,7 +1453,7 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, 30 }, loc := #caller_
 
     text_too_big := rect.w < button_size.x;
 
-    is_activated := status == .FOCUSED || status == .PRESSED || active;
+    is_activated := status & .FOCUSED || status & .PRESSED || active;
 
     bg_color     := get_color(status, ifx is_activated then theme.color.accent else theme.color.fg);
     border_color := theme.color.border;
@@ -1427,12 +1473,12 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, 30 }, loc := #caller_
     return state.pressed;
 }
 
-button :: (label := "", size := Vector2.{ -1, 30 }, texture : UI_Texture = null, loc := #caller_location, color : *Color_Theme = null) -> bool {
+button :: (label := "", size := Vector2.{ -1, 40 }, texture : UI_Texture = null, loc := #caller_location, color : *Color_Theme = null) -> bool {
     id          := make_id(loc, label);
-    using state := get_widget_state(Widget_State, id);
+    using state := get_widget_state(Button_State, id);
 
     font_size                 := size.y * 0.5;
-    text_width, text_height   := get_size(font, label, xx font_size);
+    text_width, text_height   := get_text_size(font, label, xx font_size);
 
     button_size := size;
 
@@ -1441,18 +1487,24 @@ button :: (label := "", size := Vector2.{ -1, 30 }, texture : UI_Texture = null,
     }
 
     mutate_state(state, alloc_space(button_size));
+    hover_strength, press_strength := update_times(state);
 
     clip := peek(current_layer.clip_stack);
     if !rect_vs_rect(state.rect, clip) return state.pressed;
 
     text_too_big := rect.w < button_size.x;
 
-    colors := ifx color then color.* else theme.color;
 
     is_activated := status == .FOCUSED || status == .PRESSED;
 
+    colors := ifx color then color.* else theme.color;
+
     bg_color     := get_color(status, ifx is_activated then colors.accent else colors.fg);
     border_color := colors.border;
+
+
+    bg_color = lerp(colors.fg, lighten(colors.fg, 10), hover_strength);
+    bg_color = lerp(bg_color, lighten(colors.fg, 30), press_strength);
 
     if texture {
         draw_rect(rect, bg_color, .ROUND_ALL);
@@ -1472,6 +1524,11 @@ button :: (label := "", size := Vector2.{ -1, 30 }, texture : UI_Texture = null,
         x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
         y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
 
+        offset := 4.;
+
+        x = lerp(x, x + offset, press_strength);
+        y = lerp(y, y + offset, press_strength);
+
         if text_too_big push_clip(rect);
         draw_text(label, x, y, font_size, colors.text);
         if text_too_big pop_clip();
@@ -1481,12 +1538,8 @@ button :: (label := "", size := Vector2.{ -1, 30 }, texture : UI_Texture = null,
 }
 
 get_color :: (status: Widget_Status, color: Vector4) -> Vector4 {
-    if status == {
-        case .HOVERED; return lighten(color, 10);
-        case .FOCUSED; return lighten(color, 25);
-        case .DOWN;    #through;
-        case .PRESSED; return lighten(color, 25);
-    }
+    if status & .PRESSED || status & .DOWN || status & .FOCUSED return lighten(color, 25);
+    if status & .HOVERED return lighten(color, 10);
 
     return color;
 }
@@ -1529,14 +1582,41 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
     return cast(*T) state.*, new;
 }
 
+update_times :: (state: *Button_State) -> float, float {
+    status := get_status(state.rect);
+
+    HOVER_TIME    :: 0.6;
+    PRESS_TIME    :: 0.4;
+
+    now := cast(float) seconds_since_init();
+
+    if state.status & .HOVERED {
+        state.hover_duration += dt * 2;
+        state.hover_duration = min(state.hover_duration, HOVER_TIME);
+    } else {
+        state.hover_duration -= dt;
+        state.hover_duration = max(state.hover_duration, 0);
+    }
+
+    if state.status & .DOWN {
+        state.press_duration += dt * 2;
+        state.press_duration = min(state.press_duration, PRESS_TIME);
+    } else {
+        state.press_duration -= dt * 4;
+        state.press_duration = max(state.press_duration, 0);
+    }
+
+    return (state.hover_duration / HOVER_TIME), (state.press_duration / PRESS_TIME);
+}
+
 mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true) {
     state.status = ifx active_widget > -1 && active_widget != state.widget_id then 0 else get_status(rect, check_layout);
 
     if state.widget_id == active_widget {
-        state.status = .FOCUSED;
+        state.status |= .FOCUSED;
     }
 
-    state.pressed = state.status == .PRESSED;
+    state.pressed = state.status & .PRESSED !=0;
 
     state.rect   = rect;
 }
@@ -1550,16 +1630,19 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
     within_layout_rect := ifx check_layout cursor_vs_rect(current_layout().rect) else true;
 
     if !is_occluded(rect) && within_widget_rect && within_layer && within_layout_rect {
-        status = .HOVERED;
+        status |= .HOVERED;
+
+        if is_down(.MOUSE_LEFT) {
+            status |= .DOWN;
+
+        }
+
+        if is_pressed(.MOUSE_LEFT) {
+            status |= .PRESSED;
+        }
     }
 
-    if status == .HOVERED && is_down(.MOUSE_LEFT) {
-        status = .DOWN;
-    }
 
-    if status == .DOWN && is_pressed(.MOUSE_LEFT, repeat = false) {
-        status = .PRESSED;
-    }
 
     return status;
 }
@@ -1916,6 +1999,7 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
         if layout.columns > 0 {
             col_width := (layout.rect.w) / max(1, columns);
             size.x     = col_width - margin_x;
+            curr_column += 1;
         }
     }
 
@@ -1938,19 +2022,20 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
 }
 
 is_down :: (key: UI_Key) -> bool {
-    state := key_state[key];
+    info := key_state[key];
 
-    return state.down;
+    return info.state & .DOWN != 0;
 }
 
-is_pressed :: (key: UI_Key, repeat := true) -> bool {
-    state := key_state[key];
+// @note: For now, it's pressed on key release.
+is_pressed :: (key: UI_Key, repeat := false) -> bool {
+    using info := key_state[key];
 
-    if !repeat {
-        return state.down && state.down_duration == 0;
-    } else {
-        return state.down && state.down_duration == 0 || state.down && state.repeat_duration == 0;
+    if repeat {
+        return state & (.REPEAT | .END) != 0;
     }
+
+    return state & .END != 0;
 }
 
 

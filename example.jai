@@ -169,6 +169,8 @@ main :: () {
             if event.type == {
                 case .SDL_KEYUP;    #through;
                 case .SDL_KEYDOWN;
+                    if event.key.repeat continue;
+
                     down := event.key.state == SDL_PRESSED;
 
                     if event.key.keysym.sym == {
@@ -297,9 +299,8 @@ make_ui :: () -> UI_Draw_List {
         replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
     }
 
-    size := Vector2.{ -1, 30 } * dpi_scale;
 
-    if window_begin(Rect.{ 10, 10, 450, 400 } * dpi_scale, "Widgets") {
+    if window_begin(Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
 
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
@@ -355,13 +356,9 @@ make_ui :: () -> UI_Draw_List {
 
             separator("Checkboxes");
 
-            checkbox(*show_color_picker);
-            same_line();
-            label("Show Color Picker");
 
-            checkbox(*translucent);
-            same_line();
-            label("Translucent");
+            checkbox(*show_color_picker, "Show Color Picker");
+            checkbox(*translucent, "Translucent");
 
 
             if begin_expander("Expand to see buttons!") {
@@ -375,7 +372,7 @@ make_ui :: () -> UI_Draw_List {
 
             begin_column(2);
             for 1..15 {
-                if button(tprint("button %", it), size) {
+                if button(tprint("button %", it)) {
                     log("click! %", it);
                 }
             }
@@ -388,11 +385,13 @@ make_ui :: () -> UI_Draw_List {
         window_end();
     }
 
-    if window_begin(Rect.{ 600, 10, 250, 400 } * dpi_scale, "Themes") {
+    if window_begin(Rect.{ 600, 10, 350, 400 } * dpi_scale, "Themes") {
 
+        begin_column(2);
         if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
             log("Theme choosen: %", enum_names(Color_Themes)[chosen_theme]);
         }
+        end_column();
 
         separator();
 

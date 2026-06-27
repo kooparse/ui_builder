@@ -128,20 +128,16 @@ get_font_metrics :: (using font : *Font, font_size : u32) -> Font_Metrics {
     return result;
 }
 
-get_size :: (using font: *Font, text : string, size : float) -> width: float, height: float {
-    if text.count <= 0 return 0, 0;
-
-    max_width : float;
-
-    using metrics := get_font_metrics(font, xx size);
+get_text_size :: (using font: *Font, text: string, text_size: float, width_allowed := -1) -> width: float, height: float {
+    using metrics := get_font_metrics(font, xx text_size);
 
     pen := Vector2.{ 0, xx ascender };
 
-    words       := text;
+    max_width   : float;
     prev_char   : u32;
 
-    while words.count > 0 {
-        codepoint, status := utf8_next_character(*words);
+    while text.count > 0 {
+        codepoint, status := utf8_next_character(*text);
         defer prev_char = codepoint;
 
         glyph           := find_or_add_glyph(font, codepoint, pixel_size);
@@ -159,6 +155,44 @@ get_size :: (using font: *Font, text : string, size : float) -> width: float, he
     }
 
     return max_width, xx line_height;
+}
+
+cursor_to_text_index :: (using font: *Font, text: string, text_size: float, cursor : float) -> text_index : int {
+    using metrics := get_font_metrics(font, xx text_size);
+
+    pen := Vector2.{ 0, xx ascender };
+
+    words       := text;
+    prev_char   : u32;
+
+    max_width  : float;
+    text_index := -1;
+
+    while words.count > 0 {
+        codepoint, status := utf8_next_character(*words);
+        defer prev_char = codepoint;
+
+        glyph           := find_or_add_glyph(font, codepoint, pixel_size);
+        pos_in_atlas    := glyph.pos_in_atlas;
+
+        if prev_char > 0 {
+            delta: FT_Vector;
+
+            FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
+            pen.x += xx (delta.x >> 6);
+        }
+
+        max_width = max(max_width, pen.x + glyph.advance);
+        pen.x    += glyph.advance;
+
+        if max_width > cursor {
+            text_index = words.count + 1;
+            break;
+        }
+    }
+
+    return text_index;
+
 }
 
 free_font:: (using font: *Font) {
