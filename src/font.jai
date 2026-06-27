@@ -3,7 +3,8 @@
         - Should implement kerning.
 */
 
-#scope_export;
+
+#scope_module;
 
 DEFAULT_FT_SIZE :: 18;
 
@@ -26,6 +27,8 @@ Glyph_Info :: struct {
     advance, width, height, bearing_x, bearing_y: int;
     pos_in_atlas: Rect_Pos;
 }
+
+#scope_export;
 
 bake_font :: (ttf_filepath: string, white_2x2_pixel := false) -> *Font {
     content := read_entire_file(ttf_filepath);
@@ -60,6 +63,8 @@ bake_font :: (ttf_filepath: string, white_2x2_pixel := false) -> *Font {
 get_raw_bitmap_texture :: (font: *Font) -> *void, int, int {
     return font.font_atlas.bitmap.data, font.font_atlas.WIDTH, font.font_atlas.HEIGHT;
 }
+
+#scope_module;
 
 find_or_add_glyph :: (using font: *Font, char: u32, font_size: int) -> Glyph_Info {
     // @Speed Perhaps not very fast...
@@ -202,8 +207,6 @@ free_font:: (using font: *Font) {
     deinit(*glyph_table);
     free(ttf_file);
 }
-
-#scope_file;
 
 Rect_Pos :: struct {
     x, y, w, h : int;

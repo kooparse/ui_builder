@@ -36,46 +36,18 @@
 // Context.
 theme := DEFAULT_THEME;
 
-UI_Key :: enum {
-    ESCAPE;
-    TAB;
-    RETURN;
-    BACKSPACE;
+UI_Font :: Font;
+UI_Rect :: Rect;
 
-    LEFT;
-    RIGHT;
-    UP;
-    DOWN;
+operator * :: (rect: Rect, scaler: float) -> Rect {
+    return .{ rect.x * scaler, rect.y * scaler, rect.w * scaler, rect.h * scaler };
+}
 
-    MOUSE_LEFT;
-    MOUSE_RIGHT;
-    MOUSE_MIDDLE;
-
-    KEY_C;
-    KEY_V;
-    KEY_X;
-    KEY_A;
-    CTRL;
-};
-
-Key_State :: enum_flags {
-    START       :: 1 << 0;
-    END         :: 1 << 1;
-    DOWN        :: 1 << 2;
-    REPEAT      :: 1 << 3;
-};
-
-UI_Key_Info :: struct {
-    state           : Key_State;
-
-    down_duration   : float;
-    repeat_duration : float;
-};
+operator == :: (a: Rect, b: Rect) -> bool {
+    return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
+}
 
 #scope_file;
-
-dt        := 0.;
-prev_time := 0.;
 
 WHITE :: Vector4.{ 1, 1, 1, 1 };
 
@@ -131,7 +103,47 @@ wheel_y  : float;
 font         : *Font;
 font_texture : UI_Texture;
 
+// @todo: rename.
 current_depth := 0; // for layers
+
+dt        := 0.;
+prev_time := 0.;
+
+UI_Key :: enum {
+    ESCAPE;
+    TAB;
+    RETURN;
+    BACKSPACE;
+
+    LEFT;
+    RIGHT;
+    UP;
+    DOWN;
+
+    MOUSE_LEFT;
+    MOUSE_RIGHT;
+    MOUSE_MIDDLE;
+
+    KEY_C;
+    KEY_V;
+    KEY_X;
+    KEY_A;
+    CTRL;
+};
+
+Key_State :: enum_flags {
+    START       :: 1 << 0;
+    END         :: 1 << 1;
+    DOWN        :: 1 << 2;
+    REPEAT      :: 1 << 3;
+};
+
+UI_Key_Info :: struct {
+    #as state       : Key_State;
+    down_duration   : float;
+    repeat_duration : float;
+};
+
 
 // @todo I don't like the name here...
 Draw_Marker :: struct {
@@ -149,7 +161,6 @@ UI_Layout :: struct {
     // "curr_column" or the cursor, and this variable is our way to notice it.
     changed    := false;
 
-    order      := Layout_Order.STACK;
     columns    := 0;
 
     should_inline := false;
@@ -165,6 +176,17 @@ UI_Layout :: struct {
     curr_column      := 0;
     prev_widget_size : Vector2;
 };
+
+Rect :: struct {
+    x: float;
+    y: float;
+    w: float;
+    h: float;
+
+    #overlay (x) position   : Vector2;
+    #overlay (w) size       : Vector2;
+};
+
 
 
 /*
@@ -265,31 +287,11 @@ UI_Draw_List  :: struct {
     draw_calls  : [..] UI_Draw_Call;
 };
 
-Layout_Order :: enum { STACK; INLINE; COLUMNS; };
-
 UI_Vertex :: struct {
     position : Vector2; @TEXCOORD;
     uv       : Vector2; @TEXCOORD;
     color    : Vector4; @TEXCOORD;
 };
-
-Rect :: struct {
-    x: float;
-    y: float;
-    w: float;
-    h: float;
-
-    #overlay (x) position   : Vector2;
-    #overlay (w) size       : Vector2;
-};
-
-operator * :: (rect: Rect, scaler: float) -> Rect {
-    return .{ rect.x * scaler, rect.y * scaler, rect.w * scaler, rect.h * scaler };
-}
-
-operator == :: (a: Rect, b: Rect) -> bool {
-    return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
-}
 
 push_id :: inline (id: int) {
     array_add(*context_ids, id);
@@ -298,8 +300,6 @@ push_id :: inline (id: int) {
 pop_id :: inline () {
     if context_ids then pop(*context_ids);
 }
-
-
 
 set_theme :: (given_theme: Theme) {
     theme = given_theme;
@@ -1562,6 +1562,16 @@ end_column :: () {
     layout.curr_column  = 0;
 }
 
+
+
+
+
+
+
+
+
+
+
 #scope_file;
 
 get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
@@ -2593,9 +2603,6 @@ internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
     push_triangle(p2, p1, p3, color, uv2, uv1, uv3);
 }
 
-
-
-#scope_file;
 
 #import "Basic";
 #import "Hash_Table";

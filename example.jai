@@ -32,7 +32,7 @@ window_height   := 800.;
 
 left_down   : bool;
 
-our_font: *Font;
+our_font: *UI_Font;
 
 dpi_scale := 1.;
 
@@ -300,7 +300,7 @@ make_ui :: () -> UI_Draw_List {
     }
 
 
-    if window_begin(Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
+    if window_begin(UI_Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
 
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
@@ -385,7 +385,7 @@ make_ui :: () -> UI_Draw_List {
         window_end();
     }
 
-    if window_begin(Rect.{ 600, 10, 350, 400 } * dpi_scale, "Themes") {
+    if window_begin(UI_Rect.{ 600, 10, 350, 400 } * dpi_scale, "Themes") {
 
         begin_column(2);
         if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
@@ -400,7 +400,7 @@ make_ui :: () -> UI_Draw_List {
 
 
     if show_color_picker {
-        if window_begin(Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
+        if window_begin(UI_Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
 
             separator("Channels inputs, floating RGBA");
             rgba_input(*my_color, format = .FLOAT);
