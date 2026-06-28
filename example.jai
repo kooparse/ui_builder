@@ -313,6 +313,7 @@ make_ui :: () -> UI_Draw_List {
         label(tprint("CPU % / GPU %", dt_fmt, gpu_fmt));
         label(tprint("Draw calls: %", last_draw_calls));
         label(tprint("Vertex count: %", last_vertex_count));
+        label(tprint("Captured: %", io_captured()));
 
         if ui_tab(enum_names(TABS), xx *current_tab) {
             log("Select Tab: %", enum_names(TABS)[current_tab]);

@@ -2,8 +2,9 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
-    - set_next_rect to override the alloc_space.
-    - font in export_file, and use just a table inthis lib...
+
+    - ability for user to disable interaction.
+    - Fix font modified check we do in user code.
     - use some pool allocator
     - rename margin to gap.
     - fix input.
@@ -323,6 +324,10 @@ set_wheel :: (x: float, y: float) {
     wheel_y = y;
 }
 
+io_captured :: () -> bool {
+    return hovered_layer > 0 || active_widget > 0;
+}
+
 set_key_event :: (key: UI_Key, down: bool) {
     info := *key_state[key];
 
@@ -403,6 +408,7 @@ ui_begin :: () {
 
 
     // @todo: explain that.
+    hovered_layer = -1;
     for < prev_layer_list  {
         if cursor_vs_rect(it.rect) {
             hovered_layer = it.widget_id;
@@ -455,7 +461,6 @@ ui_end :: () {
 get_draw_list :: () -> UI_Draw_List {
     return draw_list;
 }
-
 
 window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     id    := make_id(loc, "_full_region");

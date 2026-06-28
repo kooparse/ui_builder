@@ -134,6 +134,8 @@ get_font_metrics :: (using font : *Font, font_size : u32) -> Font_Metrics {
 }
 
 get_text_size :: (using font: *Font, text: string, text_size: float, width_allowed := -1) -> width: float, height: float {
+    assert(font != null, "Current font not set.");
+
     using metrics := get_font_metrics(font, xx text_size);
 
     pen := Vector2.{ 0, xx ascender };
@@ -163,6 +165,8 @@ get_text_size :: (using font: *Font, text: string, text_size: float, width_allow
 }
 
 cursor_to_text_index :: (using font: *Font, text: string, text_size: float, cursor : float) -> text_index : int {
+    assert(font != null, "Current font not set.");
+
     using metrics := get_font_metrics(font, xx text_size);
 
     pen := Vector2.{ 0, xx ascender };
