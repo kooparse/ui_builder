@@ -86,7 +86,7 @@ curr_expander      : *Expander_State;
 
 // @todo: do a better job... here.
 navigation_widget_index := 0;
-curr_navigation_widget  := 0;
+curr_navigation_widget  := -1;
 
 Cursor_Icon :: enum {
     ARROW;
@@ -381,7 +381,6 @@ update_io :: () {
         } else {
             curr_navigation_widget += 1;
         }
-
     }
 
     mask := ~(Key_State.START | .REPEAT);
