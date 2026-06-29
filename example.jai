@@ -198,7 +198,9 @@ main :: () {
                     }
 
                 case SDL_MOUSEWHEEL;
-                    set_wheel(cast(float) event.wheel.x, cast(float) event.wheel.y);
+                    speed := 20.0;
+                    reverse := -1; // macos.
+                    set_wheel(cast(float) event.wheel.x * speed, cast(float) event.wheel.y * reverse * speed);
 
                 case SDL_MOUSEBUTTONUP; #through;
                 case SDL_MOUSEBUTTONDOWN;

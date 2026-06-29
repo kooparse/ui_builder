@@ -3,7 +3,6 @@
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
 
-    - Add scroll wheel
     - Fix font modified check we do in user code.
     - use some pool allocator
     - rename margin to gap.
@@ -383,6 +382,10 @@ update_io :: () {
             it.repeat_duration += dt;
         }
     }
+
+
+    wheel_x = 0;
+    wheel_y = 0;
 }
 
 ui_begin :: () {
@@ -1727,10 +1730,10 @@ end_scroll :: (state: *Scrollbar_State) {
         scroll.y     = clamp(scroll.y, 0.0, max_scroll);
 
         // @todo: Perhaps add again mouse wheel for scrolling content...
-        // if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
-        //     scroll.y += xx wheel_y;
-        //     scroll.y = clamp(scroll.y, 0.0, max_scroll);
-        // }
+        if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
+            scroll.y += xx wheel_y;
+            scroll.y = clamp(scroll.y, 0.0, max_scroll);
+        }
 
         if max_scroll > 0 {
             track_h  := layout.rect.h;
