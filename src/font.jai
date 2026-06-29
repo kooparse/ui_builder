@@ -16,7 +16,6 @@ Font :: struct {
     ttf_file      : string;
 
     glyph_table   : Table(u32, Glyph_Info);
-    modified      : bool;
 
     font_atlas    : Font_Atlas;
 
@@ -104,8 +103,6 @@ find_or_add_glyph :: (using font: *Font, char: u32, font_size: int) -> Glyph_Inf
         height    = height,
         advance = advance,
     };
-
-    modified = true;
 
     return glyph.*;
 }

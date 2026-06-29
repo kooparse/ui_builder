@@ -297,10 +297,9 @@ make_ui :: () -> UI_Draw_List {
         corner_radius           = DEFAULT_THEME.corner_radius           * dpi_scale,
     });
 
-    set_font(our_font, *font_atlas_texture);
-    if our_font.modified {
-        our_font.modified = false;
+    modified := set_font(our_font, *font_atlas_texture);
 
+    if modified {
         bitmap, width, height := get_raw_bitmap_texture(our_font);
         replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
     }

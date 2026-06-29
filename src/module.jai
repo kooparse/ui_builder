@@ -3,7 +3,6 @@
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
 
-    - Fix font modified check we do in user code.
     - use some pool allocator
     - rename margin to gap.
     - fix input.
@@ -308,9 +307,11 @@ set_theme :: (given_theme: Theme) {
     theme = given_theme;
 }
 
-set_font :: (font_to_set: *Font, font_texture_atlas: *void) {
+set_font :: (font_to_set: *Font, font_texture_atlas: *void) -> bool {
     font            = font_to_set;
     font_texture    = font_texture_atlas;
+
+    return prev_glyph_count != glyph_count;
 }
 
 set_mouse_position :: (x: float, y: float) {
@@ -388,10 +389,19 @@ update_io :: () {
     wheel_y = 0;
 }
 
+prev_glyph_count := 0;
+glyph_count      := 0;
+
 ui_begin :: () {
+
     now      := cast(float) seconds_since_init();
     dt        = now - prev_time;
     prev_time = now;
+
+    if font != null {
+        prev_glyph_count = glyph_count;
+        glyph_count      = font.glyph_table.count;
+    }
 
     if io_frozen {
         hovered_layer = -1;
@@ -1121,6 +1131,7 @@ hexa_input :: (color: *Vector4, size := Vector2.{ 200, 60 }) -> modified: bool {
     return modified;
 }
 
+// @todo: not great "u8" to define the color format...
 Color_Format :: enum {
     FLOAT;
     U8;
