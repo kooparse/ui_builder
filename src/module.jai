@@ -44,7 +44,6 @@ operator == :: (a: Rect, b: Rect) -> bool {
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
-io_frozen    := false;
 #scope_file;
 
 WHITE :: Vector4.{ 1, 1, 1, 1 };
@@ -57,6 +56,7 @@ UI_Texture :: *void;
 
 key_count       :: #run enum_names(UI_Key).count;
 key_state       : [key_count] UI_Key_Info;
+modifiers       : UI_Modifiers;
 
 prev_layer_list  : [..] Layer;
 curr_layer_list  : [..] Layer;
@@ -84,6 +84,10 @@ delta_y  : float;
 curr_window_scroll : *Scrollbar_State;
 curr_expander      : *Expander_State;
 
+// @todo: do a better job... here.
+navigation_widget_index := 0;
+curr_navigation_widget  := 0;
+
 Cursor_Icon :: enum {
     ARROW;
     RESIZE_ARROW;
@@ -104,6 +108,8 @@ font_texture : UI_Texture;
 
 // @todo: rename.
 current_depth := 0; // for layers
+
+io_frozen    := false;
 
 dt        := 0.;
 prev_time := 0.;
@@ -275,6 +281,13 @@ Expander_State :: struct {
 
 #scope_export;
 
+UI_Modifiers :: enum_flags {
+    CTRL    :: 1 << 0;
+    SHIFT   :: 1 << 1;
+    ALT     :: 1 << 2;
+    OS      :: 1 << 3;
+};
+
 UI_Draw_Call :: struct {
     vertex_start : int;
     vertex_count : int;
@@ -337,6 +350,10 @@ io_captured :: () -> bool {
     return hovered_layer > 0 || active_widget > 0;
 }
 
+set_modifiers :: (mod: UI_Modifiers) {
+    modifiers |= mod;
+}
+
 set_key_event :: (key: UI_Key, down: bool) {
     info := *key_state[key];
 
@@ -356,6 +373,16 @@ KEY_REPEAT_RATE     :: 0.020;
 
 update_io :: () {
     text_codepoint.count = 0;
+
+    if is_pressed(.TAB) {
+        if modifiers & .CTRL {
+            curr_navigation_widget -= 1;
+            if curr_navigation_widget < 0 curr_navigation_widget = 0;
+        } else {
+            curr_navigation_widget += 1;
+        }
+
+    }
 
     mask := ~(Key_State.START | .REPEAT);
 
@@ -382,6 +409,7 @@ update_io :: () {
         }
     }
 
+    modifiers = 0x00;
 
     wheel_x = 0;
     wheel_y = 0;
@@ -408,6 +436,8 @@ ui_begin :: () {
             it.* = UI_Key_Info.{};
         }
     }
+
+    navigation_widget_index = 0;
 
     // Reset flat vertices.
     array_reset_keeping_memory(*draw_list.vertices);
@@ -1066,7 +1096,7 @@ separator :: (text := "") {
 
         // draw_rect(rect, theme.color.fg);
 
-        x := rect.x + theme.content_padding;
+        x := rect.x;
 
         line_height := min(text_size * 0.5, theme.separator_size);
 
@@ -1106,13 +1136,13 @@ send_text_codepoint :: (codepoint: string) {
     text_codepoint = copy_string(codepoint);
 }
 
-hexa_input :: (color: *Vector4, size := Vector2.{ 200, 60 }) -> modified: bool {
+hexa_input :: (color: *Vector4, size := Vector2.{ 200, 60 }, loc := #caller_location) -> modified: bool {
     hexa := color_to_hexa(color.*);
 
     hexa_str := sprint("#%", formatInt(hexa, base = 16, minimum_digits = 6));
     defer free(hexa_str);
 
-    modified, new_str := text_input(hexa_str, size);
+    modified, new_str := text_input(hexa_str, size, loc = loc);
 
     if modified && new_str.count >= 1 {
         advance(*new_str, 1);
@@ -1282,20 +1312,34 @@ text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flag
             modified      = true;
         }
 
+        #if OS == .MACOS {
+            want_clipboard_past := modifiers & .OS && is_pressed(.KEY_V);
+        } else {
+            want_clipboard_past := modifiers & .CTRL && is_pressed(.KEY_V);
+        }
+
+        if want_clipboard_past {
+            clipboard_str := os_clipboard_get_text();
+            defer free(clipboard_str);
+
+            begin := slice(state.text, 0, state.cursor_start);
+            end   := slice(state.text, state.cursor_start, state.text.count);
+
+            new_value := join(begin, clipboard_str, end);
+            state.cursor_start += clipboard_str.count;
+
+            if state.text {
+                free(state.text);
+            }
+
+            state.text = new_value;
+
+        }
+
         if is_pressed(.ESCAPE) || click_outside {
             active_widget = -1;
             state.focused = false;
             modified      = true;
-        }
-
-        find_lead_from_right :: (str: string) -> int {
-            lead_index := 0;
-
-            while lead_index > 0 && (str[lead_index] & 0xC0) == 0x80 {
-                lead_index += 1;
-            }
-
-            return lead_index;
         }
 
         if is_pressed(.BACKSPACE, repeat = true) && state.cursor_start > 0 {
@@ -1543,6 +1587,8 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, 30 }, loc := #caller_
 }
 
 button :: (label := "", size := Vector2.{ -1, 40 }, texture : UI_Texture = null, loc := #caller_location, color : *Color_Theme = null) -> bool {
+    defer navigation_widget_index += 1;
+
     id          := make_id(loc, label);
     using state := get_widget_state(Button_State, id);
 
@@ -1601,6 +1647,10 @@ button :: (label := "", size := Vector2.{ -1, 40 }, texture : UI_Texture = null,
         if text_too_big push_clip(rect);
         draw_text(label, x, y, font_size, colors.text);
         if text_too_big pop_clip();
+    }
+
+    if curr_navigation_widget == navigation_widget_index {
+        draw_outline(rect, theme.color.blue, theme.border_width, .ROUND_ALL);
     }
 
     return state.pressed;
@@ -2186,6 +2236,7 @@ utf8_char_size :: (lead: u8) -> int {
     return 1 + trailingBytesForUTF8[lead];
 }
 
+// @todo: rename
 find_lead_from_left :: (str: string) -> int {
     lead_index := str.count - 1;
 
@@ -2195,6 +2246,17 @@ find_lead_from_left :: (str: string) -> int {
 
     return lead_index;
 }
+
+find_lead_from_right :: (str: string) -> int {
+    lead_index := 0;
+
+    while lead_index > 0 && (str[lead_index] & 0xC0) == 0x80 {
+        lead_index += 1;
+    }
+
+    return lead_index;
+}
+
 
 
 
@@ -2665,3 +2727,4 @@ internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
 #import "Hash";
 #import "Sort";
 #import "String";
+#import "Clipboard";

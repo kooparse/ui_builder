@@ -177,9 +177,9 @@ main :: () {
 
                     down := event.key.state == SDL_PRESSED;
 
-                    if event.key.keysym.sym == .SDLK_f {
-                        if down freeze_io(); else unfreeze_io();
-                    }
+                    // if event.key.keysym.sym == .SDLK_f {
+                    //     if down freeze_io(); else unfreeze_io();
+                    // }
 
                     if event.key.keysym.sym == {
                         case .SDLK_ESCAPE;      set_key_event(.ESCAPE, down);
@@ -189,6 +189,10 @@ main :: () {
                         case .SDLK_RIGHT;       set_key_event(.RIGHT, down);
                         case .SDLK_UP;          set_key_event(.UP, down);
                         case .SDLK_DOWN;        set_key_event(.DOWN, down);
+                        case .SDLK_TAB;         set_key_event(.TAB, down);
+
+                        case .SDLK_v;           set_key_event(.KEY_V, down);
+                        case .SDLK_c;           set_key_event(.KEY_C, down);
                     }
 
                 case SDL_WINDOWEVENT;
@@ -222,6 +226,28 @@ main :: () {
 
         set_mouse_position(xx mouse_x * dpi_scale, xx mouse_y * dpi_scale);
 
+        sdl_modifiers := SDL_GetModState();
+
+        modifiers: UI_Modifiers;
+
+        if sdl_modifiers & KMOD_SHIFT {
+            modifiers |= .SHIFT;
+        }
+
+        if sdl_modifiers & KMOD_CTRL {
+            modifiers |= .CTRL;
+        }
+
+        if sdl_modifiers & KMOD_ALT {
+            modifiers |= .ALT;
+        }
+
+        if sdl_modifiers & KMOD_GUI {
+            modifiers |= .OS;
+        }
+
+        set_modifiers(modifiers);
+
         draw_list := make_ui();
         do_gpu_stuff(draw_list);
     }
@@ -238,11 +264,13 @@ items           := string.[ "Apple", "Peach", "Banana",
                             "Orange", "Cucumber", "Potato" ];
 
 chosen_theme := 0;
+
 Color_Themes :: enum {
     GRUVBOX_DARK;
     GRUVBOX_LIGHT;
     NORD;
     LIPKO;
+    CUSTOM;
 };
 
 
@@ -268,9 +296,11 @@ Entity_Flags :: enum_flags u64 {
     INTERACTIVE    :: 1 << 2;
 };
 
+custom_theme := LIPKO;
+
 THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, NORD, LIPKO ];
 
-my_string    :  string; // Alloc on the heap.
+my_string    :  string; // Alloc on the heap later on, dodging read-only data segment check.
 my_float     := 12.4;
 my_int       := 4;
 my_color     := Vector4.{ 1, 0, 1, 1 };
@@ -280,7 +310,7 @@ my_enum_flag := Entity_Flags.SOLID;
 make_ui :: () -> UI_Draw_List {
 
     set_theme(Theme.{
-        color                   = THEMES[chosen_theme],
+        color                   = ifx chosen_theme >= THEMES.count then custom_theme else THEMES[chosen_theme],
         alpha                   = ifx translucent 0.4 else 1.0,
 
         window_title_bar_height = DEFAULT_THEME.window_title_bar_height * dpi_scale,
@@ -318,7 +348,6 @@ make_ui :: () -> UI_Draw_List {
         label(tprint("Draw calls: %", last_draw_calls));
         label(tprint("Vertex count: %", last_vertex_count));
         label(tprint("IO Captured: %", io_captured()));
-        label(tprint("IO Frozen: %", io_frozen));
 
         if ui_tab(enum_names(TABS), xx *current_tab) {
             log("Select Tab: %", enum_names(TABS)[current_tab]);
@@ -400,7 +429,35 @@ make_ui :: () -> UI_Draw_List {
         }
         end_column();
 
-        separator();
+        separator("Custom values");
+
+        hexa_input(*custom_theme.bg);
+        same_line();
+        label("bg");
+        hexa_input(*custom_theme.fg);
+        same_line();
+        label("fg");
+        hexa_input(*custom_theme.border);
+        same_line();
+        label("border");
+        hexa_input(*custom_theme.text);
+        same_line();
+        label("text");
+        hexa_input(*custom_theme.accent);
+        same_line();
+        label("accent");
+        hexa_input(*custom_theme.text_muted);
+        same_line();
+        label("text_muted");
+        hexa_input(*custom_theme.blue);
+        same_line();
+        label("blue");
+        hexa_input(*custom_theme.red);
+        same_line();
+        label("red");
+        hexa_input(*custom_theme.green);
+        same_line();
+        label("green");
 
         window_end();
     }
