@@ -3,6 +3,7 @@
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
 
+    - Add scroll wheel
     - Fix font modified check we do in user code.
     - use some pool allocator
     - rename margin to gap.
@@ -1735,7 +1736,7 @@ end_scroll :: (state: *Scrollbar_State) {
             track_h  := layout.rect.h;
 
             ratio    := clamp(visible_h / content_h, 0.0, 1.0);
-            handle_h := max(20., track_h * ratio); // @todo, set the min size in theme.
+            handle_h := max(theme.scrollbar_width * 2, track_h * ratio);
             travel   := track_h - handle_h;
             scroll_t := ifx max_scroll > 0 scroll.y / max_scroll else 0.0;
 
@@ -1787,7 +1788,7 @@ end_scroll :: (state: *Scrollbar_State) {
             track_w  := layout.rect.w;
 
             ratio    := clamp(visible_w / content_w, 0.0, 1.0);
-            handle_w := max(20., track_w * ratio); // @todo, set the min size in theme.
+            handle_w := max(theme.scrollbar_width * 2, track_w * ratio);
             travel   := track_w - handle_w;
             scroll_t := ifx max_scroll > 0 scroll.x / max_scroll else 0;
 
@@ -1831,8 +1832,7 @@ end_scroll :: (state: *Scrollbar_State) {
 
 }
 
-// @todo: inline this func.
-is_occluded :: (rect: Rect) -> bool {
+is_occluded :: inline (rect: Rect) -> bool {
     return !point_vs_rect(mouse_x, mouse_y, rect) || current_layer.widget_id != hovered_layer;
 }
 
