@@ -3,7 +3,6 @@
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
 
-    - ability for user to disable interaction.
     - Fix font modified check we do in user code.
     - use some pool allocator
     - rename margin to gap.
@@ -166,7 +165,8 @@ UI_Layout :: struct {
 
     columns    := 0;
 
-    should_inline := false;
+    should_inline    := false;
+    should_fullwidth := false;
 
     // We compute after each space allocation the total space our widgets takes
     // within its layout rect. Used notably for the scrollbar.
@@ -505,12 +505,13 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     resizer_rect.w  = (theme.content_padding + theme.border_width) * 4;
     resizer_rect.h  = (theme.content_padding + theme.border_width) * 4;
 
-    dragging_allowed := active_widget == -1 && is_topmost && state.dragging == .NONE && is_down(.MOUSE_LEFT);
+    dragging_allowed := active_widget == -1 && state.dragging == .NONE && is_down(.MOUSE_LEFT);
 
     // Start title bar dragging.
     if dragging_allowed && !is_occluded(title_rect) && cursor_vs_rect(title_rect) {
         // Prevent to mix clicking and dragging behavior.
         if (abs(delta_x) > 0 || abs(delta_y) > 0) {
+            raise_layer(id);
             active_widget   = id;
             state.dragging  = .MOVE_WINDOW;
             log("Start moving!");
@@ -524,6 +525,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
 
         // Prevent to mix clicking and dragging behavior.
         if dragging_allowed && (abs(delta_x) > 0 || abs(delta_y) > 0) {
+            raise_layer(id);
             active_widget   = id;
             state.dragging  = .RESIZE_WINDOW;
             log("Start resizer!");
@@ -1197,6 +1199,7 @@ rgba_input :: (value : *Vector4, size := Vector2.{ 120, 60 }, format := Color_Fo
     return false;
 }
 
+// @todo: Ability to use all integers... and then we clamp to their min/max.
 number_input :: (value: *$T, size := Vector2.{ 200, 60 }, flags := Rect_Flags.ALL_SIDES, loc := #caller_location) -> modified: bool
 #modify {
     if T != float && T != int {
@@ -1262,13 +1265,13 @@ text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flag
         if is_pressed(.RETURN) {
             active_widget = -1;
             state.focused = false;
-            modified = true;
+            modified      = true;
         }
 
         if is_pressed(.ESCAPE) || click_outside {
             active_widget = -1;
             state.focused = false;
-            modified = true;
+            modified      = true;
         }
 
         if is_pressed(.BACKSPACE, repeat = true) && state.cursor_start > 0 {
@@ -1457,7 +1460,7 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> bool 
 
 tab :: (label: string, active: bool, size := Vector2.{ -1, 30 }, loc := #caller_location) -> bool {
     id          := make_id(loc, label);
-    using state := get_widget_state(Widget_State, id);
+    using state := get_widget_state(Button_State, id);
 
     font_size                 := size.y * 0.5;
     text_width, text_height   := get_text_size(font, label, xx font_size);
@@ -1469,6 +1472,7 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, 30 }, loc := #caller_
     }
 
     mutate_state(state, alloc_space(button_size));
+    hover_strength, press_strength := update_times(state);
 
     clip := peek(current_layer.clip_stack);
     if !rect_vs_rect(state.rect, clip) return state.pressed;
@@ -1477,8 +1481,13 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, 30 }, loc := #caller_
 
     is_activated := status & .FOCUSED || status & .PRESSED || active;
 
-    bg_color     := get_color(status, ifx is_activated then theme.color.accent else theme.color.fg);
+    color        := ifx is_activated then theme.color.accent else theme.color.fg;
+
+    bg_color     := get_color(status, color);
     border_color := theme.color.border;
+
+    bg_color = lerp(color, lighten(color, 10), hover_strength);
+    bg_color = lerp(bg_color, lighten(color, 30), press_strength);
 
     draw_rect(rect, bg_color, .TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
 
@@ -1487,6 +1496,11 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, 30 }, loc := #caller_
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
     y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
+
+    offset := text_height * 0.15;
+
+    x = lerp(x, x + offset, press_strength);
+    y = lerp(y, y + offset, press_strength);
 
     if text_too_big push_clip(rect);
     draw_text(label, x, y, font_size, theme.color.text);
@@ -1546,7 +1560,7 @@ button :: (label := "", size := Vector2.{ -1, 40 }, texture : UI_Texture = null,
         x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
         y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
 
-        offset := 4.;
+        offset := text_height * 0.15;
 
         x = lerp(x, x + offset, press_strength);
         y = lerp(y, y + offset, press_strength);
@@ -1564,6 +1578,11 @@ get_color :: (status: Widget_Status, color: Vector4) -> Vector4 {
     if status & .HOVERED return lighten(color, 10);
 
     return color;
+}
+
+full_width :: () {
+    layout := current_layout();
+    layout.should_fullwidth = true;
 }
 
 same_line :: () {
@@ -2037,6 +2056,15 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
 
     base_x := layout.rect.x - layout.scroll.x;
     base_y := layout.rect.y - layout.scroll.y;
+
+    if should_fullwidth {
+        leftover := (layout.rect.x + layout.rect.w) - (layout.rect.x + cursor.x);
+
+        if leftover > 0 {
+            size.x = leftover;
+        }
+        should_fullwidth = false;
+    }
 
     r := Rect.{ base_x + cursor.x, base_y + cursor.y, size.x, size.y };
 

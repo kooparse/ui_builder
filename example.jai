@@ -167,6 +167,10 @@ main :: () {
         while SDL_PollEvent(*event) {
 
             if event.type == {
+                case .SDL_TEXTINPUT;
+                    str := to_string(cast(*u8) event.text.text.data);
+                    send_text_codepoint(str);
+
                 case .SDL_KEYUP;    #through;
                 case .SDL_KEYDOWN;
                     if event.key.repeat continue;
@@ -186,10 +190,6 @@ main :: () {
                         case .SDLK_UP;          set_key_event(.UP, down);
                         case .SDLK_DOWN;        set_key_event(.DOWN, down);
                     }
-
-                case .SDL_TEXTINPUT;
-                    str := to_string(cast(*u8) event.text.text.data);
-                    send_text_codepoint(str);
 
                 case SDL_WINDOWEVENT;
                     if event.window.event == .SDL_WINDOWEVENT_RESIZED {
@@ -268,11 +268,11 @@ Entity_Flags :: enum_flags u64 {
 
 THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, NORD, LIPKO ];
 
-my_string    : string; // Alloc on the heap.
+my_string    :  string; // Alloc on the heap.
 my_float     := 12.4;
 my_int       := 4;
 my_color     := Vector4.{ 1, 0, 1, 1 };
-my_hex       : u32 = 0xffffee;
+my_hex       :  u32 = 0xffffee;
 my_enum_flag := Entity_Flags.SOLID;
 
 make_ui :: () -> UI_Draw_List {
@@ -302,7 +302,6 @@ make_ui :: () -> UI_Draw_List {
         bitmap, width, height := get_raw_bitmap_texture(our_font);
         replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
     }
-
 
     if window_begin(UI_Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
 
@@ -351,6 +350,7 @@ make_ui :: () -> UI_Draw_List {
                 free(my_string);
                 my_string = copy_string(changed_str);
             }
+
 
             number_input(*my_float);
             same_line();
@@ -417,6 +417,15 @@ make_ui :: () -> UI_Draw_List {
 
             window_end();
         }
+    }
+
+
+    if window_begin(UI_Rect.{ 10, 650, 300, 100 } * dpi_scale, "Undo/Redo") {
+        button("Undo");
+        same_line();
+        label("Entity moved");
+        same_line();
+        button("Redo");
     }
 
 
