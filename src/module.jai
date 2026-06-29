@@ -48,6 +48,7 @@ operator == :: (a: Rect, b: Rect) -> bool {
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
+io_frozen    := false;
 #scope_file;
 
 WHITE :: Vector4.{ 1, 1, 1, 1 };
@@ -103,6 +104,7 @@ wheel_y  : float;
 // The current font.
 font         : *Font;
 font_texture : UI_Texture;
+
 
 // @todo: rename.
 current_depth := 0; // for layers
@@ -324,6 +326,14 @@ set_wheel :: (x: float, y: float) {
     wheel_y = y;
 }
 
+freeze_io :: inline () {
+    io_frozen = true;
+}
+
+unfreeze_io :: inline () {
+    io_frozen = false;
+}
+
 io_captured :: () -> bool {
     return hovered_layer > 0 || active_widget > 0;
 }
@@ -379,6 +389,13 @@ ui_begin :: () {
     dt        = now - prev_time;
     prev_time = now;
 
+    if io_frozen {
+        hovered_layer = -1;
+
+        for * key_state {
+            it.* = UI_Key_Info.{};
+        }
+    }
 
     // Reset flat vertices.
     array_reset_keeping_memory(*draw_list.vertices);
@@ -2039,12 +2056,16 @@ alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
 is_down :: (key: UI_Key) -> bool {
     info := key_state[key];
 
+    if io_frozen return false;
+
     return info.state & .DOWN != 0;
 }
 
 // @note: For now, it's pressed on key release.
 is_pressed :: (key: UI_Key, repeat := false) -> bool {
     using info := key_state[key];
+
+    if io_frozen return false;
 
     if repeat {
         return state & (.REPEAT | .END) != 0;

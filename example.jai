@@ -173,6 +173,10 @@ main :: () {
 
                     down := event.key.state == SDL_PRESSED;
 
+                    if event.key.keysym.sym == .SDLK_f {
+                        if down freeze_io(); else unfreeze_io();
+                    }
+
                     if event.key.keysym.sym == {
                         case .SDLK_ESCAPE;      set_key_event(.ESCAPE, down);
                         case .SDLK_BACKSPACE;   set_key_event(.BACKSPACE, down);
@@ -313,7 +317,8 @@ make_ui :: () -> UI_Draw_List {
         label(tprint("CPU % / GPU %", dt_fmt, gpu_fmt));
         label(tprint("Draw calls: %", last_draw_calls));
         label(tprint("Vertex count: %", last_vertex_count));
-        label(tprint("Captured: %", io_captured()));
+        label(tprint("IO Captured: %", io_captured()));
+        label(tprint("IO Frozen: %", io_frozen));
 
         if ui_tab(enum_names(TABS), xx *current_tab) {
             log("Select Tab: %", enum_names(TABS)[current_tab]);
