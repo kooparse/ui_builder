@@ -5,7 +5,6 @@
 
     - use some pool allocator
     - rename margin to gap.
-    - fix input.
 
     TODO:
     - better understanding for scrollbar
@@ -14,7 +13,6 @@
 
     - Finish input text
     - Get proper color state.
-    - we can do a better job with key delay/rate (the code is too complex/big for what it does).
     - design tab area. (another background too?).
     - text_codepoint in io struct... ?
     - clear memory of hashtable.
@@ -1100,6 +1098,7 @@ separator :: (text := "") {
     }
 }
 
+// perhaps we need two verrsion of the function, one when user send utf-8, and another when it's u32 codepoint.
 send_text_codepoint :: (codepoint: string) {
     if !codepoint return;
 
@@ -1289,29 +1288,48 @@ text_input :: (user_str: string, size := Vector2.{ 200, 60 }, flags := Rect_Flag
             modified      = true;
         }
 
-        if is_pressed(.BACKSPACE, repeat = true) && state.cursor_start > 0 {
-            for state.cursor_start..state.text.count - 1 {
-                state.text[it - 1] = state.text[it];
+        find_lead_from_right :: (str: string) -> int {
+            lead_index := 0;
+
+            while lead_index > 0 && (str[lead_index] & 0xC0) == 0x80 {
+                lead_index += 1;
             }
 
-            if state.cursor_start > 0 then state.cursor_start -= 1;
-            if state.text.count   > 0 then state.text.count   -= 1;
+            return lead_index;
         }
 
-        if is_pressed(.RIGHT, repeat = true) && state.cursor_start <= state.text.count {
-            state.cursor_start += 1;
+        if is_pressed(.BACKSPACE, repeat = true) && state.cursor_start > 0 {
+            substr     := slice(state.text, 0, state.cursor_start);
+            lead_index := find_lead_from_left(substr);
+            char_size  := state.cursor_start - lead_index;
+
+            for state.cursor_start..state.text.count - 1 {
+                state.text[it - char_size] = state.text[it];
+            }
+
+            if state.cursor_start > 0 then state.cursor_start -= char_size;
+            if state.text.count   > 0 then state.text.count   -= char_size;
+        }
+
+        if is_pressed(.RIGHT, repeat = true) && state.cursor_start < state.text.count {
+            char := state.text[state.cursor_start];
+            state.cursor_start += utf8_char_size(char);
         }
 
         if is_pressed(.LEFT, repeat = true) && state.cursor_start > 0 {
-            state.cursor_start -= 1;
+            substr     := slice(state.text, 0, state.cursor_start);
+            lead_index := find_lead_from_left(substr);
+            char_size  := state.cursor_start - lead_index;
+
+            state.cursor_start -= char_size;
         }
 
-        if text_codepoint && text_codepoint != state.text {
+        if text_codepoint {
             begin := slice(state.text, 0, state.cursor_start);
             end   := slice(state.text, state.cursor_start, state.text.count);
 
             new_value := join(begin, text_codepoint, end);
-            state.cursor_start += 1;
+            state.cursor_start += text_codepoint.count;
 
             if state.text {
                 free(state.text);
@@ -2144,6 +2162,7 @@ lighten :: (color: Vector4, percent : float) -> Vector4 {
     return lighter;
 }
 
+// @todo: rename this.
 pad_rect :: (rect: Rect, pad_x : float, pad_y : float) -> Rect {
     return .{
         x = rect.x + pad_x,
@@ -2161,6 +2180,22 @@ round_pixel :: inline (x : float) -> float {
         return cast(float) cast(int) (x + 0.5);
     }
 }
+
+utf8_char_size :: (lead: u8) -> int {
+    assert((lead & 0xC0) != 0x80, "Given char is not a lead unicode character.");
+    return 1 + trailingBytesForUTF8[lead];
+}
+
+find_lead_from_left :: (str: string) -> int {
+    lead_index := str.count - 1;
+
+    while lead_index > 0 && (str[lead_index] & 0xC0) == 0x80 {
+        lead_index -= 1;
+    }
+
+    return lead_index;
+}
+
 
 
 
@@ -2516,7 +2551,7 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
     internal_draw_rect(left_middle, color, get_uv(r, left_middle));
 }
 
-draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vector4.{ 1, 1, 1, 1 }) {
+draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := WHITE) {
     if color.w <= 0 || text.count <= 0 return;
 
     assert(font != null, "Font is null, you must set a font.");
@@ -2524,101 +2559,54 @@ draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := Vect
     using font;
     using metrics := get_font_metrics(font, xx font_size);
 
-    space_glyph := find_or_add_glyph(font, #char " ", pixel_size);
-
-    pen := Vector2.{ 0, xx ascender };
-
-    line_start_index := 0;
-
     prev := set_texture(font_texture);
     defer set_texture(prev);
 
-    while line_start_index < text.count {
-        line_end_index := find_index_from_left(text, #char "\n", line_start_index);
+    prev_char   : u32;
+    pen         := Vector2.{ 0, xx ascender };
 
-        if line_end_index == -1 {
-            line_end_index = text.count;
+    while text.count > 0 {
+        codepoint, _ := utf8_next_character(*text);
+        defer prev_char = codepoint;
+
+        glyph           := find_or_add_glyph(font, codepoint, pixel_size);
+        pos_in_atlas    := glyph.pos_in_atlas;
+
+        if prev_char > 0 {
+            delta: FT_Vector;
+
+            FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
+            pen.x += xx (delta.x >> 6);
         }
 
-        line : string;
-        line.data   = text.data + line_start_index;
-        line.count  = line_end_index - line_start_index;
+        defer pen.x += glyph.advance;
 
-        line_start_index = line_end_index + 1;
+        glyph_pos := Vector2.{
+            pen.x + glyph.bearing_x,
+            pen.y - glyph.bearing_y
+        };
 
-        defer {
-            pen.x = 0;
-            pen.y += line_height;
-        }
+        rect := Rect.{
+            glyph_pos.x,
+            glyph_pos.y,
 
-        word_start_index := 0;
+            xx pos_in_atlas.w,
+            xx pos_in_atlas.h,
+        };
 
-        prev_char: u32;
-        while word_start_index < line.count {
-            word_end_index := find_index_from_left(line, #char " ", word_start_index);
+        rect.position += xy(x, y);
 
-            defer {
-                pen.x += space_glyph.advance;
-                word_start_index = word_end_index + 1;
-            }
+        rect.x = round_pixel(rect.x);
+        rect.y = round_pixel(rect.y);
 
-            // Treat if there is more than one space character.
-            if word_start_index == word_end_index {
-                pen.x += space_glyph.advance;
-            }
+        u0 := pos_in_atlas.x / cast(float) font_atlas.WIDTH;
+        v0 := pos_in_atlas.y / cast(float) font_atlas.HEIGHT;
+        u1 := (pos_in_atlas.x + pos_in_atlas.w) / cast(float) font_atlas.WIDTH;
+        v1 := (pos_in_atlas.y + pos_in_atlas.h) / cast(float) font_atlas.HEIGHT;
 
-            if word_end_index == -1 {
-                word_end_index = line.count;
-            }
+        uv_rect := Rect.{ u0, v0, u1, v1 };
 
-            word: string;
-            word.data   = line.data + word_start_index;
-            word.count  = word_end_index - word_start_index;
-
-            while word.count > 0 {
-                codepoint, _ := utf8_next_character(*word);
-                defer prev_char = codepoint;
-
-                glyph           := find_or_add_glyph(font, codepoint, pixel_size);
-                pos_in_atlas    := glyph.pos_in_atlas;
-
-                if prev_char > 0 {
-                    delta: FT_Vector;
-
-                    FT_Get_Kerning(ft_face, prev_char, codepoint, 0, *delta);
-                    pen.x += xx (delta.x >> 6);
-                }
-
-                defer pen.x += glyph.advance;
-
-                glyph_pos := Vector2.{
-                    pen.x + glyph.bearing_x,
-                    pen.y - glyph.bearing_y
-                };
-
-                rect := Rect.{
-                    glyph_pos.x,
-                    glyph_pos.y,
-
-                    xx pos_in_atlas.w,
-                    xx pos_in_atlas.h,
-                };
-
-                rect.position += xy(x, y);
-
-                rect.x = round_pixel(rect.x);
-                rect.y = round_pixel(rect.y);
-
-                u0 := pos_in_atlas.x / cast(float) font_atlas.WIDTH;
-                v0 := pos_in_atlas.y / cast(float) font_atlas.HEIGHT;
-                u1 := (pos_in_atlas.x + pos_in_atlas.w) / cast(float) font_atlas.WIDTH;
-                v1 := (pos_in_atlas.y + pos_in_atlas.h) / cast(float) font_atlas.HEIGHT;
-
-                uv_rect := Rect.{ u0, v0, u1, v1 };
-
-                internal_draw_rect(rect, color, uv_rect);
-            }
-        }
+        internal_draw_rect(rect, color, uv_rect);
     }
 }
 
