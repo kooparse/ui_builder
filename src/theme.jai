@@ -90,36 +90,36 @@ NORD :: Color_Theme.{
     blue        = #run hexa_to_color(0x5e81ac),
 };
 
+get_em :: (ratio: float) -> em: float {
+    return theme.text_size * ratio;
+}
+
+content_padding     := 0.;
+button_padding      := 0.;
+scrollbar_width     := 0.;
+input_padding       := 0.;
+margin_x            := 0.;
+margin_y            := 0.;
+
+update_size :: () {
+    content_padding  = get_em(0.25);
+    button_padding   = get_em(1.);
+    scrollbar_width  = get_em(0.8);
+    input_padding    = get_em(0.25);
+    margin_x         = get_em(0.25);
+    margin_y         = get_em(0.20);
+}
+
 Theme :: struct {
     alpha                   := 1.0;
-
-    input_padding           := 4.;
     input_cursor_size       := 2.;
-
     separator_size          := 1.0;
-
-    content_padding         := 4.;
-    scrollbar_width         := 12.;
     corner_radius           := 8.;
     radius_sample           := 20;
     circle_sample           := 30;
     border_width            := 4.;
-
-    margin_x                := 3.;
-    margin_y                := 6.;
-
-    button_padding          := 16.;
-
     text_size               := 18.;
-
-    collapser_offset        := 30.;
-
     color := LIPKO;
-
-    button_color    := Vector4.{ 0.3, 0.3, 0.9, 1 };
-    window_color    := Vector4.{ 0.2, 0.7, 0.3, 1 };
-    win_title_color := Vector4.{ 0.7, 0.3, 0.3, 1 };
-    scrollbar_color := Vector4.{ 0.5, 0.4, 0.6, 1 };
 };
 
 #scope_export;

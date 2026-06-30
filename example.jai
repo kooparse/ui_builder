@@ -317,13 +317,7 @@ make_ui :: () -> UI_Draw_List {
         color                   = ifx chosen_theme >= THEMES.count then custom_theme else THEMES[chosen_theme],
         alpha                   = ifx translucent 0.4 else 1.0,
 
-        scrollbar_width         = DEFAULT_THEME.scrollbar_width         * dpi_scale,
-        content_padding         = DEFAULT_THEME.content_padding         * dpi_scale,
-        margin_x                = DEFAULT_THEME.margin_x                * dpi_scale,
-        margin_y                = DEFAULT_THEME.margin_y                * dpi_scale,
-        button_padding          = DEFAULT_THEME.button_padding          * dpi_scale,
         text_size               = text_size                             * dpi_scale,
-        input_padding           = DEFAULT_THEME.input_padding           * dpi_scale,
         input_cursor_size       = DEFAULT_THEME.input_cursor_size       * dpi_scale,
         separator_size          = DEFAULT_THEME.separator_size          * dpi_scale,
 
@@ -338,7 +332,6 @@ make_ui :: () -> UI_Draw_List {
     }
 
     if window_begin(UI_Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
-
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
             gpu_time = get_last_frame_gpu_time() * 1000;

@@ -2,6 +2,12 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
+    - input/filter for selects widgets
+    - close/reduce windows
+    - way to scale everything based on ratio window_width/window_height?
+    - better design for inputs
+    - only numbers for number_input.
+    - fix checkbox ellipsis
 
     - use some pool allocator
     - rename margin to gap.
@@ -419,6 +425,7 @@ prev_glyph_count := 0;
 glyph_count      := 0;
 
 ui_begin :: () {
+    update_size();
 
     now      := cast(float) seconds_since_init();
     dt        = now - prev_time;
@@ -543,10 +550,10 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     title_rect.h    = window_title_bar_height;
 
     resizer_rect   := state.rect;
-    resizer_rect.x += state.rect.w - theme.content_padding * 4;
-    resizer_rect.y += state.rect.h - theme.content_padding * 4;
-    resizer_rect.w  = (theme.content_padding + theme.border_width) * 4;
-    resizer_rect.h  = (theme.content_padding + theme.border_width) * 4;
+    resizer_rect.x += state.rect.w - content_padding * 4;
+    resizer_rect.y += state.rect.h - content_padding * 4;
+    resizer_rect.w  = (content_padding + theme.border_width) * 4;
+    resizer_rect.h  = (content_padding + theme.border_width) * 4;
 
     dragging_allowed := active_widget == -1 && state.dragging == .NONE && is_down(.MOUSE_LEFT);
 
@@ -633,10 +640,10 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     draw_outline(content_border, border_color, theme.border_width, flags);
 
     layer_rect   := state.rect;
-    layer_rect.x += theme.content_padding;
-    layer_rect.y += window_title_bar_height + theme.content_padding;
-    layer_rect.w -= theme.scrollbar_width + theme.content_padding * 2;
-    layer_rect.h -= (theme.scrollbar_width + window_title_bar_height + theme.content_padding * 2);
+    layer_rect.x += content_padding;
+    layer_rect.y += window_title_bar_height + content_padding;
+    layer_rect.w -= scrollbar_width + content_padding * 2;
+    layer_rect.h -= (scrollbar_width + window_title_bar_height + content_padding * 2);
 
     layer_rect = pad_rect(layer_rect, theme.border_width, theme.border_width);
 
@@ -697,7 +704,7 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
     bg_color := get_color(state.status, theme.color.fg);
 
     text_width, text_height   := get_text_size(font, title, theme.text_size);
-    text_rect                 := pad_rect(rect, theme.button_padding, 0);
+    text_rect                 := pad_rect(rect, button_padding, 0);
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -720,7 +727,7 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
     if state.open {
         bg_region  := rect;
         bg_region.y = rect.y + rect.h;
-        bg_region.h = state.computed_height + theme.margin_y;
+        bg_region.h = state.computed_height + margin_y;
 
         color   := theme.color.border;
         color.w  = 0.6;
@@ -729,10 +736,12 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
         draw_rect(bg_region, lighten(theme.color.bg, 2), 0x0);
         draw_outline(bg_region, color, theme.border_width, borders);
 
+        collapser_offset := get_em(1.);
+
         layout_rect := Rect.{
-            rect.x + theme.collapser_offset,
+            rect.x + collapser_offset,
             rect.y + rect.h,
-            rect.w - theme.collapser_offset * 2,
+            rect.w - collapser_offset * 2,
             layout.rect.h - rect.y,
         };
 
@@ -740,7 +749,7 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
         prev_layout      := set_layout(layout_rect);
         state.prev_layout = prev_layout;
 
-        current_layout().cursor.y += theme.margin_y;
+        current_layout().cursor.y += margin_y;
     }
 
 
@@ -749,7 +758,7 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
         arrow_size  := rect.h * 0.3;
         offset      := arrow_size * 0.2;
         arrow_rect := Rect.{
-            rect.x + rect.w - (arrow_size + theme.button_padding),
+            rect.x + rect.w - (arrow_size + button_padding),
             rect.y + rect.h * 0.5 - arrow_size * 0.5 + offset,
             arrow_size, arrow_size,
         };
@@ -783,7 +792,7 @@ end_expander :: () {
 
         restore_layout(curr_expander.prev_layout);
 
-        current_layer.layout.cursor.y += content_height + theme.margin_y;
+        current_layer.layout.cursor.y += content_height + margin_y;
     }
 
     curr_expander = null;
@@ -799,7 +808,7 @@ ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
 
         if it_index > 0 same_line();
 
-        if tab(it, it_index == tab_index.*, .{ (layout.rect.w - theme.margin_x * tabs.count) / tabs.count, -1 }) {
+        if tab(it, it_index == tab_index.*, .{ (layout.rect.w - margin_x * tabs.count) / tabs.count, -1 }) {
             tab_index.* = it_index;
             modified = true;
         }
@@ -818,7 +827,7 @@ dropdown_item :: (label: string, size := Vector2.{ -1, -1 }, selected := false, 
     button_size := size;
 
     if size.x <= 0 {
-        button_size.x = text_width + theme.button_padding;
+        button_size.x = text_width + button_padding;
     }
 
     mutate_state(state, alloc_space(button_size, gap_x = false, gap_y = false));
@@ -840,7 +849,7 @@ dropdown_item :: (label: string, size := Vector2.{ -1, -1 }, selected := false, 
     btn_rect := rect;
     draw_rect(btn_rect, bg_color);
 
-    text_rect := pad_rect(btn_rect, theme.button_padding, 0);
+    text_rect := pad_rect(btn_rect, button_padding, 0);
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -893,7 +902,7 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
 
     font_size                 := theme.text_size;
     text_width, text_height   := get_text_size(font, button_label, xx font_size);
-    text_rect                 := pad_rect(rect, theme.button_padding, 0);
+    text_rect                 := pad_rect(rect, button_padding, 0);
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -915,7 +924,7 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
         arrow_size  := rect.h * 0.3;
         offset      := arrow_size * 0.2;
         arrow_rect := Rect.{
-            rect.x + rect.w - (arrow_size + theme.button_padding),
+            rect.x + rect.w - (arrow_size + button_padding),
             rect.y + rect.h * 0.5 - arrow_size * 0.5 + offset,
             arrow_size, arrow_size,
         };
@@ -936,7 +945,7 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
 
 
     if state.open {
-        dropdown_height := cast(float, max_items) * (item_height + theme.content_padding * 2);
+        dropdown_height := cast(float, max_items) * (item_height + content_padding * 2);
         dropdown_flags := Rect_Flags.LEFT | .RIGHT | .BOTTOM | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
         dropdown_rect  := Rect.{ rect.x, rect.y + rect.h, rect.w, dropdown_height };
 
@@ -957,7 +966,7 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
 
         layer_rect   := dropdown_rect;
         layer_rect.x += theme.border_width;
-        layer_rect.w -= theme.scrollbar_width + theme.border_width * 2;
+        layer_rect.w -= scrollbar_width + theme.border_width * 2;
         layer_rect.h -= theme.border_width;
 
         set_layout(layer_rect);
@@ -1008,7 +1017,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
     bg_color := get_color(state.status, theme.color.fg);
 
     text_width, text_height   := get_text_size(font, button_label, theme.text_size);
-    text_rect                 := pad_rect(rect, theme.button_padding, 0);
+    text_rect                 := pad_rect(rect, button_padding, 0);
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -1031,7 +1040,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
         arrow_size  := rect.h * 0.3;
         offset      := arrow_size * 0.2;
         arrow_rect := Rect.{
-            rect.x + rect.w - (arrow_size + theme.button_padding),
+            rect.x + rect.w - (arrow_size + button_padding),
             rect.y + rect.h * 0.5 - arrow_size * 0.5 + offset,
             arrow_size, arrow_size,
         };
@@ -1053,7 +1062,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
 
 
     if state.open {
-        dropdown_height := (item_height + theme.content_padding * 2) * (cast(float) max_items);
+        dropdown_height := (item_height + content_padding * 2) * (cast(float) max_items);
         dropdown_flags := Rect_Flags.LEFT | .RIGHT | .BOTTOM | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
         dropdown_rect  := Rect.{ rect.x, rect.y + rect.h, rect.w, dropdown_height };
 
@@ -1074,7 +1083,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
 
         layer_rect   := dropdown_rect;
         layer_rect.x += theme.border_width;
-        layer_rect.w -= theme.scrollbar_width + theme.border_width * 2;
+        layer_rect.w -= scrollbar_width + theme.border_width * 2;
         layer_rect.h -= theme.border_width;
 
         set_layout(layer_rect);
@@ -1138,12 +1147,12 @@ separator :: (text := "") {
             line_height,
         };
 
-        x += first_line.w + theme.margin_x;
+        x += first_line.w + margin_x;
 
         draw_rect(first_line, theme.color.text_muted);
         draw_text(text, x, rect.y + rect.h * 0.5 - text_height * 0.5, xx text_size, theme.color.text);
 
-        x += text_width + theme.margin_x;
+        x += text_width + margin_x;
 
         second_line := Rect.{
             x, first_line.y,
@@ -1153,8 +1162,8 @@ separator :: (text := "") {
 
         draw_rect(second_line, theme.color.text_muted);
     } else {
-        rect     := alloc_space(.{ layout.rect.w, theme.separator_size + theme.content_padding * 2 });
-        sep_rect := Rect.{ rect.x + theme.content_padding, rect.y + theme.content_padding, rect.w - theme.content_padding * 2, theme.separator_size };
+        rect     := alloc_space(.{ layout.rect.w, theme.separator_size + content_padding * 2 });
+        sep_rect := Rect.{ rect.x + content_padding, rect.y + content_padding, rect.w - content_padding * 2, theme.separator_size };
         draw_rect(sep_rect, theme.color.text_muted);
     }
 }
@@ -1265,7 +1274,7 @@ rgba_input :: (value : *Vector4, size := Vector2.{ 120, -1 }, format := Color_Fo
                 }
         }
 
-        layout.cursor.x += theme.margin_x;
+        layout.cursor.x += margin_x;
     }
 
     same_line();
@@ -1422,9 +1431,9 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, flags := Rect_Flag
     draw_rect(rect, bg_color, flags);
     draw_outline(rect, theme.color.border, theme.border_width, flags);
 
-    text_width, text_height   := get_text_size(font, state.text, theme.text_size);
+    text_width, text_height := get_text_size(font, state.text, theme.text_size);
 
-    text_x := rect.x + theme.input_padding + theme.border_width;
+    text_x := rect.x + input_padding + theme.border_width;
     text_y := rect.y + state.rect.h * 0.5 - text_height * 0.5;
 
     should_clip  := text_x + text_width > state.rect.w - theme.border_width;
@@ -1446,13 +1455,13 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, flags := Rect_Flag
             cursor_text = slice(state.text, 0, state.cursor_start);
         }
 
-        cursor_height    := rect.h * 0.5;
+        cursor_height    := get_em(0.95);
         to_cursor_width  := get_text_size(font, cursor_text, theme.text_size);
 
         input_width := state.rect.w - (theme.border_width * 2);
-        cursor_size := theme.input_cursor_size;
+        cursor_size := get_em(0.08);
 
-        offset := (to_cursor_width + cursor_size + theme.input_padding) - input_width;
+        offset := (to_cursor_width + cursor_size + input_padding) - input_width;
         if offset >= 0 then text_x -= offset;
 
         cursor_rect := Rect.{
@@ -1510,7 +1519,7 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> bool 
     if text_label {
         text_width, text_height = get_text_size(font, text_label, theme.text_size);
 
-        content_size.x += text_width + theme.content_padding;
+        content_size.x += text_width + content_padding;
         content_size.y  = max(checkbox_size, text_height);
     }
 
@@ -1539,7 +1548,7 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> bool 
     }
 
     if text_label {
-        pos.x += checkbox_size - radius + theme.content_padding;
+        pos.x += checkbox_size - radius + content_padding;
         pos.y  = rect.y + rect.h * 0.5 - text_height * 0.5;
 
         leftover    := (rect.x + rect.w - pos.x);
@@ -1579,7 +1588,7 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
     button_size := size;
 
     if size.x <= 0 {
-        button_size.x = text_width + theme.button_padding;
+        button_size.x = text_width + button_padding;
     }
 
     mutate_state(state, alloc_space(button_size));
@@ -1602,7 +1611,7 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
 
     draw_rect(rect, bg_color, .TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
 
-    text_rect := pad_rect(rect, theme.button_padding, 0);
+    text_rect := pad_rect(rect, button_padding, 0);
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -1632,7 +1641,7 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null,
     button_size := size;
 
     if size.x <= 0 {
-        button_size.x = text_width + theme.button_padding;
+        button_size.x = text_width + button_padding;
     }
 
     mutate_state(state, alloc_space(button_size));
@@ -1681,7 +1690,7 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null,
     }
 
     if label {
-        text_rect := pad_rect(btn_rect, theme.button_padding, 0);
+        text_rect := pad_rect(btn_rect, button_padding, 0);
 
         // Center text in button rect.
         x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -1877,15 +1886,15 @@ end_scroll :: (state: *Scrollbar_State) {
             track_h  := layout.rect.h;
 
             ratio    := clamp(visible_h / content_h, 0.0, 1.0);
-            handle_h := max(theme.scrollbar_width * 2, track_h * ratio);
+            handle_h := max(scrollbar_width * 2, track_h * ratio);
             travel   := track_h - handle_h;
             scroll_t := ifx max_scroll > 0 scroll.y / max_scroll else 0.0;
 
 
             handle := Rect.{
-                layout.rect.x + layout.rect.w + theme.content_padding * 0.5,
+                layout.rect.x + layout.rect.w + content_padding * 0.5,
                 layout.rect.y + scroll_t * travel,
-                theme.scrollbar_width,
+                scrollbar_width,
                 handle_h,
             };
 
@@ -1929,16 +1938,16 @@ end_scroll :: (state: *Scrollbar_State) {
             track_w  := layout.rect.w;
 
             ratio    := clamp(visible_w / content_w, 0.0, 1.0);
-            handle_w := max(theme.scrollbar_width * 2, track_w * ratio);
+            handle_w := max(scrollbar_width * 2, track_w * ratio);
             travel   := track_w - handle_w;
             scroll_t := ifx max_scroll > 0 scroll.x / max_scroll else 0;
 
 
             handle := Rect.{
                 layout.rect.x + scroll_t * travel,
-                layout.rect.y + layout.rect.h + theme.content_padding * 0.5,
+                layout.rect.y + layout.rect.h + content_padding * 0.5,
                 handle_w,
-                theme.scrollbar_width,
+                scrollbar_width,
             };
 
             status := get_status(handle, check_layout = false);
@@ -2150,8 +2159,8 @@ alloc_space :: (widget_size: Vector2, gap_x := true, gap_y := true) -> Rect {
     size    := widget_size;
     size.y   = max(get_row_height(), size.y);
 
-    margin_x := ifx gap_x theme.margin_x else 0;
-    margin_y := ifx gap_y theme.margin_y else 0;
+    mx := ifx gap_x margin_x else 0;
+    my := ifx gap_y margin_y else 0;
 
 
     row_height := get_row_height();
@@ -2162,12 +2171,12 @@ alloc_space :: (widget_size: Vector2, gap_x := true, gap_y := true) -> Rect {
             layout_width := layout.rect.w;
 
             col_width := layout.rect.w / max(1, columns);
-            size.x     = col_width - margin_x;
+            size.x     = col_width - mx;
 
             if curr_column == 0 {
                 cursor.x     = 0;
-                // cursor.y    += ifx theme.row_height > 0 theme.row_height + margin_y else prev_widget_size.y + margin_y;
-                cursor.y    += ifx should_use_y then prev_widget_size.y + margin_y else row_height + margin_y;
+                // cursor.y    += ifx theme.row_height > 0 theme.row_height + my else prev_widget_size.y + my;
+                cursor.y    += ifx should_use_y then prev_widget_size.y + my else row_height + my;
                 curr_column += 1;
             } else {
                 cursor.x    += ifx curr_column > 0 col_width else 0;
@@ -2179,11 +2188,11 @@ alloc_space :: (widget_size: Vector2, gap_x := true, gap_y := true) -> Rect {
             }
 
         } else if layout.should_inline {
-            cursor.x += prev_widget_size.x + margin_x;
+            cursor.x += prev_widget_size.x + mx;
             layout.should_inline = false;
         } else {
             cursor.x  = 0;
-            cursor.y += ifx should_use_y then prev_widget_size.y + margin_y else row_height + margin_y;
+            cursor.y += ifx should_use_y then prev_widget_size.y + my else row_height + my;
             layout.should_inline = false;
         }
 
@@ -2191,7 +2200,7 @@ alloc_space :: (widget_size: Vector2, gap_x := true, gap_y := true) -> Rect {
 
         if layout.columns > 0 {
             col_width := (layout.rect.w) / max(1, columns);
-            size.x     = col_width - margin_x;
+            size.x     = col_width - mx;
             curr_column += 1;
         }
     }
@@ -2250,7 +2259,7 @@ is_pressed :: (key: UI_Key, repeat := false) -> bool {
 }
 
 get_row_height :: () -> float {
-    return theme.text_size * 1.5;
+    return theme.text_size * 1.4;
 }
 
 /*
