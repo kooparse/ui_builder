@@ -294,19 +294,23 @@ Entity_Flags :: enum_flags u64 {
     SOLID          :: 1 << 0;
     PICKABLE       :: 1 << 1;
     INTERACTIVE    :: 1 << 2;
+    VIEWABLE       :: 1 << 3;
+    READABLE       :: 1 << 4;
 };
 
 custom_theme := LIPKO;
 
 THEMES :: Color_Theme.[ GRUVBOX_DARK, GRUVBOX_LIGHT, NORD, LIPKO ];
 
+
+text_size    := 18.0;
 my_string    :  string; // Alloc on the heap later on, dodging read-only data segment check.
 my_float     := 12.4;
 my_int       := 4;
 my_color     := Vector4.{ 1, 0, 1, 1 };
 my_hex       :  u32 = 0xffffee;
 my_enum_flag := Entity_Flags.SOLID;
-
+toggle      := false;
 make_ui :: () -> UI_Draw_List {
 
     set_theme(Theme.{
@@ -318,7 +322,7 @@ make_ui :: () -> UI_Draw_List {
         margin_x                = DEFAULT_THEME.margin_x                * dpi_scale,
         margin_y                = DEFAULT_THEME.margin_y                * dpi_scale,
         button_padding          = DEFAULT_THEME.button_padding          * dpi_scale,
-        text_size               = DEFAULT_THEME.text_size               * dpi_scale,
+        text_size               = text_size                             * dpi_scale,
         input_padding           = DEFAULT_THEME.input_padding           * dpi_scale,
         input_cursor_size       = DEFAULT_THEME.input_cursor_size       * dpi_scale,
         separator_size          = DEFAULT_THEME.separator_size          * dpi_scale,
@@ -357,18 +361,9 @@ make_ui :: () -> UI_Draw_List {
         set_width(width);
         label("IO Captured:"); same_line(); label(tprint("%", io_captured()));
 
-
-        set_width(0.3);
-        label("hey!");
+        label("Text size:");
         same_line();
-        full_width();
-        button("first btn");
-
-        set_width(0.3);
-        label("second hey!");
-        same_line();
-        full_width();
-        button("second btn");
+        number_input(*text_size);
 
         if ui_tab(enum_names(TABS), xx *current_tab) {
             log("Select Tab: %", enum_names(TABS)[current_tab]);
@@ -378,9 +373,9 @@ make_ui :: () -> UI_Draw_List {
             separator("Select inputs");
 
             placeholder := "Choose...";
-            select(*selected, items, .{ 200, -1} * dpi_scale, placeholder, max_items = 4);
+            select(*selected, items, .{ 300, -1} * dpi_scale, placeholder, max_items = 4);
 
-            flag_select(*my_enum_flag, .{ 200, -1 } * dpi_scale, placeholder);
+            flag_select(*my_enum_flag, .{ 300, -1 } * dpi_scale, placeholder);
 
             separator("Button with img");
 
@@ -397,7 +392,6 @@ make_ui :: () -> UI_Draw_List {
             }
 
             separator("Inputs");
-
 
             row_start := 140. * dpi_scale;
 
@@ -426,6 +420,16 @@ make_ui :: () -> UI_Draw_List {
             checkbox(*show_color_picker, "Show Color Picker");
             checkbox(*translucent, "Translucent");
 
+            separator("Buttons");
+
+            button("Toggle", toggle_value = *toggle);
+
+            same_line();
+
+            ratio = cast(float, playstation_icon.width) / cast(float, playstation_icon.height);
+            if button(texture = *playstation_icon, size = .{ 20 * ratio * dpi_scale, 20 * dpi_scale }, toggle_value = *toggle) {
+                log("playstation!");
+            }
 
             if begin_expander("Expand to see buttons!") {
                 begin_column(3);

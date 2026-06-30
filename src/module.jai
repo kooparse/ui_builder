@@ -809,6 +809,60 @@ ui_tab :: (tabs: [] string, tab_index: *int) -> modified: bool {
 
 }
 
+dropdown_item :: (label: string, size := Vector2.{ -1, -1 }, selected := false, loc := #caller_location) -> bool {
+    id          := make_id(loc, label);
+    using state := get_widget_state(Button_State, id);
+
+    text_width, text_height   := get_text_size(font, label, theme.text_size);
+
+    button_size := size;
+
+    if size.x <= 0 {
+        button_size.x = text_width + theme.button_padding;
+    }
+
+    mutate_state(state, alloc_space(button_size, gap_x = false, gap_y = false));
+    hover_strength, press_strength := update_times(state);
+
+    clip := peek(current_layer.clip_stack);
+    if !rect_vs_rect(rect, clip) return state.pressed;
+
+    text_too_big := rect.w < button_size.x;
+
+    fg_color := ifx selected theme.color.accent else xyzw(theme.color.fg.xyz, 0.4);
+
+    bg_color     := get_color(status, fg_color);
+    border_color := theme.color.border;
+
+    bg_color = lerp(fg_color, lighten(fg_color, 10), hover_strength);
+    bg_color = lerp(bg_color, lighten(fg_color, 30), press_strength);
+
+    btn_rect := rect;
+    draw_rect(btn_rect, bg_color);
+
+    text_rect := pad_rect(btn_rect, theme.button_padding, 0);
+
+    // Center text in button rect.
+    x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
+    y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
+
+    offset := text_height * 0.15;
+
+    x = lerp(x, x + offset, press_strength);
+    y = lerp(y, y + offset, press_strength);
+
+    if text_too_big push_clip(btn_rect);
+    draw_text(label, x, y, theme.text_size, theme.color.text);
+    if text_too_big pop_clip();
+
+    if curr_navigation_widget == navigation_widget_index {
+        draw_outline(btn_rect, theme.color.blue, theme.border_width);
+    }
+
+    return state.pressed;
+
+}
+
 flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_items := 3, loc := #caller_location) -> modified: bool {
     id      := make_id(loc);
     state   := get_widget_state(Dropdown_State, id);
@@ -902,16 +956,11 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
         draw_rect(dropdown_rect, theme.color.bg, dropdown_flags);
 
         layer_rect   := dropdown_rect;
-        layer_rect.x += theme.content_padding + theme.border_width;
-        layer_rect.y += theme.content_padding + theme.border_width;
-        layer_rect.w -= theme.content_padding + theme.scrollbar_width + theme.border_width * 2;
-        layer_rect.h -= theme.content_padding + theme.border_width * 2;
+        layer_rect.x += theme.border_width;
+        layer_rect.w -= theme.scrollbar_width + theme.border_width * 2;
+        layer_rect.h -= theme.border_width;
 
         set_layout(layer_rect);
-
-
-        selected_color := theme.color;
-        selected_color.fg = theme.color.accent;
 
         scroll := begin_scroll(loc);
 
@@ -920,11 +969,9 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
             defer pop_id();
 
             enum_val := cast(T) ti.values[it_index];
-            selected := flag.* & enum_val;
+            selected := flag.* & enum_val != 0;
 
-            color := ifx selected selected_color else theme.color;
-
-            if button(it, .{ layer_rect.w, item_height }, color = *color) {
+            if dropdown_item(it, .{ layer_rect.w, item_height }, selected = selected) {
                 if selected then flag.* &= ~enum_val; else flag.* |= enum_val;
                 modified    = true;
             }
@@ -1026,10 +1073,9 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
         draw_rect(dropdown_rect, theme.color.bg, dropdown_flags);
 
         layer_rect   := dropdown_rect;
-        layer_rect.x += theme.content_padding + theme.border_width;
-        layer_rect.y += theme.content_padding + theme.border_width;
-        layer_rect.w -= theme.content_padding + theme.scrollbar_width + theme.border_width * 2;
-        layer_rect.h -= theme.content_padding + theme.border_width * 2;
+        layer_rect.x += theme.border_width;
+        layer_rect.w -= theme.scrollbar_width + theme.border_width * 2;
+        layer_rect.h -= theme.border_width;
 
         set_layout(layer_rect);
 
@@ -1039,7 +1085,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
             push_id(it_index);
             defer pop_id();
 
-            if button(it, .{ layer_rect.w, item_height }) {
+            if dropdown_item(it, .{ layer_rect.w, item_height }) {
                 selected.*  = it_index;
                 modified    = true;
                 state.open  = false;
@@ -1574,7 +1620,8 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
     return state.pressed;
 }
 
-button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null, loc := #caller_location, color : *Color_Theme = null) -> bool {
+
+button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null, toggle_value : *bool = null, loc := #caller_location) -> bool {
     defer navigation_widget_index += 1;
 
     id          := make_id(loc, label);
@@ -1591,6 +1638,10 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null,
     mutate_state(state, alloc_space(button_size));
     hover_strength, press_strength := update_times(state);
 
+    if toggle_value != null && status & .PRESSED {
+        toggle_value.* = !toggle_value.*;
+    }
+
     clip := peek(current_layer.clip_stack);
     if !rect_vs_rect(rect, clip) return state.pressed;
 
@@ -1599,26 +1650,34 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null,
 
     is_activated := status == .FOCUSED || status == .PRESSED;
 
+    color  := *theme.color;
     colors := ifx color then color.* else theme.color;
 
     bg_color     := get_color(status, ifx is_activated then colors.accent else colors.fg);
     border_color := colors.border;
 
-
-    bg_color = lerp(colors.fg, lighten(colors.fg, 10), hover_strength);
-    bg_color = lerp(bg_color, lighten(colors.fg, 30), press_strength);
+    fg_color := ifx toggle_value != null && toggle_value.* colors.accent else colors.fg;
+    bg_color = lerp(fg_color, lighten(fg_color, 10), hover_strength);
+    bg_color = lerp(bg_color, lighten(fg_color, 30), press_strength);
 
     btn_rect := rect;
 
     if texture {
         draw_rect(btn_rect, bg_color, .ROUND_ALL);
-        draw_outline(btn_rect, theme.color.border, theme.border_width, .ROUND_ALL);
 
         prev := set_texture(texture);
         draw_rect(btn_rect, WHITE);
         set_texture(prev);
     } else {
         draw_rect(btn_rect, bg_color, .ROUND_ALL);
+    }
+
+    if toggle_value != null  {
+        if toggle_value.* {
+            draw_outline(btn_rect, darken(theme.color.accent, 20), theme.border_width, .ROUND_ALL);
+        } else {
+            draw_outline(btn_rect, theme.color.border, theme.border_width, .ROUND_ALL);
+        }
     }
 
     if label {
@@ -2085,18 +2144,14 @@ raise_layer :: (id: UI_ID) {
     log("Want to raise window : % :: %", id, current_layer.depth);
 }
 
-alloc_space :: (widget_size: Vector2, margin := true) -> Rect {
+alloc_space :: (widget_size: Vector2, gap_x := true, gap_y := true) -> Rect {
     using layout := current_layout();
 
     size    := widget_size;
     size.y   = max(get_row_height(), size.y);
 
-    margin_x := theme.margin_x;
-    margin_y := theme.margin_y;
-
-    if !margin {
-        margin_x = 0;
-    }
+    margin_x := ifx gap_x theme.margin_x else 0;
+    margin_y := ifx gap_y theme.margin_y else 0;
 
 
     row_height := get_row_height();
