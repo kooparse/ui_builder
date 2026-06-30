@@ -91,7 +91,6 @@ NORD :: Color_Theme.{
 };
 
 Theme :: struct {
-    ui_scaler               := 1.0;
     alpha                   := 1.0;
 
     input_padding           := 4.;
@@ -100,20 +99,18 @@ Theme :: struct {
     separator_size          := 1.0;
 
     content_padding         := 4.;
-    window_title_bar_height := 30.;
     scrollbar_width         := 12.;
     corner_radius           := 8.;
     radius_sample           := 20;
     circle_sample           := 30;
     border_width            := 4.;
-    checkbox_size           := 40.;
 
     margin_x                := 3.;
     margin_y                := 6.;
 
     button_padding          := 16.;
 
-    text_size               := 16.;
+    text_size               := 18.;
 
     collapser_offset        := 30.;
 

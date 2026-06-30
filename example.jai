@@ -313,7 +313,6 @@ make_ui :: () -> UI_Draw_List {
         color                   = ifx chosen_theme >= THEMES.count then custom_theme else THEMES[chosen_theme],
         alpha                   = ifx translucent 0.4 else 1.0,
 
-        window_title_bar_height = DEFAULT_THEME.window_title_bar_height * dpi_scale,
         scrollbar_width         = DEFAULT_THEME.scrollbar_width         * dpi_scale,
         content_padding         = DEFAULT_THEME.content_padding         * dpi_scale,
         margin_x                = DEFAULT_THEME.margin_x                * dpi_scale,
@@ -344,54 +343,85 @@ make_ui :: () -> UI_Draw_List {
         dt_fmt  := FormatFloat.{ value = cpu_time, trailing_width = 0 };
         gpu_fmt := FormatFloat.{ value = gpu_time, trailing_width = 1 };
 
-        label(tprint("CPU % / GPU %", dt_fmt, gpu_fmt));
-        label(tprint("Draw calls: %", last_draw_calls));
-        label(tprint("Vertex count: %", last_vertex_count));
-        label(tprint("IO Captured: %", io_captured()));
+
+        width := 140. * dpi_scale;
+
+        set_width(width);
+        label("CPU:"); same_line(); label(tprint("%", dt_fmt));
+        set_width(width);
+        label("GPU:"); same_line(); label(tprint("%", gpu_fmt));
+        set_width(width);
+        label("Draw calls:"); same_line(); label(tprint("%", last_draw_calls));
+        set_width(width);
+        label("Vertex count:"); same_line(); label(tprint("%", last_vertex_count));
+        set_width(width);
+        label("IO Captured:"); same_line(); label(tprint("%", io_captured()));
+
+
+        set_width(0.3);
+        label("hey!");
+        same_line();
+        full_width();
+        button("first btn");
+
+        set_width(0.3);
+        label("second hey!");
+        same_line();
+        full_width();
+        button("second btn");
 
         if ui_tab(enum_names(TABS), xx *current_tab) {
             log("Select Tab: %", enum_names(TABS)[current_tab]);
         }
 
         if current_tab == .TAB_1 {
-            placeholder := "Choose...";
-            select(*selected, items, .{ 200, 30 } * dpi_scale, placeholder, max_items = 4);
+            separator("Select inputs");
 
-            flag_select(*my_enum_flag, .{ 200, 30 } * dpi_scale, placeholder);
+            placeholder := "Choose...";
+            select(*selected, items, .{ 200, -1} * dpi_scale, placeholder, max_items = 4);
+
+            flag_select(*my_enum_flag, .{ 200, -1 } * dpi_scale, placeholder);
 
             separator("Button with img");
 
             ratio := cast(float, playstation_icon.width) / cast(float, playstation_icon.height);
             if button(texture = xx *playstation_icon, size = .{ 40 * ratio * dpi_scale, 40 * dpi_scale }) {
-                log("click!");
+                log("playstation!");
             }
 
             same_line();
 
             ratio = cast(float, xbox_icon.width) / cast(float, xbox_icon.height);
             if button(texture = xx *xbox_icon, size = .{ 40 * ratio * dpi_scale, 40 * dpi_scale }) {
-                log("click!");
+                log("xbox!");
             }
 
             separator("Inputs");
 
-            modified, changed_str := text_input(my_string, .{ 320, 30 * dpi_scale });
+
+            row_start := 140. * dpi_scale;
+
+            set_width(row_start);
+            label("text input:");
+            same_line();
+            modified, changed_str := text_input(my_string, .{ 320, -1 });
             if modified {
                 free(my_string);
                 my_string = copy_string(changed_str);
             }
 
 
+            set_width(row_start);
+            label("Float input:");
+            same_line();
             number_input(*my_float);
-            same_line();
-            label(tprint("my_float: %", my_float));
 
-            number_input(*my_int);
+            set_width(row_start);
+            label("Int input:");
             same_line();
-            label(tprint("my_int: %", my_int));
+            number_input(*my_int);
 
             separator("Checkboxes");
-
 
             checkbox(*show_color_picker, "Show Color Picker");
             checkbox(*translucent, "Translucent");
@@ -431,33 +461,54 @@ make_ui :: () -> UI_Draw_List {
 
         separator("Custom values");
 
-        hexa_input(*custom_theme.bg);
-        same_line();
+        width := 150. * dpi_scale;
+
+        set_width(width);
         label("bg");
-        hexa_input(*custom_theme.fg);
         same_line();
+        hexa_input(*custom_theme.bg);
+
+        set_width(width);
         label("fg");
-        hexa_input(*custom_theme.border);
         same_line();
+        hexa_input(*custom_theme.fg);
+
+        set_width(width);
         label("border");
-        hexa_input(*custom_theme.text);
         same_line();
+        hexa_input(*custom_theme.border);
+
+        set_width(width);
         label("text");
-        hexa_input(*custom_theme.accent);
         same_line();
+        hexa_input(*custom_theme.text);
+
+        set_width(width);
         label("accent");
-        hexa_input(*custom_theme.text_muted);
         same_line();
+        hexa_input(*custom_theme.accent);
+
+        set_width(width);
         label("text_muted");
-        hexa_input(*custom_theme.blue);
         same_line();
-        label("blue");
-        hexa_input(*custom_theme.red);
-        same_line();
+        hexa_input(*custom_theme.text_muted);
+
+        set_width(width);
         label("red");
-        hexa_input(*custom_theme.green);
         same_line();
+        hexa_input(*custom_theme.red);
+
+        set_width(width);
         label("green");
+        same_line();
+        hexa_input(*custom_theme.green);
+
+        set_width(width);
+        label("blue");
+        same_line();
+        hexa_input(*custom_theme.blue);
+
+
 
         window_end();
     }
@@ -479,11 +530,11 @@ make_ui :: () -> UI_Draw_List {
 
 
     if window_begin(UI_Rect.{ 10, 650, 300, 100 } * dpi_scale, "Undo/Redo") {
-        button("Undo");
+        button("<");
         same_line();
         label("Entity moved");
         same_line();
-        button("Redo");
+        button(">");
     }
 
 
