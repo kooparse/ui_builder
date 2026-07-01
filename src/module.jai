@@ -6,7 +6,6 @@
     - close/reduce windows
     - way to scale everything based on ratio window_width/window_height?
     - better design for inputs, radius...
-    - button in "radio button" mode?
     - fix checkbox ellipsis
 
     - use some pool allocator
@@ -262,6 +261,8 @@ Window_State :: struct {
 Dropdown_State :: struct {
     #as using state : Widget_State;
     open            : bool;
+    want_search     : bool;
+    search          : string;
 };
 
 Text_Input_State :: struct {
@@ -897,11 +898,15 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
     placeholder_text := ifx placeholder placeholder else "<Choose>";
     btn_label := sprint("% items selected", selected_count);
     defer free(btn_label);
+
     button_label := ifx selected_count >= 0 btn_label else placeholder_text;
 
 
     rect := alloc_space(size);
     mutate_state(state, rect);
+
+    input_rect      := rect;
+    input_rect.w    -= rect.h; // because of the right side (clear/caret).
 
     bg_color := get_color(state.status, theme.color.fg);
 
@@ -918,33 +923,33 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
         state.open = !state.open;
     }
 
-    flags := Rect_Flags.ROUND_ALL;
-    if state.open flags = .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT | .TOP | .LEFT | .RIGHT;
+    flags := Rect_Flags.TOP | .LEFT | .BOTTOM | .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT;
+    if state.open then flags &= ~(.BOTTOM | .ROUND_BOTTOM_LEFT);
 
-    draw_rect(rect, bg_color, flags);
-    draw_outline(rect, theme.color.border, theme.border_width, flags);
+    draw_rect(input_rect, bg_color, flags);
+    draw_outline(input_rect, theme.color.border, theme.border_width, flags);
     draw_text(button_label, x, y, font_size, theme.color.text);
 
     {
-        arrow_size  := rect.h * 0.3;
-        offset      := arrow_size * 0.2;
-        arrow_rect := Rect.{
-            rect.x + rect.w - (arrow_size + button_padding),
-            rect.y + rect.h * 0.5 - arrow_size * 0.5 + offset,
-            arrow_size, arrow_size,
-        };
-
-        p0 := Vector2.{ arrow_rect.x, arrow_rect.y };
-        p1 := Vector2.{ arrow_rect.x + arrow_rect.w, arrow_rect.y };
-        p2 := Vector2.{ arrow_rect.x + arrow_rect.w * 0.5, arrow_rect.y + arrow_rect.h - offset };
-
+        right_flags := Rect_Flags.TOP | .RIGHT | .BOTTOM | .ROUND_TOP_RIGHT | .ROUND_BOTTOM_RIGHT;
         if state.open {
-            p0 = Vector2.{ arrow_rect.x, p2.y };
-            p1 = Vector2.{ arrow_rect.x + arrow_rect.w, p2.y };
-            p2 = Vector2.{ arrow_rect.x + arrow_rect.w * 0.5, arrow_rect.y };
+            right_flags &= ~(.BOTTOM | .ROUND_BOTTOM_RIGHT);
         }
 
-        push_triangle(p0, p1, p2, theme.color.border);
+        caret_rect := rect;
+        caret_rect.x += (rect.w - rect.h);
+        caret_rect.w  = rect.h;
+
+        caret_bg := lighten(theme.color.border, 20);
+        draw_rect(caret_rect, caret_bg, right_flags);
+
+        border_color := theme.color.border;
+        border_color.w = 0.4;
+
+        draw_outline(caret_rect, border_color, theme.border_width, right_flags);
+
+        caret_pad := max(theme.border_width, caret_rect.h * 0.3);
+        draw_caret(pad_rect(caret_rect, caret_pad, caret_pad), theme.color.text, up = state.open, 2);
     }
 
 
@@ -1005,7 +1010,14 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
     return modified;
 }
 
-select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeholder := "", max_items := 3, loc := #caller_location) -> bool {
+Select_Flags :: enum_flags {
+    CLEARABLE;
+    FILTER;
+
+    ALL :: CLEARABLE | FILTER;
+};
+
+select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeholder := "", max_items := 3, flags := Select_Flags.ALL, loc := #caller_location) -> bool {
     id      := make_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 
@@ -1014,12 +1026,16 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
     modified     := false;
     button_label := ifx selected.* >= 0 items[selected.*] else placeholder_text;
 
+    select_label_color := theme.color.text;
+    if selected.* < 0 then select_label_color.w = 0.4;
+
     item_height := get_row_height() * 0.8;
 
     rect := alloc_space(size);
     mutate_state(state, rect);
 
-    bg_color := get_color(state.status, theme.color.fg);
+    input_rect      := rect;
+    input_rect.w    -= rect.h; // because of the right side (clear/caret).
 
     text_width, text_height   := get_text_size(font, button_label, theme.text_size);
     text_rect                 := pad_rect(rect, button_padding, 0);
@@ -1028,43 +1044,95 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
     y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
 
-
-
     if state.pressed {
-        state.open = !state.open;
+        state.open        = !state.open;
+        state.want_search = state.open;
     }
 
-    flags := Rect_Flags.ROUND_ALL;
-    if state.open flags = .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT | .TOP | .LEFT | .RIGHT;
+    rect_flags := Rect_Flags.TOP | .LEFT | .BOTTOM | .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT;
+    if state.open then rect_flags &= ~(.BOTTOM | .ROUND_BOTTOM_LEFT);
 
-    draw_rect(rect, bg_color, flags);
-    draw_outline(rect, theme.color.border, theme.border_width, flags);
-    draw_text(button_label, x, y, theme.text_size, theme.color.text);
+    bg_color := get_color(state.status, theme.color.fg);
 
-    {
-        arrow_size  := rect.h * 0.3;
-        offset      := arrow_size * 0.2;
-        arrow_rect := Rect.{
-            rect.x + rect.w - (arrow_size + button_padding),
-            rect.y + rect.h * 0.5 - arrow_size * 0.5 + offset,
-            arrow_size, arrow_size,
-        };
+    if state.want_search && flags & .FILTER {
+        _, updated_str := text_input(state.search, input_rect, rect_flags = rect_flags, loc = loc);
 
-        // draw_rect(arrow_rect, Vector4.{1, 1, 1, 1});
+        copied := copy_string(updated_str);
+        if state.search free(state.search);
+        state.search = copied;
 
-        p0 := Vector2.{ arrow_rect.x, arrow_rect.y };
-        p1 := Vector2.{ arrow_rect.x + arrow_rect.w, arrow_rect.y };
-        p2 := Vector2.{ arrow_rect.x + arrow_rect.w * 0.5, arrow_rect.y + arrow_rect.h - offset };
-
-        if state.open {
-            p0 = Vector2.{ arrow_rect.x, p2.y };
-            p1 = Vector2.{ arrow_rect.x + arrow_rect.w, p2.y };
-            p2 = Vector2.{ arrow_rect.x + arrow_rect.w * 0.5, arrow_rect.y };
+        if !state.search {
+            placeholder_color   := theme.color.text;
+            placeholder_color.w  = 0.4;
+            draw_text(button_label, x, y, theme.text_size, placeholder_color);
         }
 
-        push_triangle(p0, p1, p2, theme.color.border);
+    } else {
+        draw_rect(input_rect, bg_color, rect_flags);
+        draw_outline(input_rect, theme.color.border, theme.border_width, rect_flags);
+        draw_text(button_label, x, y, theme.text_size, select_label_color);
     }
 
+
+
+
+    right_flags := Rect_Flags.TOP | .RIGHT | .BOTTOM | .ROUND_TOP_RIGHT | .ROUND_BOTTOM_RIGHT;
+    if state.open {
+        right_flags &= ~(.BOTTOM | .ROUND_BOTTOM_RIGHT);
+    }
+
+
+    // The right side of our select input.
+    {
+        if flags & .CLEARABLE {
+            clear_rect   := rect;
+            clear_rect.x += input_rect.w;
+            clear_rect.w  = rect.h;
+
+            border_color := theme.color.border;
+            border_color.w = 0.4;
+
+            btn_id    := make_id(loc, "select_clear_btn");
+            btn_state := get_widget_state(Button_State, btn_id);
+
+            mutate_state(btn_state, clear_rect);
+            hover_strength, press_strength := update_times(btn_state);
+
+            if btn_state.pressed {
+                selected.*        = -1;
+                modified          = true;
+                state.open        = false;
+                state.want_search = false;
+                state.search.count = 0;
+            }
+
+            color    := lighten(theme.color.border, 10);
+            clear_bg := lerp(color, lighten(color, 20), hover_strength);
+            clear_bg  = lerp(clear_bg, lighten(color, 30), press_strength);
+
+            draw_rect(clear_rect, clear_bg, right_flags);
+
+            cross_pad := max(theme.border_width, clear_rect.h * 0.3);
+            draw_cross(pad_rect(clear_rect, cross_pad, cross_pad), theme.color.text, 2);
+
+            draw_outline(clear_rect, border_color, theme.border_width, right_flags);
+        } else {
+            caret_rect := rect;
+            caret_rect.x += (rect.w - rect.h);
+            caret_rect.w  = rect.h;
+
+            caret_bg := lighten(theme.color.border, 20);
+            draw_rect(caret_rect, caret_bg, right_flags);
+
+            border_color := theme.color.border;
+            border_color.w = 0.4;
+
+            draw_outline(caret_rect, border_color, theme.border_width, right_flags);
+
+            caret_pad := max(theme.border_width, caret_rect.h * 0.3);
+            draw_caret(pad_rect(caret_rect, caret_pad, caret_pad), theme.color.text, up = state.open, 2);
+        }
+    }
 
     if state.open {
         dropdown_height := (item_height + content_padding * 2) * (cast(float) max_items);
@@ -1096,13 +1164,20 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
         scroll := begin_scroll(loc);
 
         for items {
+
+            if state.search && !contains_nocase(it, state.search) {
+                continue;
+            }
+
             push_id(it_index);
             defer pop_id();
 
             if dropdown_item(it, .{ layer_rect.w, item_height }) {
-                selected.*  = it_index;
-                modified    = true;
-                state.open  = false;
+                selected.*        = it_index;
+                modified          = true;
+                state.open        = false;
+                state.want_search = false;
+                state.search.count = 0;
             }
         }
 
@@ -1112,7 +1187,9 @@ select :: (selected: *int, items: [] string, size := Vector2.{ 100, -1 }, placeh
 
         // If click outside the dropdown, we close the dropdown.
         if is_pressed(.MOUSE_LEFT) && (state.status == 0x00) && !cursor_vs_rect(dropdown_rect) && active_widget == -1 {
-            state.open = false;
+            state.open        = false;
+            state.want_search = false;
+            state.search.count = 0;
         }
     }
 
@@ -1309,7 +1386,7 @@ rgba_input :: (value : *Vector4, size := Vector2.{ 120, -1 }, format := Color_Fo
 }
 
 // @todo: Ability to use all integers... and then we clamp to their min/max.
-number_input :: (value: *$T, size := Vector2.{ 200, -1 }, flags := Rect_Flags.ALL_SIDES, loc := #caller_location) -> modified: bool
+number_input :: (value: *$T, size := Vector2.{ 200, -1 }, flags := (Rect_Flags.ROUND_ALL | .HALF_RADIUS), loc := #caller_location) -> modified: bool
 #modify {
     if T != float && T != int {
         return false, "Unsuported argument type, should be float or int.";
@@ -1370,14 +1447,20 @@ number_validation :: (codepoint : string) -> bool {
 
 Validation_Proc :: #type (codepoint: string) -> bool;
 
+text_input :: (user_str: string, size := Vector2.{ 200, -1 }, rect_flags := (Rect_Flags.ROUND_ALL | .HALF_RADIUS), validate := default_validation, loc := #caller_location) -> modified: bool, new_string: string, focused: bool {
+    input_rect      := alloc_space(size, false);
 
-text_input :: (user_str: string, size := Vector2.{ 200, -1 }, rect_flags := Rect_Flags.ALL_SIDES, validate := default_validation, loc := #caller_location) -> modified: bool, new_string: string {
-    id              := make_id(loc);
+    modified, new_string, focused := text_input(user_str, input_rect, rect_flags, validate, loc);
+    return modified, new_string, focused;
+}
+
+// @todo: rename core_text_input?
+text_input :: (user_str: string, input_rect : Rect, rect_flags := (Rect_Flags.ROUND_ALL | .HALF_RADIUS), validate := default_validation, loc := #caller_location) -> modified: bool, new_string: string, focused: bool {
+    id              := make_id(loc, "text_input");
     state, is_new   := get_widget_state(Text_Input_State, id);
 
     using state;
 
-    input_rect      := alloc_space(size, false);
     mutate_state(state, input_rect);
 
     // Sync string when we are typing.
@@ -1392,7 +1475,6 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, rect_flags := Rect
 
 
     if !state.focused && state.pressed {
-        active_widget = id;
         state.focused = true;
         state.focused_start_time = xx seconds_since_init();
     }
@@ -1405,7 +1487,6 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, rect_flags := Rect
         click_outside := !cursor_vs_rect(state.rect) && is_pressed(.MOUSE_LEFT);
 
         if is_pressed(.RETURN) {
-            active_widget = -1;
             state.focused = false;
             modified      = true;
         }
@@ -1438,7 +1519,6 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, rect_flags := Rect
         }
 
         if is_pressed(.ESCAPE) || click_outside {
-            active_widget = -1;
             state.focused = false;
             modified      = true;
         }
@@ -1486,6 +1566,7 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, rect_flags := Rect
 
 
     bg_color := get_color(status, theme.color.fg);
+
     draw_rect(rect, bg_color, rect_flags);
     draw_outline(rect, theme.color.border, theme.border_width, rect_flags);
 
@@ -1541,7 +1622,7 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, rect_flags := Rect
         draw_text(text, text_x, text_y, theme.text_size, theme.color.text);
     }
 
-    return modified, text;
+    return modified, text, state.focused;
 }
 
 radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> bool {
@@ -1689,20 +1770,24 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
 
 
 button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null, toggle_value : *bool = null, loc := #caller_location) -> bool {
+    text_width, text_height   := get_text_size(font, label, theme.text_size);
+
+    button_size := size;
+    if size.x <= 0 then button_size.x = text_width + button_padding;
+
+    btn_rect := alloc_space(button_size);
+
+    return button(label, btn_rect, texture, toggle_value, loc);
+}
+
+// @todo: rename core_button?
+button :: (label := "", btn_rect : Rect, texture : UI_Texture = null, toggle_value : *bool = null, loc := #caller_location) -> bool {
     defer navigation_widget_index += 1;
 
     id          := make_id(loc, label);
     using state := get_widget_state(Button_State, id);
 
-    text_width, text_height   := get_text_size(font, label, theme.text_size);
-
-    button_size := size;
-
-    if size.x <= 0 {
-        button_size.x = text_width + button_padding;
-    }
-
-    mutate_state(state, alloc_space(button_size));
+    mutate_state(state, btn_rect);
     hover_strength, press_strength := update_times(state);
 
     if toggle_value != null && status & .PRESSED {
@@ -1711,9 +1796,6 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null,
 
     clip := peek(current_layer.clip_stack);
     if !rect_vs_rect(rect, clip) return state.pressed;
-
-    text_too_big := rect.w < button_size.x;
-
 
     is_activated := status == .FOCUSED || status == .PRESSED;
 
@@ -1726,8 +1808,6 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null,
     fg_color := ifx toggle_value != null && toggle_value.* colors.accent else colors.fg;
     bg_color = lerp(fg_color, lighten(fg_color, 10), hover_strength);
     bg_color = lerp(bg_color, lighten(fg_color, 30), press_strength);
-
-    btn_rect := rect;
 
     if texture {
         draw_rect(btn_rect, bg_color, .ROUND_ALL);
@@ -1748,7 +1828,8 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null,
     }
 
     if label {
-        text_rect := pad_rect(btn_rect, button_padding, 0);
+        text_width, text_height   := get_text_size(font, label, theme.text_size);
+        text_rect                 := pad_rect(btn_rect, button_padding, 0);
 
         // Center text in button rect.
         x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -1759,6 +1840,7 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null,
         x = lerp(x, x + offset, press_strength);
         y = lerp(y, y + offset, press_strength);
 
+        text_too_big := btn_rect.w < text_width;
         if text_too_big push_clip(btn_rect);
         draw_text(label, x, y, theme.text_size, colors.text);
         if text_too_big pop_clip();
@@ -1870,13 +1952,13 @@ update_times :: (state: *Button_State) -> float, float {
 }
 
 mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true) {
-    state.status = ifx active_widget > -1 && active_widget != state.widget_id then 0 else get_status(rect, check_layout);
+    state.status = ifx active_widget > -1 && active_widget != state.widget_id 0 else get_status(rect, check_layout);
 
     if state.widget_id == active_widget {
         state.status |= .FOCUSED;
     }
 
-    state.pressed = state.status & .PRESSED !=0;
+    state.pressed = state.status & .PRESSED != 0;
 
     state.rect   = rect;
 }
@@ -1934,7 +2016,7 @@ end_scroll :: (state: *Scrollbar_State) {
         max_scroll  := max(0.0, content_h - visible_h);
         scroll.y     = clamp(scroll.y, 0.0, max_scroll);
 
-        if !wheel_scrolling_triggered && point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
+        if !wheel_scrolling_triggered && point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 {
             wheel_scrolling_triggered = true;
 
             scroll.y += xx wheel_y;
@@ -1960,7 +2042,7 @@ end_scroll :: (state: *Scrollbar_State) {
             status   := get_status(handle, check_layout = false);
             bg_color := get_color(status, ifx state.dragging_y then theme.color.accent else theme.color.text_muted);
 
-            if !state.dragging_x && (active_widget == -1 || active_widget == id) {
+            if !state.dragging_x {
                 is_dragging := active_widget == id;
                 hit         := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
 
@@ -2013,7 +2095,7 @@ end_scroll :: (state: *Scrollbar_State) {
 
             bg_color := get_color(status, ifx state.dragging_x then theme.color.accent else theme.color.text_muted);
 
-            if !state.dragging_y && (active_widget == -1 || active_widget == id) {
+            if !state.dragging_y {
                 is_dragging := active_widget == id;
                 hit         := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
 
@@ -2417,6 +2499,8 @@ Rect_Flags :: enum_flags u32 {
     ROUND_BOTTOM_LEFT  :: (1 << 6);
     ROUND_BOTTOM_RIGHT :: (1 << 7);
 
+    HALF_RADIUS        :: (1 << 8);
+
     ALL_SIDES :: TOP | LEFT | RIGHT | BOTTOM;
     ROUND_ALL :: ROUND_TOP_LEFT | ROUND_TOP_RIGHT | ROUND_BOTTOM_LEFT | ROUND_BOTTOM_RIGHT | ALL_SIDES;
 };
@@ -2430,7 +2514,7 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
     bottom := (flags & .BOTTOM);
 
     // For rounded corners:
-    radius := theme.corner_radius;
+    radius := ifx flags & .HALF_RADIUS theme.corner_radius * 0.5 else theme.corner_radius;
     radius  = min(radius, r.w * 0.5);
     radius  = min(radius, r.h * 0.5);
 
@@ -2639,7 +2723,7 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
     }
 
     // For rounded corners:
-    radius := theme.corner_radius;
+    radius := ifx flags & .HALF_RADIUS theme.corner_radius * 0.5 else theme.corner_radius;
     radius = min(radius, r.w * 0.5);
     radius = min(radius, r.h * 0.5);
 
@@ -2854,6 +2938,44 @@ internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
 
     push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
     push_triangle(p2, p1, p3, color, uv2, uv1, uv3);
+}
+
+draw_cross :: (rect: Rect, color : Vector4, thickness := 3.0) {
+    {
+        p0 := Vector2.{ rect.x, rect.y + thickness };
+        p1 := Vector2.{ rect.x + thickness, rect.y };
+        p2 := Vector2.{ rect.x + rect.w, rect.y + rect.h - thickness };
+        p3 := Vector2.{ rect.x + rect.w - thickness, rect.y + rect.h };
+
+        push_triangle(p0, p1, p3, color);
+        push_triangle(p1, p2, p3, color);
+    }
+
+    {
+        p0 := Vector2.{ rect.x + rect.w - thickness, rect.y };
+        p1 := Vector2.{ rect.x + rect.w, rect.y + thickness };
+        p2 := Vector2.{ rect.x + thickness, rect.y + rect.h };
+        p3 := Vector2.{ rect.x, rect.y + rect.h - thickness };
+
+        push_triangle(p0, p1, p3, color);
+        push_triangle(p1, p2, p3, color);
+    }
+}
+
+draw_caret :: (rect: Rect, color : Vector4, up: bool, thickness := 3.0) {
+    p0, p1, p2: Vector2;
+
+    if up {
+        p0 = Vector2.{ rect.x, rect.y + rect.h };
+        p1 = Vector2.{ rect.x + rect.w, rect.y + rect.h };
+        p2 = Vector2.{ rect.x + rect.w * 0.5, rect.y };
+    } else {
+        p0 = Vector2.{ rect.x, rect.y };
+        p1 = Vector2.{ rect.x + rect.w, rect.y };
+        p2 = Vector2.{ rect.x + rect.w * 0.5, rect.y + rect.h };
+    }
+
+    push_triangle(p0, p1, p2, theme.color.text);
 }
 
 

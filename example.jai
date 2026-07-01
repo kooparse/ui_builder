@@ -259,9 +259,24 @@ main :: () {
 
 selected        := -1;
 radio_selected  := 0;
-items           := string.[ "Apple", "Peach", "Banana",
-                            "Chocolate", "Tea", "Raspberry",
-                            "Orange", "Cucumber", "Potato" ];
+
+plants := string.[ "Rose", "Tulip", "Daisy",
+                  "Sunflower", "Lily", "Orchid",
+                  "Fern", "Cactus", "Ivy",
+                  "Bamboo", "Oak", "Maple",
+                  "Pine", "Birch", "Willow",
+                  "Lavender", "Basil", "Mint",
+                  "Thyme", "Rosemary", "Sage",
+                  "Clover", "Dandelion", "Fennel",
+                  "Marigold", "Daffodil", "Iris",
+                  "Peony", "Hibiscus", "Jasmine",
+                  "Lotus", "Poppy", "Violet",
+                  "Chrysanthemum", "Carnation", "Hydrangea",
+                  "Magnolia", "Azalea", "Camellia",
+                  "Aloe Vera", "Fig Tree", "Palm Tree",
+                  "Eucalyptus", "Cedar", "Spruce",
+                  "Bluebell", "Snowdrop", "Buttercup",
+                  "Foxglove", "Bougainvillea" ];
 
 chosen_theme := 0;
 
@@ -311,6 +326,7 @@ my_color     := Vector4.{ 1, 0, 1, 1 };
 my_hex       :  u32 = 0xffffee;
 my_enum_flag := Entity_Flags.SOLID;
 toggle      := false;
+
 make_ui :: () -> UI_Draw_List {
 
     set_theme(Theme.{
@@ -365,8 +381,8 @@ make_ui :: () -> UI_Draw_List {
         if current_tab == .TAB_1 {
             separator("Select inputs");
 
-            placeholder := "Choose...";
-            select(*selected, items, .{ 300, -1} * dpi_scale, placeholder, max_items = 4);
+            placeholder := "Pick a plant...";
+            select(*selected, plants, .{ 300, -1 } * dpi_scale, placeholder, max_items = 4);
 
             flag_select(*my_enum_flag, .{ 300, -1 } * dpi_scale, placeholder);
 
