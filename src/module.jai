@@ -2,8 +2,6 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
-    - input/filter for selects widgets
-    - close/reduce windows
     - way to scale everything based on ratio window_width/window_height?
     - better design for inputs, radius...
     - fix checkbox ellipsis
@@ -48,6 +46,14 @@ operator * :: (rect: Rect, scaler: float) -> Rect {
 operator == :: (a: Rect, b: Rect) -> bool {
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
+
+Window_State :: struct {
+    #as using state : Widget_State;
+
+    open     := true;
+    dragging : enum { NONE; MOVE_WINDOW; RESIZE_WINDOW; }
+};
+
 
 #scope_file;
 
@@ -250,13 +256,6 @@ Button_State :: struct {
     press_duration  := 0.;
     hover_duration  := 0.;
 }
-
-Window_State :: struct {
-    #as using state : Widget_State;
-
-    open     := true;
-    dragging : enum { NONE; MOVE_WINDOW; RESIZE_WINDOW; }
-};
 
 Dropdown_State :: struct {
     #as using state : Widget_State;
@@ -534,12 +533,24 @@ get_draw_list :: () -> UI_Draw_List {
     return draw_list;
 }
 
-window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
-    id    := make_id(loc, "_full_region");
-    state := get_widget_state(Window_State, id, default_rect = region);
+Window_Flags :: enum_flags {
+    CLOSABLE;
+    MOVEABLE;
+    RESIZABLE;
+    TITLE_BAR;
+
+    ALL :: TITLE_BAR | CLOSABLE | MOVEABLE | RESIZABLE;
+};
+
+window_begin :: (state: *Window_State, region: Rect, title := "", flags := Window_Flags.ALL, loc := #caller_location) -> bool {
+    if !state.open return false;
+
+    id := make_id(loc, "_full_region");
+
+    state.widget_id = id;
+    state.rect      = region;
 
     is_new := push_layer(id, state.rect);
-
     // If window's layer was the topmost one of the last frame, we consider it as
     // "active".
     is_topmost  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
@@ -550,7 +561,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     want_raise := !is_new && !is_topmost && state.pressed && active_widget == -1;
     if want_raise then raise_layer(id);
 
-    window_title_bar_height := get_row_height() * 1.2;
+    window_title_bar_height := ifx flags & .TITLE_BAR then get_row_height() * 1.2 else 0;
 
     title_rect     := state.rect;
     title_rect.h    = window_title_bar_height;
@@ -564,7 +575,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     dragging_allowed := active_widget == -1 && state.dragging == .NONE && is_down(.MOUSE_LEFT);
 
     // Start title bar dragging.
-    if dragging_allowed && !is_occluded(title_rect) && cursor_vs_rect(title_rect) {
+    if flags & .MOVEABLE && dragging_allowed && !is_occluded(title_rect) && cursor_vs_rect(title_rect) {
         // Prevent to mix clicking and dragging behavior.
         if (abs(delta_x) > 0 || abs(delta_y) > 0) {
             raise_layer(id);
@@ -576,7 +587,7 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
 
 
     // Start resizer dragging.
-    if !is_occluded(resizer_rect) && cursor_vs_rect(resizer_rect) {
+    if flags & .RESIZABLE && !is_occluded(resizer_rect) && cursor_vs_rect(resizer_rect) {
         curr_cursor_icon = .RESIZE_ARROW;
 
         // Prevent to mix clicking and dragging behavior.
@@ -614,36 +625,71 @@ window_begin :: (region: Rect, title := "", loc := #caller_location) -> bool {
     // Now, we recompute the title and resizer region, to get the latest
     // position/size.
 
-    title_rect     = state.rect;
-    title_rect.h    = window_title_bar_height;
+    title_rect   = state.rect;
+    title_rect.h = window_title_bar_height;
 
     draw_rect(state.rect, theme.color.bg, .ROUND_ALL);
 
     border_color    := theme.color.border;
     border_color.w   = 0.6;
 
+
     // Draw title bar.
-    if title {
+    if flags & .TITLE_BAR {
         title_color := ifx is_topmost theme.color.fg else darken(theme.color.fg, 20);
+        rect_flags  := Rect_Flags.TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT;
 
-        title_width, title_height := get_text_size(font, title, theme.text_size);
+        draw_rect(title_rect, title_color, rect_flags);
+        draw_outline(title_rect, border_color, theme.border_width, rect_flags);
 
-        x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
-        y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
+        if title {
+            title_width, title_height := get_text_size(font, title, theme.text_size);
 
-        flags := Rect_Flags.TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT;
-        draw_rect(title_rect, title_color, flags);
+            x := title_rect.x + title_rect.w * 0.5 - title_width * 0.5;
+            y := title_rect.y + title_rect.h * 0.5 - title_height * 0.5;
 
-        draw_outline(title_rect, border_color, theme.border_width, flags);
-        draw_text(title, x, y, theme.text_size, theme.color.text);
+            draw_text(title, x, y, theme.text_size, theme.color.text);
+        }
+    }
+
+
+    if flags & .CLOSABLE && flags & .TITLE_BAR {
+        btn_height := title_rect.h * 0.7;
+        close_rect := Rect.{
+            title_rect.x + content_padding,
+            title_rect.y + title_rect.h * 0.5 - btn_height * 0.5,
+            btn_height, btn_height
+        };
+
+        btn_id    := make_id(loc, "window_close_btn");
+        btn_state := get_widget_state(Button_State, btn_id);
+
+        mutate_state(btn_state, close_rect, check_layout = false);
+        hover_strength, press_strength := update_times(btn_state);
+
+        if btn_state.pressed {
+            state.open = false;
+        }
+
+        color    := theme.color.fg;
+        clear_bg := lerp(color, lighten(color, 20), hover_strength);
+        clear_bg  = lerp(clear_bg, lighten(color, 30), press_strength);
+
+        draw_rect(close_rect, clear_bg, .ROUND_ALL);
+
+        cross_pad := max(theme.border_width, close_rect.h * 0.3);
+        draw_cross(pad_rect(close_rect, cross_pad, cross_pad), lighten(clear_bg, 60), 2);
+
+        draw_outline(close_rect, border_color, theme.border_width, .ROUND_ALL);
     }
 
     content_border := state.rect;
     content_border.y += window_title_bar_height;
     content_border.h -= window_title_bar_height;
 
-    flags := Rect_Flags.BOTTOM | .LEFT | .RIGHT | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
-    draw_outline(content_border, border_color, theme.border_width, flags);
+    rect_flags := Rect_Flags.BOTTOM | .LEFT | .RIGHT | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
+    if flags & .TITLE_BAR == 0 rect_flags = .ROUND_ALL;
+    draw_outline(content_border, border_color, theme.border_width, rect_flags);
 
     layer_rect   := state.rect;
     layer_rect.x += content_padding;
@@ -2086,7 +2132,7 @@ end_scroll :: (state: *Scrollbar_State) {
                 }
             }
 
-            draw_rect(handle, bg_color, .ROUND_ALL);
+            draw_rect(handle, bg_color, (.ROUND_ALL | .HALF_RADIUS));
         }
 
     }
@@ -2139,7 +2185,7 @@ end_scroll :: (state: *Scrollbar_State) {
                 }
             }
 
-            draw_rect(handle, bg_color, .ROUND_ALL);
+            draw_rect(handle, bg_color, (.ROUND_ALL | .HALF_RADIUS));
 
         }
 

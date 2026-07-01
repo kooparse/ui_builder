@@ -289,7 +289,6 @@ Color_Themes :: enum {
 };
 
 
-show_color_picker := true;
 translucent       := false;
 last_draw_calls   : int;
 last_vertex_count : int;
@@ -325,7 +324,12 @@ my_int       := 4;
 my_color     := Vector4.{ 1, 0, 1, 1 };
 my_hex       :  u32 = 0xffffee;
 my_enum_flag := Entity_Flags.SOLID;
-toggle      := false;
+toggle       := false;
+
+widgets_state       : Window_State;
+color_picker_state  : Window_State;
+undo_redo_state     : Window_State;
+theme_state         : Window_State;
 
 make_ui :: () -> UI_Draw_List {
 
@@ -336,7 +340,6 @@ make_ui :: () -> UI_Draw_List {
         text_size               = text_size                             * dpi_scale,
         input_cursor_size       = DEFAULT_THEME.input_cursor_size       * dpi_scale,
         separator_size          = DEFAULT_THEME.separator_size          * dpi_scale,
-
         corner_radius           = DEFAULT_THEME.corner_radius           * dpi_scale,
     });
 
@@ -347,7 +350,7 @@ make_ui :: () -> UI_Draw_List {
         replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
     }
 
-    if window_begin(UI_Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
+    if window_begin(*widgets_state, UI_Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
             gpu_time = get_last_frame_gpu_time() * 1000;
@@ -426,7 +429,7 @@ make_ui :: () -> UI_Draw_List {
 
             separator("Checkboxes");
 
-            checkbox(*show_color_picker, "Show Color Picker");
+            checkbox(*color_picker_state.open, "Show Color Picker");
             checkbox(*translucent, "Translucent");
 
             separator("Buttons");
@@ -464,7 +467,7 @@ make_ui :: () -> UI_Draw_List {
         window_end();
     }
 
-    if window_begin(UI_Rect.{ 600, 10, 350, 400 } * dpi_scale, "Themes") {
+    if window_begin(*theme_state, UI_Rect.{ 600, 10, 350, 400 } * dpi_scale, "Themes") {
 
         begin_column(2);
         if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
@@ -527,22 +530,19 @@ make_ui :: () -> UI_Draw_List {
     }
 
 
-    if show_color_picker {
-        if window_begin(UI_Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
+    if window_begin(*color_picker_state, UI_Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
 
-            separator("Channels inputs, floating RGBA");
-            rgba_input(*my_color, format = .FLOAT);
-            separator("Channels inputs, integer RGBA");
-            rgba_input(*my_color, format = .U8);
-            separator("Channels inputs, hexadecimal");
-            hexa_input(*my_color);
+        separator("Channels inputs, floating RGBA");
+        rgba_input(*my_color, format = .FLOAT);
+        separator("Channels inputs, integer RGBA");
+        rgba_input(*my_color, format = .U8);
+        separator("Channels inputs, hexadecimal");
+        hexa_input(*my_color);
 
-            window_end();
-        }
+        window_end();
     }
 
-
-    if window_begin(UI_Rect.{ 10, 650, 300, 100 } * dpi_scale, "Undo/Redo") {
+    if window_begin(*undo_redo_state, UI_Rect.{ 10, 650, 300, 100 } * dpi_scale, "Undo/Redo") {
         button("<");
         same_line();
         label("Entity moved");
