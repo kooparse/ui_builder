@@ -5,7 +5,8 @@
     - input/filter for selects widgets
     - close/reduce windows
     - way to scale everything based on ratio window_width/window_height?
-    - better design for inputs
+    - better design for inputs, radius...
+    - button in "radio button" mode?
     - only numbers for number_input.
     - fix checkbox ellipsis
 
@@ -120,6 +121,12 @@ io_frozen    := false;
 dt        := 0.;
 prev_time := 0.;
 
+prev_glyph_count := 0;
+glyph_count      := 0;
+
+wheel_scrolling_triggered := false;
+
+
 UI_Key :: enum {
     ESCAPE;
     TAB;
@@ -178,7 +185,7 @@ UI_Layout :: struct {
     should_fullwidth := false;
     should_use_width := 0.0;
 
-    // We compute after each space allocation the total space our widgets takes
+    // We compute after each alloc_space the total space our widgets takes
     // within its layout rect. Used notably for the scrollbar.
     content_height : float;
     content_width  : float;
@@ -421,11 +428,10 @@ update_io :: () {
     wheel_y = 0;
 }
 
-prev_glyph_count := 0;
-glyph_count      := 0;
-
 ui_begin :: () {
     update_size();
+
+    wheel_scrolling_triggered = false;
 
     now      := cast(float) seconds_since_init();
     dt        = now - prev_time;
@@ -1876,8 +1882,9 @@ end_scroll :: (state: *Scrollbar_State) {
         max_scroll  := max(0.0, content_h - visible_h);
         scroll.y     = clamp(scroll.y, 0.0, max_scroll);
 
-        // @todo: Perhaps add again mouse wheel for scrolling content...
-        if point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
+        if !wheel_scrolling_triggered && point_vs_rect(mouse_x, mouse_y, layout.rect) && max_scroll > 0 && active_widget == -1 {
+            wheel_scrolling_triggered = true;
+
             scroll.y += xx wheel_y;
             scroll.y = clamp(scroll.y, 0.0, max_scroll);
         }
