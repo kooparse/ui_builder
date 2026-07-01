@@ -7,7 +7,6 @@
     - way to scale everything based on ratio window_width/window_height?
     - better design for inputs, radius...
     - button in "radio button" mode?
-    - only numbers for number_input.
     - fix checkbox ellipsis
 
     - use some pool allocator
@@ -1209,8 +1208,6 @@ hexa_input :: (color: *Vector4, size := Vector2.{ 200, -1 }, loc := #caller_loca
     modified, new_str := text_input(hexa_str, size, loc = loc, rect_flags = flags, validate = hexa_validation);
 
     if modified && new_str.count >= 1 {
-        advance(*new_str, 1);
-
         result, success := string_to_int(new_str, 16, u32);
         if success then color.* = hexa_to_color(result);
     }
