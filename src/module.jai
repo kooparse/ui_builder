@@ -1185,10 +1185,28 @@ send_text_codepoint :: (codepoint: string) {
 hexa_input :: (color: *Vector4, size := Vector2.{ 200, -1 }, loc := #caller_location) -> modified: bool {
     hexa := color_to_hexa(color.*);
 
-    hexa_str := sprint("#%", formatInt(hexa, base = 16, minimum_digits = 6));
+    {
+        height  := max(get_row_height(), size.y);
+        rect    := alloc_space(Vector2.{ height, height }, false);
+
+        draw_rect(rect, theme.color.blue, .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT);
+
+        border_color := theme.color.border;
+        border_color.w = 0.4;
+
+        draw_outline(rect, border_color, theme.border_width, .TOP | .BOTTOM | .LEFT | .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT);
+
+        text_width, text_height := get_text_size(font, "#", theme.text_size);
+        draw_text("#", rect.x + rect.w * 0.5 - text_width * 0.5, rect.y + rect.h * 0.5 - text_height * 0.5, theme.text_size, lighten(color, 90));
+    }
+
+    same_line();
+
+    hexa_str := sprint("%", formatInt(hexa, base = 16, minimum_digits = 6));
     defer free(hexa_str);
 
-    modified, new_str := text_input(hexa_str, size, loc = loc);
+    flags := Rect_Flags.TOP | .RIGHT | .BOTTOM | .ROUND_TOP_RIGHT | .ROUND_BOTTOM_RIGHT;
+    modified, new_str := text_input(hexa_str, size, loc = loc, rect_flags = flags, validate = hexa_validation);
 
     if modified && new_str.count >= 1 {
         advance(*new_str, 1);
@@ -1207,6 +1225,7 @@ hexa_input :: (color: *Vector4, size := Vector2.{ 200, -1 }, loc := #caller_loca
     return modified;
 }
 
+
 // @todo: not great "u8" to define the color format...
 Color_Format :: enum {
     FLOAT;
@@ -1224,7 +1243,7 @@ rgba_input :: (value : *Vector4, size := Vector2.{ 120, -1 }, format := Color_Fo
 
         if it_index > 0 same_line();
 
-        rect := alloc_space(Vector2.{ height * 0.4, height }, false);
+        rect := alloc_space(Vector2.{ height * 0.6, height }, false);
 
         mask := (Rect_Flags.ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT);
 
@@ -1305,7 +1324,8 @@ number_input :: (value: *$T, size := Vector2.{ 200, -1 }, flags := Rect_Flags.AL
     str_value         := sprint("%", value.*);
     defer free(str_value);
 
-    modified, new_str := text_input(str_value, size, flags, loc);
+
+    modified, new_str := text_input(str_value, size, rect_flags = flags, validate = number_validation, loc = loc);
 
     if !modified return false;
 
@@ -1322,7 +1342,39 @@ number_input :: (value: *$T, size := Vector2.{ 200, -1 }, flags := Rect_Flags.AL
     return true;
 }
 
-text_input :: (user_str: string, size := Vector2.{ 200, -1 }, flags := Rect_Flags.ALL_SIDES, loc := #caller_location) -> modified: bool, new_string: string {
+default_validation :: (codepoint : string) -> bool {
+    return true;
+}
+
+hexa_validation :: (codepoint : string) -> bool {
+    valid := true;
+    for char: codepoint {
+
+        if !is_digit(char) && !(char >= #char "a" && char <= #char "f") && !(char >= #char "A" && char <= #char "F") {
+            valid = false;
+            break;
+        }
+    }
+
+    return valid;
+}
+
+number_validation :: (codepoint : string) -> bool {
+    valid := true;
+    for char: codepoint {
+        if !is_digit(char) && char != #char "." {
+            valid = false;
+            break;
+        }
+    }
+
+    return valid;
+}
+
+Validation_Proc :: #type (codepoint: string) -> bool;
+
+
+text_input :: (user_str: string, size := Vector2.{ 200, -1 }, rect_flags := Rect_Flags.ALL_SIDES, validate := default_validation, loc := #caller_location) -> modified: bool, new_string: string {
     id              := make_id(loc);
     state, is_new   := get_widget_state(Text_Input_State, id);
 
@@ -1371,17 +1423,20 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, flags := Rect_Flag
             clipboard_str := os_clipboard_get_text();
             defer free(clipboard_str);
 
-            begin := slice(state.text, 0, state.cursor_start);
-            end   := slice(state.text, state.cursor_start, state.text.count);
+            if validate(clipboard_str) {
+                begin := slice(state.text, 0, state.cursor_start);
+                end   := slice(state.text, state.cursor_start, state.text.count);
 
-            new_value := join(begin, clipboard_str, end);
-            state.cursor_start += clipboard_str.count;
+                new_value := join(begin, clipboard_str, end);
+                state.cursor_start += clipboard_str.count;
 
-            if state.text {
-                free(state.text);
+                if state.text {
+                    free(state.text);
+                }
+
+                state.text = new_value;
             }
 
-            state.text = new_value;
 
         }
 
@@ -1417,7 +1472,7 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, flags := Rect_Flag
             state.cursor_start -= char_size;
         }
 
-        if text_codepoint {
+        if text_codepoint && validate(text_codepoint) {
             begin := slice(state.text, 0, state.cursor_start);
             end   := slice(state.text, state.cursor_start, state.text.count);
 
@@ -1434,8 +1489,8 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, flags := Rect_Flag
 
 
     bg_color := get_color(status, theme.color.fg);
-    draw_rect(rect, bg_color, flags);
-    draw_outline(rect, theme.color.border, theme.border_width, flags);
+    draw_rect(rect, bg_color, rect_flags);
+    draw_outline(rect, theme.color.border, theme.border_width, rect_flags);
 
     text_width, text_height := get_text_size(font, state.text, theme.text_size);
 
@@ -1446,10 +1501,10 @@ text_input :: (user_str: string, size := Vector2.{ 200, -1 }, flags := Rect_Flag
 
     clip_rect    := rect;
 
-    if flags & .LEFT        clip_rect.x += theme.border_width;
-    if flags & .TOP         clip_rect.y += theme.border_width;
-    if flags & .RIGHT       clip_rect.w -= theme.border_width;
-    if flags & .BOTTOM      clip_rect.h -= theme.border_width;
+    if rect_flags & .LEFT        clip_rect.x += theme.border_width;
+    if rect_flags & .TOP         clip_rect.y += theme.border_width;
+    if rect_flags & .RIGHT       clip_rect.w -= theme.border_width;
+    if rect_flags & .BOTTOM      clip_rect.h -= theme.border_width;
 
     if should_clip       then push_clip(clip_rect);
     defer if should_clip then pop_clip();
