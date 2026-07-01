@@ -888,15 +888,28 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
 
     modified     := false;
 
-    selected_count := 0;
+    selected_count     := 0;
+    selection_builder  : String_Builder;
+
     for enum_name: ti.names {
         if (flag.* & cast(T) ti.values[it_index]) {
+
+            if selected_count > 0 {
+                append(*selection_builder, ", ");
+            }
+
+            append(*selection_builder, slice(enum_name, 0, 4));
             selected_count += 1;
         }
     }
 
-    placeholder_text := ifx placeholder placeholder else "<Choose>";
-    btn_label := sprint("% items selected", selected_count);
+    placeholder_text := ifx placeholder then placeholder else "<Choose>";
+
+
+    selected_names := builder_to_string(*selection_builder, do_reset = true);
+    defer free(selected_names);
+
+    btn_label := ifx selected_count > 0 sprint("(%) %", selected_count, selected_names) else sprint("Nothing selected");
     defer free(btn_label);
 
     button_label := ifx selected_count >= 0 btn_label else placeholder_text;
@@ -908,16 +921,17 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
     input_rect      := rect;
     input_rect.w    -= rect.h; // because of the right side (clear/caret).
 
+
     bg_color := get_color(state.status, theme.color.fg);
 
     font_size                 := theme.text_size;
     text_width, text_height   := get_text_size(font, button_label, xx font_size);
     text_rect                 := pad_rect(rect, button_padding, 0);
 
+
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
     y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
-
 
     if state.pressed {
         state.open = !state.open;
@@ -928,7 +942,17 @@ flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_i
 
     draw_rect(input_rect, bg_color, flags);
     draw_outline(input_rect, theme.color.border, theme.border_width, flags);
-    draw_text(button_label, x, y, font_size, theme.color.text);
+
+    should_clip := text_width > input_rect.w;
+
+    if should_clip push_clip(input_rect);
+
+    text_color := theme.color.text;
+    if selected_count <= 0 then text_color.w = 0.4;
+
+    draw_text(button_label, x, y, font_size, text_color);
+
+    if should_clip pop_clip();
 
     {
         right_flags := Rect_Flags.TOP | .RIGHT | .BOTTOM | .ROUND_TOP_RIGHT | .ROUND_BOTTOM_RIGHT;
