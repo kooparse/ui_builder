@@ -326,10 +326,10 @@ my_hex       :  u32 = 0xffffee;
 my_enum_flag := Entity_Flags.SOLID;
 toggle       := false;
 
-widgets_state       : Window_State;
-color_picker_state  : Window_State;
-undo_redo_state     : Window_State;
-theme_state         : Window_State;
+ed_widgets       : Window_State;
+ed_color_picker  : Window_State;
+ed_undo_redo     : Window_State;
+ed_theme         : Window_State;
 
 make_ui :: () -> UI_Draw_List {
 
@@ -350,7 +350,7 @@ make_ui :: () -> UI_Draw_List {
         replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
     }
 
-    if window_begin(*widgets_state, UI_Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
+    if window_begin(*ed_widgets, UI_Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
             gpu_time = get_last_frame_gpu_time() * 1000;
@@ -429,7 +429,7 @@ make_ui :: () -> UI_Draw_List {
 
             separator("Checkboxes");
 
-            checkbox(*color_picker_state.open, "Show Color Picker");
+            checkbox(*ed_color_picker.open, "Show Color Picker");
             checkbox(*translucent, "Translucent");
 
             separator("Buttons");
@@ -467,7 +467,7 @@ make_ui :: () -> UI_Draw_List {
         window_end();
     }
 
-    if window_begin(*theme_state, UI_Rect.{ 600, 10, 350, 400 } * dpi_scale, "Themes") {
+    if window_begin(*ed_theme, UI_Rect.{ 600, 10, 350, 400 } * dpi_scale, "Themes") {
 
         begin_column(2);
         if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
@@ -530,7 +530,7 @@ make_ui :: () -> UI_Draw_List {
     }
 
 
-    if window_begin(*color_picker_state, UI_Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
+    if window_begin(*ed_color_picker, UI_Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
 
         separator("Channels inputs, floating RGBA");
         rgba_input(*my_color, format = .FLOAT);
@@ -542,7 +542,7 @@ make_ui :: () -> UI_Draw_List {
         window_end();
     }
 
-    if window_begin(*undo_redo_state, UI_Rect.{ 10, 650, 300, 100 } * dpi_scale, "Undo/Redo") {
+    if window_begin(*ed_undo_redo, UI_Rect.{ 10, 650, 300, 100 } * dpi_scale, "Undo/Redo") {
         button("<");
         same_line();
         label("Entity moved");
@@ -656,7 +656,7 @@ default_sampler : GFX_Sampler_State;
 
 init_gfx_buffers :: () {
     stride       := size_of(UI_Vertex);
-    capacity     := cast(u64, stride * 54000);
+    capacity     := cast(u64, stride * 84000);
 
     for 0..MAX_FRAME_IN_FLIGHT - 1 {
         vertex_buffers[it] = create_gfx_buffer("UI Vertices", capacity, xx stride, null, .CPU_WRITE, .VERTEX_BUFFER);
@@ -725,7 +725,7 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
 #import "Hash";
 #import "Pixel_Maker"(MAX_FRAME_IN_FLIGHT = MAX_FRAME_IN_FLIGHT);
 
-#import, file "./src/module.jai";
+#import, file "./src/module.jai"(Texture_Type = GFX_Texture);
 
 using, except(NO) SDL :: #import "SDL";
 

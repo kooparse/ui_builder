@@ -111,6 +111,7 @@ update_size :: () {
 }
 
 Theme :: struct {
+    color                   := GRUVBOX_DARK;
     alpha                   := 1.0;
     input_cursor_size       := 2.;
     separator_size          := 1.0;
@@ -119,7 +120,6 @@ Theme :: struct {
     circle_sample           := 30;
     border_width            := 4.;
     text_size               := 18.;
-    color := LIPKO;
 };
 
 #scope_export;

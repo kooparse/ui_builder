@@ -2,7 +2,8 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
-    - way to scale everything based on ratio window_width/window_height?
+    - center vertically (undo/redo) and add vertical separator?
+    - glitch in dropdown item list.
     - better design for inputs, radius...
     - fix checkbox ellipsis
 
@@ -29,11 +30,11 @@
 
 */
 
+#module_parameters(Texture_Type: Type = void);
 
 #load "theme.jai";
 #load "font.jai";
 
-// Context.
 theme := DEFAULT_THEME;
 
 UI_Font :: Font;
@@ -47,14 +48,6 @@ operator == :: (a: Rect, b: Rect) -> bool {
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
-Window_State :: struct {
-    #as using state : Widget_State;
-
-    open     := true;
-    dragging : enum { NONE; MOVE_WINDOW; RESIZE_WINDOW; }
-};
-
-
 #scope_file;
 
 WHITE :: Vector4.{ 1, 1, 1, 1 };
@@ -63,7 +56,6 @@ WHITE :: Vector4.{ 1, 1, 1, 1 };
 UV_DISCARD :: Vector2.{ 0, 0 };
 
 UI_ID      :: int;
-UI_Texture :: *void;
 
 key_count       :: #run enum_names(UI_Key).count;
 key_state       : [key_count] UI_Key_Info;
@@ -85,7 +77,7 @@ context_ids     : [..] UI_ID;
 text_codepoint : string;
 
 draw_list       : UI_Draw_List;
-current_texture : UI_Texture;
+current_texture : *Texture_Type;
 
 mouse_x  : float;
 mouse_y  : float;
@@ -114,7 +106,7 @@ wheel_y  : float;
 
 // The current font.
 font         : *Font;
-font_texture : UI_Texture;
+font_texture : *Texture_Type;
 
 
 // @todo: rename.
@@ -129,6 +121,10 @@ prev_glyph_count := 0;
 glyph_count      := 0;
 
 wheel_scrolling_triggered := false;
+
+// initialized  := false;
+// ui_pool      : Flat_Pool;
+// ui_allocator : Allocator;
 
 
 UI_Key :: enum {
@@ -171,7 +167,7 @@ UI_Key_Info :: struct {
 Draw_Marker :: struct {
     clip_rect    : Rect;
     vertex_start : int;
-    texture      : UI_Texture;
+    texture      : *Texture_Type;
 };
 
 UI_Layout :: struct {
@@ -294,6 +290,15 @@ Expander_State :: struct {
 
 #scope_export;
 
+Window_State :: struct {
+    #as using state : Widget_State;
+
+    open     := true;
+    dragging : enum { NONE; MOVE_WINDOW; RESIZE_WINDOW; }
+
+    init     := false;
+};
+
 UI_Modifiers :: enum_flags {
     CTRL    :: 1 << 0;
     SHIFT   :: 1 << 1;
@@ -305,7 +310,7 @@ UI_Draw_Call :: struct {
     vertex_start : int;
     vertex_count : int;
     clip         : Rect;
-    texture      : UI_Texture;
+    texture      : *Texture_Type;
 };
 
 UI_Draw_List  :: struct {
@@ -331,7 +336,7 @@ set_theme :: (given_theme: Theme) {
     theme = given_theme;
 }
 
-set_font :: (font_to_set: *Font, font_texture_atlas: *void) -> bool {
+set_font :: (font_to_set: *Font, font_texture_atlas: *Texture_Type) -> bool {
     font            = font_to_set;
     font_texture    = font_texture_atlas;
 
@@ -428,13 +433,23 @@ update_io :: () {
 }
 
 ui_begin :: () {
-    update_size();
 
-    wheel_scrolling_triggered = false;
+    // if !initialized {
+    //     ui_allocator.proc = flat_pool_allocator_proc;
+    //     ui_allocator.data = *ui_pool;
+    //     initialized       = true;
+    // }
+
 
     now      := cast(float) seconds_since_init();
     dt        = now - prev_time;
     prev_time = now;
+
+
+    update_size();
+
+    wheel_scrolling_triggered = false;
+
 
     if font != null {
         prev_glyph_count = glyph_count;
@@ -542,13 +557,18 @@ Window_Flags :: enum_flags {
     ALL :: TITLE_BAR | CLOSABLE | MOVEABLE | RESIZABLE;
 };
 
-window_begin :: (state: *Window_State, region: Rect, title := "", flags := Window_Flags.ALL, loc := #caller_location) -> bool {
+window_begin :: (state: *Window_State, default_rect: Rect, title := "", flags := Window_Flags.ALL, loc := #caller_location) -> bool {
+    if !state.init {
+        state.rect = default_rect;
+        state.init = true;
+    }
+
+    id := make_id(loc, "window_widget");
+    state.widget_id = id;
+
+
     if !state.open return false;
 
-    id := make_id(loc, "_full_region");
-
-    state.widget_id = id;
-    state.rect      = region;
 
     is_new := push_layer(id, state.rect);
     // If window's layer was the topmost one of the last frame, we consider it as
@@ -904,7 +924,7 @@ dropdown_item :: (label: string, size := Vector2.{ -1, -1 }, selected := false, 
     text_rect := pad_rect(btn_rect, button_padding, 0);
 
     // Center text in button rect.
-    x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
+    x := text_rect.x + text_rect.w * 0.5 - text_width  * 0.5;
     y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
 
     offset := text_height * 0.15;
@@ -1839,7 +1859,7 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
 }
 
 
-button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null, toggle_value : *bool = null, loc := #caller_location) -> bool {
+button :: (label := "", size := Vector2.{ -1, -1 }, texture : *Texture_Type = null, toggle_value : *bool = null, loc := #caller_location) -> bool {
     text_width, text_height   := get_text_size(font, label, theme.text_size);
 
     button_size := size;
@@ -1851,7 +1871,7 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : UI_Texture = null,
 }
 
 // @todo: rename core_button?
-button :: (label := "", btn_rect : Rect, texture : UI_Texture = null, toggle_value : *bool = null, loc := #caller_location) -> bool {
+button :: (label := "", btn_rect : Rect, texture : *Texture_Type = null, toggle_value : *bool = null, loc := #caller_location) -> bool {
     defer navigation_widget_index += 1;
 
     id          := make_id(loc, label);
@@ -1883,7 +1903,7 @@ button :: (label := "", btn_rect : Rect, texture : UI_Texture = null, toggle_val
         draw_rect(btn_rect, bg_color, .ROUND_ALL);
 
         prev := set_texture(texture);
-        draw_rect(btn_rect, WHITE);
+        draw_img(btn_rect);
         set_texture(prev);
     } else {
         draw_rect(btn_rect, bg_color, .ROUND_ALL);
@@ -2301,8 +2321,7 @@ get_vertices :: () -> *[..] UI_Vertex {
     return *current_layer.vertices;
 }
 
-// @todo: let's review this func at some point, when we add real texture(not just font).
-set_texture :: (texture: UI_Texture) -> prev: UI_Texture {
+set_texture :: (texture: *Texture_Type) -> prev: *Texture_Type {
     prev_texture    := current_texture;
     current_texture  = texture;
 
@@ -2386,7 +2405,6 @@ alloc_space :: (widget_size: Vector2, gap_x := true, gap_y := true) -> Rect {
 
             if curr_column == 0 {
                 cursor.x     = 0;
-                // cursor.y    += ifx theme.row_height > 0 theme.row_height + my else prev_widget_size.y + my;
                 cursor.y    += ifx should_use_y then prev_widget_size.y + my else row_height + my;
                 curr_column += 1;
             } else {
@@ -2785,10 +2803,9 @@ get_uv :: (region: Rect, point: Vector2) -> Vector2 {
     };
 }
 
-draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
-
+draw_img :: (r: Rect, flags : Rect_Flags = .ALL_SIDES) {
     if flags == .ALL_SIDES {
-        internal_draw_rect(r, color, get_uv(r, r));
+        internal_draw_rect(r, WHITE, get_uv(r, r));
         return;
     }
 
@@ -2819,11 +2836,11 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
             uv1 := get_uv(r, p1);
             uv2 := get_uv(r, p2);
 
-            push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
+            push_triangle(p0, p1, p2, WHITE, uv0, uv1, uv2);
             prev = p2;
         }
     } else {
-        internal_draw_rect(top_left, color, get_uv(r, top_left));
+        internal_draw_rect(top_left, WHITE, get_uv(r, top_left));
     }
 
     if flags & .ROUND_TOP_RIGHT {
@@ -2840,11 +2857,11 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
             uv1 := get_uv(r, p1);
             uv2 := get_uv(r, p2);
 
-            push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
+            push_triangle(p0, p1, p2, WHITE, uv0, uv1, uv2);
             prev = p2;
         }
     } else {
-        internal_draw_rect(top_right, color, get_uv(r, top_right));
+        internal_draw_rect(top_right, WHITE, get_uv(r, top_right));
     }
 
     if flags & .ROUND_BOTTOM_LEFT {
@@ -2861,11 +2878,11 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
             uv1 := get_uv(r, p1);
             uv2 := get_uv(r, p2);
 
-            push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
+            push_triangle(p0, p1, p2, WHITE, uv0, uv1, uv2);
             prev = p2;
         }
     } else {
-        internal_draw_rect(bottom_left, color, get_uv(r, bottom_left));
+        internal_draw_rect(bottom_left, WHITE, get_uv(r, bottom_left));
     }
 
     if flags & .ROUND_BOTTOM_RIGHT {
@@ -2882,24 +2899,132 @@ draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
             uv1 := get_uv(r, p1);
             uv2 := get_uv(r, p2);
 
-            push_triangle(p0, p1, p2, color, uv0, uv1, uv2);
+            push_triangle(p0, p1, p2, WHITE, uv0, uv1, uv2);
             prev = p2;
         }
     } else {
-        internal_draw_rect(bottom_right, color, get_uv(r, bottom_right));
+        internal_draw_rect(bottom_right, WHITE, get_uv(r, bottom_right));
     }
 
     // To fill up the rest of the belly of the rounded corner, we can do that
     // with only 3 rects.
 
     center_middle := Rect.{ r.x + radius, r.y, r.w - (2 * radius), r.h };
-    internal_draw_rect(center_middle, color, get_uv(r, center_middle));
+    internal_draw_rect(center_middle, WHITE, get_uv(r, center_middle));
 
     right_middle := Rect.{ r.x, r.y + radius, radius, r.h - (2 * radius) };
-    internal_draw_rect(right_middle, color, get_uv(r, right_middle));
+    internal_draw_rect(right_middle, WHITE, get_uv(r, right_middle));
 
     left_middle := Rect.{ r.x + r.w - radius, r.y + radius, radius, r.h - (2 * radius) };
-    internal_draw_rect(left_middle, color, get_uv(r, left_middle));
+    internal_draw_rect(left_middle, WHITE, get_uv(r, left_middle));
+}
+
+draw_rect :: (r: Rect, color: Vector4, flags : Rect_Flags = .ALL_SIDES) {
+    if flags == .ALL_SIDES {
+        internal_draw_rect(r, color);
+        return;
+    }
+
+    // For rounded corners:
+    radius := ifx flags & .HALF_RADIUS theme.corner_radius * 0.5 else theme.corner_radius;
+    radius = min(radius, r.w * 0.5);
+    radius = min(radius, r.h * 0.5);
+
+    // For that, it means that each corner is a rect of radius dimension.
+
+    top_left     := Rect.{ r.x, r.y, radius, radius };
+    top_right    := Rect.{ r.x + r.w - radius, r.y, radius, radius };
+    bottom_left  := Rect.{ r.x, r.y + r.h - radius, radius, radius };
+    bottom_right := Rect.{ r.x + r.w - radius, r.y + r.h - radius, radius, radius };
+
+    if flags & .ROUND_TOP_LEFT {
+        p0 := xy(top_left.x + top_left.w, top_left.y + top_left.h);
+
+        prev := p0 + xy(0, -radius);                 // angle 0, top
+
+        for 1..theme.radius_sample {
+            theta  := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1     := prev;
+            p2     := p0 + xy(-sin(theta) * radius, -cos(theta) * radius);
+
+            push_triangle(p0, p1, p2, color);
+            prev = p2;
+        }
+    } else {
+        internal_draw_rect(top_left, color);
+    }
+
+    if flags & .ROUND_TOP_RIGHT {
+        p0 := xy(top_right.x, top_right.y + top_right.h);
+
+        prev := p0 + xy(0, -radius);
+        for 1..theme.radius_sample {
+            theta   := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1      := prev;
+            p2      := p0 + xy(sin(theta) * radius, -cos(theta) * radius);
+
+            push_triangle(p0, p1, p2, color);
+            prev = p2;
+        }
+    } else {
+        internal_draw_rect(top_right, color);
+    }
+
+    if flags & .ROUND_BOTTOM_LEFT {
+        p0 := xy(bottom_left.x + bottom_left.w, bottom_left.y);
+
+        prev := p0 + xy(0, radius);
+        for 1..theme.radius_sample {
+            theta   := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1      := prev;
+            p2      := p0 + xy(-sin(theta) * radius, cos(theta) * radius);
+
+            uv0 := get_uv(r, p0);
+            uv1 := get_uv(r, p1);
+            uv2 := get_uv(r, p2);
+
+            push_triangle(p0, p1, p2, color);
+            prev = p2;
+        }
+    } else {
+        internal_draw_rect(bottom_left, color);
+    }
+
+    if flags & .ROUND_BOTTOM_RIGHT {
+        p0 := xy(bottom_right.x, bottom_right.y);
+
+        prev := p0 + xy(0, radius);
+        for 1..theme.radius_sample {
+            theta   := (PI * 0.5) * (it / cast(float) theme.radius_sample);
+
+            p1      := prev;
+            p2      := p0 + xy(sin(theta) * radius, cos(theta) * radius);
+
+            uv0 := get_uv(r, p0);
+            uv1 := get_uv(r, p1);
+            uv2 := get_uv(r, p2);
+
+            push_triangle(p0, p1, p2, color);
+            prev = p2;
+        }
+    } else {
+        internal_draw_rect(bottom_right, color);
+    }
+
+    // To fill up the rest of the belly of the rounded corner, we can do that
+    // with only 3 rects.
+
+    center_middle := Rect.{ r.x + radius, r.y, r.w - (2 * radius), r.h };
+    internal_draw_rect(center_middle, color);
+
+    right_middle := Rect.{ r.x, r.y + radius, radius, r.h - (2 * radius) };
+    internal_draw_rect(right_middle, color);
+
+    left_middle := Rect.{ r.x + r.w - radius, r.y + radius, radius, r.h - (2 * radius) };
+    internal_draw_rect(left_middle, color);
 }
 
 draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := WHITE) {
@@ -2910,8 +3035,7 @@ draw_text :: (text: string, x: float, y: float, font_size := 16.0, color := WHIT
     using font;
     using metrics := get_font_metrics(font, xx font_size);
 
-    prev := set_texture(font_texture);
-    defer set_texture(prev);
+    set_texture(font_texture);
 
     prev_char   : u32;
     pen         := Vector2.{ 0, xx ascender };
@@ -2996,6 +3120,7 @@ internal_draw_gradiant :: (r: Rect, _c0: Vector4, _c1: Vector4, _c2: Vector4, _c
 }
 
 internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
+
     p0 := Vector2.{ r.x, r.y };
     p1 := Vector2.{ r.x + r.w, r.y };
     p2 := Vector2.{ r.x, r.y + r.h };
@@ -3052,6 +3177,7 @@ draw_caret :: (rect: Rect, color : Vector4, up: bool, thickness := 3.0) {
 #import "Basic";
 #import "Hash_Table";
 #import "Hash";
+#import "Flat_Pool";
 #import "Sort";
 #import "String";
 #import "Clipboard";
