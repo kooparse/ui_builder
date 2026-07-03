@@ -98,16 +98,16 @@ content_padding     := 0.;
 button_padding      := 0.;
 scrollbar_width     := 0.;
 input_padding       := 0.;
-margin_x            := 0.;
-margin_y            := 0.;
+gap_x               := 0.;
+gap_y               := 0.;
 
 update_size :: () {
     content_padding  = get_em(0.25);
     button_padding   = get_em(1.);
     scrollbar_width  = get_em(0.8);
     input_padding    = get_em(0.25);
-    margin_x         = get_em(0.25);
-    margin_y         = get_em(0.20);
+    gap_x            = get_em(0.25);
+    gap_y            = get_em(0.20);
 }
 
 Theme :: struct {

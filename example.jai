@@ -299,7 +299,7 @@ BLACK   :: Vector4.{ 0, 0, 0, 1 };
 TABS :: enum {
     TAB_1;
     TAB_2;
-    TAB_3;
+    LONG_TAB_NAME_TAB_3;
     TAB_4;
 };
 current_tab := TABS.TAB_1;
@@ -360,24 +360,29 @@ make_ui :: () -> UI_Draw_List {
         gpu_fmt := FormatFloat.{ value = gpu_time, trailing_width = 1 };
 
 
-        width := 140. * dpi_scale;
+        labels := string.["CPU:", "GPU:", "Draw calls:", "Vertex count:", "IO Captured:"];
+        width  := get_longest_text_width(labels) + get_em(0.5);
 
         set_width(width);
-        label("CPU:"); same_line(); label(tprint("%", dt_fmt));
+        label(labels[0]); same_line(); label(tprint("%", dt_fmt));
         set_width(width);
-        label("GPU:"); same_line(); label(tprint("%", gpu_fmt));
+        label(labels[1]); same_line(); label(tprint("%", gpu_fmt));
         set_width(width);
-        label("Draw calls:"); same_line(); label(tprint("%", last_draw_calls));
+        label(labels[2]); same_line(); label(tprint("%", last_draw_calls));
         set_width(width);
-        label("Vertex count:"); same_line(); label(tprint("%", last_vertex_count));
+        label(labels[3]); same_line(); label(tprint("%", last_vertex_count));
         set_width(width);
-        label("IO Captured:"); same_line(); label(tprint("%", io_captured()));
+        label(labels[4]); same_line(); label(tprint("%", io_captured()));
 
         label("Text size:");
         same_line();
         number_input(*text_size);
 
-        if ui_tab(enum_names(TABS), xx *current_tab) {
+        if button("disabled?", disabled = true) {
+            log("click!?");
+        }
+
+        if tab_menu(xx *current_tab, enum_names(TABS)) {
             log("Select Tab: %", enum_names(TABS)[current_tab]);
         }
 
@@ -386,7 +391,6 @@ make_ui :: () -> UI_Draw_List {
 
             placeholder := "Pick a plant...";
             select(*selected, plants, .{ 300, -1 } * dpi_scale, placeholder, max_items = 4);
-
             flag_select(*my_enum_flag, .{ 300, -1 } * dpi_scale, placeholder);
 
             separator("Button with img");
@@ -429,8 +433,12 @@ make_ui :: () -> UI_Draw_List {
 
             separator("Checkboxes");
 
+            begin_column(2);
             checkbox(*ed_color_picker.open, "Show Color Picker");
+            checkbox(*ed_theme.open, "Show Theme Picker");
+            checkbox(*ed_undo_redo.open, "Show Undo/Redo");
             checkbox(*translucent, "Translucent");
+            end_column();
 
             separator("Buttons");
 
@@ -532,7 +540,7 @@ make_ui :: () -> UI_Draw_List {
 
     if window_begin(*ed_color_picker, UI_Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
 
-        separator("Channels inputs, floating RGBA");
+        separator();
         rgba_input(*my_color, format = .FLOAT);
         separator("Channels inputs, integer RGBA");
         rgba_input(*my_color, format = .U8);

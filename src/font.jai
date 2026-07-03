@@ -130,8 +130,9 @@ get_font_metrics :: (using font : *Font, font_size : u32) -> Font_Metrics {
     return result;
 }
 
-get_text_size :: (using font: *Font, text: string, text_size: float, width_allowed := -1) -> width: float, height: float {
+get_text_size :: (using font: *Font, text: string, text_size: float) -> width: float, height: float {
     assert(font != null, "Current font not set.");
+    if !text return 0, 0;
 
     using metrics := get_font_metrics(font, xx text_size);
 
@@ -200,6 +201,7 @@ cursor_to_text_index :: (using font: *Font, text: string, text_size: float, curs
     return text_index;
 
 }
+
 
 free_font:: (using font: *Font) {
     FT_Done_Face(ft_face);
