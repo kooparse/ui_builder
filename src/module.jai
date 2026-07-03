@@ -2,6 +2,7 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
+    - select, use u32 and autocast as "selected_index" could crash everything...
     - disable input/button.
     - center vertically (undo/redo) and add vertical separator?
     - gradiant should vanish when content is at the bottom.
@@ -338,6 +339,10 @@ UI_Vertex :: struct {
 
 push_id :: inline (id: int) {
     array_add(*context_ids, id);
+}
+
+push_id :: inline (str: string) {
+    array_add(*context_ids, get_hash(str));
 }
 
 pop_id :: inline () {
@@ -1134,7 +1139,7 @@ Select_Flags :: enum_flags {
     ALL :: CLEARABLE | FILTER;
 };
 
-select :: (selected: *int, items: [] string, size := Vector2.{ -1, -1 }, placeholder := "", max_items := 3, flags := Select_Flags.ALL, loc := #caller_location) -> bool {
+select :: (selected: *int, items: [] string, size := Vector2.{ -1, -1 }, placeholder := "", max_items := 6, flags := Select_Flags.ALL, loc := #caller_location) -> bool {
     id      := make_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 

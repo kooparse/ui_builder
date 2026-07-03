@@ -539,7 +539,6 @@ make_ui :: () -> UI_Draw_List {
 
 
     if window_begin(*ed_color_picker, UI_Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
-
         separator();
         rgba_input(*my_color, format = .FLOAT);
         separator("Channels inputs, integer RGBA");
