@@ -2,6 +2,7 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
+    - Move window when click between its widgets.
     - Scroll in tabs.
     - Better y margin (collapser, first elem with tabs).
     - Fix some padding weirdness (aorund separator...).
@@ -15,11 +16,8 @@
     - better design for inputs, radius...
 
     - use some pool allocator
-    - rename margin to gap.
 
     TODO:
-    - better understanding for scrollbar
-    - better understanding for rounded corner.
     - Should makes radius samples relative to size.
 
     - Finish input text
@@ -193,17 +191,13 @@ Draw_Marker :: struct {
 UI_Layout :: struct {
     rect         : Rect;
 
-    cursor       : Vector2; // @todo: explain that.
-
-    // When layout changed, we have to reset a couple of things, like the
-    // "curr_column" or the cursor, and this variable is our way to notice it.
-    changed    := false;
+    cursor     : Vector2;
 
     columns    := 0;
 
-    should_inline    := false;
-    should_fullwidth := false;
-    should_use_width := 0.0;
+    should_inline      := false;
+    should_fullwidth   := false;
+    should_force_width := 0.0;
 
     // We compute after each alloc_space the total space our widgets takes
     // within its layout rect. Used notably for the scrollbar.
@@ -854,7 +848,7 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
     if state.open {
         bg_region  := rect;
         bg_region.y = rect.y + rect.h;
-        bg_region.h = state.computed_height + gap_y;
+        bg_region.h = state.computed_height + (gap_y * 4);
 
         color   := theme.color.border;
         color.w  = 0.6;
@@ -876,7 +870,7 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
         prev_layout      := set_layout(layout_rect);
         state.prev_layout = prev_layout;
 
-        current_layout().cursor.y += gap_y;
+        current_layout().cursor.y += (gap_y * 4);
     }
 
     return state.open;
@@ -893,7 +887,7 @@ end_expander :: () {
 
         restore_layout(curr_expander.prev_layout);
 
-        current_layer.layout.cursor.y += content_height + gap_y;
+        current_layer.layout.cursor.y += content_height + (gap_y * 4);
     }
 
     curr_expander = null;
@@ -1506,7 +1500,8 @@ hexa_input :: (color: *Vector4, loc := #caller_location) -> modified: bool {
 vec_input :: (value : *$T/.[Vector2, Vector3, Vector4, Quaternion], loc := #caller_location) -> modified: bool {
     height            := get_row_height();
 
-    input_width       := get_text_size(font, "999999", theme.text_size);
+    min_input_width   := get_text_size(font, "9999", theme.text_size);
+    input_width       := min_input_width;
     prefix_width      := height * 0.6;
 
     widget_size := Vector2.{ (prefix_width + input_width + gap_x) * value.component.count, height };
@@ -1514,6 +1509,7 @@ vec_input :: (value : *$T/.[Vector2, Vector3, Vector4, Quaternion], loc := #call
 
     // Takes available space.
     input_width = (widget_rect.w - (prefix_width + gap_x) * value.component.count) / value.component.count;
+    input_width = max(min_input_width, input_width);
 
     // internal_draw_rect(widget_rect, Vector4.{1, 1, 1, 0.6});
 
@@ -1582,7 +1578,8 @@ Color_Format :: enum {
 rgba_input :: (value : *$T/.[Vector3, Vector4], format := Color_Format.FLOAT, loc := #caller_location) -> modified: bool {
     height            := get_row_height();
 
-    input_width       := get_text_size(font, "99999", theme.text_size);
+    min_input_width   := get_text_size(font, "9999", theme.text_size);
+    input_width       := min_input_width;
     prefix_width      := height * 0.6;
     result_rect_width := height;
 
@@ -1591,6 +1588,7 @@ rgba_input :: (value : *$T/.[Vector3, Vector4], format := Color_Format.FLOAT, lo
 
     // Takes available space.
     input_width = (widget_rect.w - result_rect_width - (prefix_width + gap_x) * value.component.count) / value.component.count;
+    input_width = max(input_width, min_input_width);
 
     // internal_draw_rect(widget_rect, Vector4.{1, 1, 1, 0.6});
 
@@ -1959,7 +1957,7 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
     }
 
 
-    rect := alloc_space(content_size);
+    rect := alloc_space(content_size, strict = false);
     mutate_state(state, rect);
 
     modified := false;
@@ -2099,7 +2097,7 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : *Texture_Type = nu
 }
 
 // @todo: rename core_button?
-button :: (label := "", btn_rect : Rect, texture : *Texture_Type = null, toggle_value : *bool = null, disabled := false, loc := #caller_location) -> bool {
+button :: (label := "", btn_rect : UI_Rect, texture : *Texture_Type = null, toggle_value : *bool = null, disabled := false, loc := #caller_location) -> bool {
     defer navigation_widget_index += 1;
 
     id          := make_id(loc, label);
@@ -2189,9 +2187,9 @@ set_width :: (number := 0.5) {
     layout := current_layout();
 
     if number <= 1.0 {
-        layout.should_use_width = layout.rect.w * number;
+        layout.should_force_width = layout.rect.w * number;
     } else {
-        layout.should_use_width = number;
+        layout.should_force_width = number;
     }
 
 }
@@ -2541,9 +2539,8 @@ make_id :: (loc: Source_Code_Location, extra := "") -> u32 {
     h  = sdbm_hash(*loc.line_number, size_of(type_of(loc.line_number)), h);
     h  = sdbm_hash(*loc.character_number, size_of(type_of(loc.character_number)), h);
 
-    if context_ids {
-        id := peek(context_ids);
-        h  = sdbm_hash(*id, size_of(type_of(UI_ID)), h);
+    for ctx_id: context_ids {
+        h = sdbm_hash(*ctx_id, size_of(type_of(UI_ID)), h);
     }
 
     if extra {
@@ -2635,12 +2632,14 @@ raise_layer :: (id: UI_ID) {
     log("Want to raise window : % :: %", id, current_layer.depth);
 }
 
-alloc_space :: (widget_size: Vector2) -> Rect {
+alloc_space :: (widget_size: Vector2, strict := true) -> Rect {
     using layout := current_layout();
 
-    size    := widget_size;
-    size.x   = ifx size.x <= 0 get_em(2) * 2 else size.x;
-    size.y   = max(get_row_height(), size.y);
+    min_size    := widget_size;
+    min_size.x   = ifx min_size.x <= 0 get_em(2) * 2 else min_size.x;
+    min_size.y   = max(get_row_height(), min_size.y);
+
+    size := min_size;
 
     row_height := get_row_height();
     should_use_y := prev_widget_size.y > row_height;
@@ -2696,9 +2695,9 @@ alloc_space :: (widget_size: Vector2) -> Rect {
         should_fullwidth = false;
     }
 
-    if should_use_width > 0 {
-        size.x           = should_use_width;
-        should_use_width = 0;
+    if should_force_width > 0 {
+        size.x           = should_force_width;
+        should_force_width = 0;
     }
 
     r := Rect.{ base_x + cursor.x, base_y + cursor.y, size.x, size.y };
@@ -2710,8 +2709,12 @@ alloc_space :: (widget_size: Vector2) -> Rect {
 
     prev_widget_size = Vector2.{ size.x, size.y };
 
-    layout.content_width  = max(layout.content_width, cursor.x + size.x);
-    layout.content_height = max(layout.content_height, cursor.y + size.y);
+    if !strict {
+        min_size = size;
+    }
+
+    layout.content_width  = max(layout.content_width, cursor.x + min_size.x);
+    layout.content_height = max(layout.content_height, cursor.y + min_size.y);
 
     return r;
 }

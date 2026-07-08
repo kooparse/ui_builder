@@ -404,14 +404,15 @@ make_ui :: () -> UI_Draw_List {
             separator("Button with img");
 
             ratio := cast(float, playstation_icon.width) / cast(float, playstation_icon.height);
-            if button(texture = xx *playstation_icon, size = .{ 40 * ratio * dpi_scale, 40 * dpi_scale }) {
+            h := 40.0;
+            if button(texture = xx *playstation_icon, size = .{ h * ratio * dpi_scale, h * dpi_scale }) {
                 log("playstation!");
             }
 
             same_line();
 
             ratio = cast(float, xbox_icon.width) / cast(float, xbox_icon.height);
-            if button(texture = xx *xbox_icon, size = .{ 40 * ratio * dpi_scale, 40 * dpi_scale }) {
+            if button(texture = xx *xbox_icon, size = .{ h * ratio * dpi_scale, h * dpi_scale }) {
                 log("xbox!");
             }
 
@@ -438,14 +439,10 @@ make_ui :: () -> UI_Draw_List {
             }
 
 
-            set_width(row_start);
-            label("Float input:");
-            same_line();
+            field("Float input", row_start);
             number_input(*my_float);
 
-            set_width(row_start);
-            label("Int input:");
-            same_line();
+            field("Int input", row_start);
             number_input(*my_int);
 
             separator("Checkboxes");
@@ -502,7 +499,7 @@ make_ui :: () -> UI_Draw_List {
 
         separator("Custom values");
 
-        width := 150. * dpi_scale;
+        width := 0.3;
 
         set_width(width);
         label("bg");
@@ -548,8 +545,6 @@ make_ui :: () -> UI_Draw_List {
         label("blue");
         same_line();
         hexa_input(*custom_theme.blue);
-
-
 
         window_end();
     }
