@@ -2,8 +2,15 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
+    - Scroll in tabs.
+    - Better y margin (collapser, first elem with tabs).
+    - Fix some padding weirdness (aorund separator...).
+    - Ability to get the layout of a window.
+    - Add wrap mode.
+    - If no scrollbar, remove scrollbar width
+    - ellipsis on label when set_width is set.
     - select, use u32 and autocast as "selected_index" could crash everything...
-    - disable input/button.
+    - disable input/button, region...
     - center vertically (undo/redo) and add vertical separator?
     - gradiant should vanish when content is at the bottom.
     - glitch in dropdown item list.
@@ -962,13 +969,16 @@ dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc :=
 
 }
 
-flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_items := 3, loc := #caller_location) -> modified: bool {
+flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_items := 6, loc := #caller_location) -> modified: bool {
+    ti := cast(*Type_Info_Enum) T;
+    return flag_select(flag, ti, size, placeholder, max_items, loc);
+}
+
+flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, placeholder := "", max_items := 6, loc := #caller_location) -> modified: bool {
     id      := make_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 
     item_height := get_row_height() * 0.8;
-
-    ti := cast(*Type_Info_Enum) T;
 
     modified     := false;
 
@@ -1136,14 +1146,23 @@ Select_Flags :: enum_flags {
     CLEARABLE;
     FILTER;
 
-    ALL :: CLEARABLE | FILTER;
+    ALL  :: CLEARABLE | FILTER;
+    NONE :: 0;
 };
 
-select :: (selected: *int, items: [] string, size := Vector2.{ -1, -1 }, placeholder := "", max_items := 6, flags := Select_Flags.ALL, loc := #caller_location) -> bool {
+select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placeholder := "", max_items := 6, flags := Select_Flags.ALL, loc := #caller_location) -> bool
+#modify {
+    ti := cast(*Type_Info) T;
+    return ti.type == .INTEGER || ti.type == .ENUM;
+} {
     id      := make_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 
     placeholder_text := ifx placeholder placeholder else "<Choose>";
+
+    // Because
+    ti := cast(*Type_Info_Integer) T;
+    if ti.signed flags &= ~.CLEARABLE;
 
     select_size := size;
     if size.x <= 0 {
@@ -1237,7 +1256,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ -1, -1 }, placeho
             hover_strength, press_strength := update_times(btn_state);
 
             if btn_state.status & .PRESSED {
-                selected.*        = -1;
+                selected.*        = cast, no_check(T) -1;
                 modified          = true;
                 state.open        = false;
                 state.want_search = false;
@@ -1317,7 +1336,7 @@ select :: (selected: *int, items: [] string, size := Vector2.{ -1, -1 }, placeho
             defer pop_id();
 
             if dropdown_item(it, item_rect) {
-                selected.*        = it_index;
+                selected.*        = cast(T) it_index;
                 modified          = true;
                 state.open        = false;
                 state.want_search = false;
@@ -1415,6 +1434,8 @@ hexa_input :: (color: *Vector4, loc := #caller_location) -> modified: bool {
     widget_width := Vector2.{ prefix_width + input_width + gap_x + result_width, height };
     widget_rect  := alloc_space(widget_width);
 
+    input_width = (widget_rect.w - result_width - (prefix_width + gap_x));
+
     x := widget_rect.x;
     y := widget_rect.y;
 
@@ -1461,6 +1482,75 @@ hexa_input :: (color: *Vector4, loc := #caller_location) -> modified: bool {
     return modified;
 }
 
+vec_input :: (value : *$T/.[Vector2, Vector3, Vector4, Quaternion], loc := #caller_location) -> modified: bool {
+    height            := get_row_height();
+
+    input_width       := get_text_size(font, "999999", theme.text_size);
+    prefix_width      := height * 0.6;
+
+    widget_size := Vector2.{ (prefix_width + input_width + gap_x) * value.component.count, height };
+    widget_rect := alloc_space(widget_size);
+
+    // Takes available space.
+    input_width = (widget_rect.w - (prefix_width + gap_x) * value.component.count) / value.component.count;
+
+    // internal_draw_rect(widget_rect, Vector4.{1, 1, 1, 0.6});
+
+    x := widget_rect.x;
+    y := widget_rect.y;
+
+    modified := false;
+
+    for * value.component {
+        push_id(it_index);
+        defer pop_id();
+
+        rect := Rect.{ x, y, prefix_width, height };
+        x    += rect.w;
+
+        mask := (Rect_Flags.ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT);
+
+        color   : Vector4;
+        text    : string;
+
+        if it_index == {
+            case 0;
+                color = theme.color.red;
+                text  = "X";
+            case 1;
+                color = theme.color.green;
+                text  = "Y";
+            case 2;
+                color = theme.color.blue;
+                text  = "Z";
+            case 3;
+                color = theme.color.blue;
+                text  = "W";
+        }
+
+        draw_rect(rect, color, mask);
+
+        c := theme.color.border;
+        c.w = 0.4;
+        draw_outline(rect, c, theme.border_width, .TOP | .BOTTOM | .LEFT | .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT);
+
+        text_size := theme.text_size * 0.6;
+        text_width, text_height := get_text_size(font, text, text_size);
+
+        draw_text(text, rect.x + rect.w * 0.5 - text_width * 0.5, rect.y + rect.h * 0.5 - text_height * 0.5, text_size, lighten(color, 90));
+
+        flags := Rect_Flags.TOP | .RIGHT | .BOTTOM | .ROUND_TOP_RIGHT | .ROUND_BOTTOM_RIGHT;
+
+        input_rect := Rect.{ x, y, input_width, height };
+        x += input_rect.w + gap_x;
+
+        if number_input(it, rect = input_rect, flags = flags, loc) {
+            modified = true;
+        }
+    }
+
+    return modified;
+}
 
 // @todo: not great "u8" to define the color format...
 Color_Format :: enum {
@@ -1468,20 +1558,25 @@ Color_Format :: enum {
     U8;
 };
 
-rgba_input :: (value : *Vector4, format := Color_Format.FLOAT, loc := #caller_location) -> modified: bool {
+rgba_input :: (value : *$T/.[Vector3, Vector4], format := Color_Format.FLOAT, loc := #caller_location) -> modified: bool {
     height            := get_row_height();
 
     input_width       := get_text_size(font, "99999", theme.text_size);
     prefix_width      := height * 0.6;
     result_rect_width := height;
 
-    widget_size := Vector2.{ (prefix_width + input_width + gap_x) * 4 + result_rect_width, height };
+    widget_size := Vector2.{ (prefix_width + input_width + gap_x) * value.component.count + result_rect_width, height };
     widget_rect := alloc_space(widget_size);
+
+    // Takes available space.
+    input_width = (widget_rect.w - result_rect_width - (prefix_width + gap_x) * value.component.count) / value.component.count;
 
     // internal_draw_rect(widget_rect, Vector4.{1, 1, 1, 0.6});
 
     x := widget_rect.x;
     y := widget_rect.y;
+
+    modified := false;
 
     for * value.component {
         push_id(it_index);
@@ -1531,6 +1626,7 @@ rgba_input :: (value : *Vector4, format := Color_Format.FLOAT, loc := #caller_lo
                 val := clamp(it.*, 0, 1);
                 if number_input(*val, rect = input_rect, flags = flags, loc) {
                     it.* = val;
+                    modified = true;
                 }
 
             case .U8;
@@ -1542,6 +1638,8 @@ rgba_input :: (value : *Vector4, format := Color_Format.FLOAT, loc := #caller_lo
                     } else {
                         it.* = val;
                     }
+
+                    modified = true;
                 }
         }
 
@@ -1551,7 +1649,7 @@ rgba_input :: (value : *Vector4, format := Color_Format.FLOAT, loc := #caller_lo
     draw_rect(rect, value.*, .ROUND_ALL);
     draw_outline(rect, theme.color.border, theme.border_width, .ROUND_ALL);
 
-    return false;
+    return modified;
 }
 
 // @todo: Ability to use all integers... and then we clamp to their min/max.
@@ -1800,7 +1898,7 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
 }
 
 radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> bool {
-    changed := false;
+    modified := false;
 
     for items {
         push_id(it_index);
@@ -1809,7 +1907,7 @@ radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> boo
         checked := it_index == index.*;
 
         if checkbox(*checked, text_label = it) {
-            changed = true;
+            modified = true;
         }
 
         if checked {
@@ -1817,7 +1915,7 @@ radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> boo
         }
     }
 
-    return changed;
+    return modified;
 }
 
 checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modified: bool {
@@ -1961,6 +2059,13 @@ image :: (texture: *Texture_Type, size := Vector2.{ -1, -1 }, rect_flags:= Rect_
     draw_img(rect, rect_flags);
 }
 
+field :: (text_label : string, width := 0.5) {
+    set_width(width);
+    label(text_label);
+    same_line();
+    full_width();
+}
+
 button :: (label := "", size := Vector2.{ -1, -1 }, texture : *Texture_Type = null, toggle_value : *bool = null, disabled := false, loc := #caller_location) -> bool {
     text_width, text_height   := get_text_size(font, label, theme.text_size);
 
@@ -2046,6 +2151,7 @@ button :: (label := "", btn_rect : Rect, texture : *Texture_Type = null, toggle_
     return status & .PRESSED != 0;
 }
 
+// @todo: used?
 get_color :: (status: Widget_Status, color: Vector4) -> Vector4 {
     if status & .PRESSED || status & .DOWN || status & .FOCUSED return lighten(color, 25);
     if status & .HOVERED return lighten(color, 10);

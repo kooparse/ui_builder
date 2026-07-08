@@ -326,6 +326,10 @@ my_hex       :  u32 = 0xffffee;
 my_enum_flag := Entity_Flags.SOLID;
 toggle       := false;
 
+position     := Vector3.{ 0.5, 12.3, 3.4 };
+rotation     := Quaternion.{ 0.7, 0, 0, 1 };
+scaler       := Vector3.{ 2, 2, 2 };
+
 ed_widgets       : Window_State;
 ed_color_picker  : Window_State;
 ed_undo_redo     : Window_State;
@@ -382,6 +386,10 @@ make_ui :: () -> UI_Draw_List {
             log("click!?");
         }
 
+        if button("disabled?", disabled = true) {
+            log("click!?");
+        }
+
         if tab_menu(xx *current_tab, enum_names(TABS)) {
             log("Select Tab: %", enum_names(TABS)[current_tab]);
         }
@@ -410,6 +418,15 @@ make_ui :: () -> UI_Draw_List {
             separator("Inputs");
 
             row_start := 140. * dpi_scale;
+
+            field("Position", 0.3);
+            vec_input(*position);
+
+            field("quaternion", 0.3);
+            vec_input(*rotation);
+
+            field("Scale", 0.3);
+            vec_input(*scaler);
 
             set_width(row_start);
             label("text input:");
@@ -539,10 +556,13 @@ make_ui :: () -> UI_Draw_List {
 
 
     if window_begin(*ed_color_picker, UI_Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
-        separator();
+        full_width();
         rgba_input(*my_color, format = .FLOAT);
+
         separator("Channels inputs, integer RGBA");
+        full_width();
         rgba_input(*my_color, format = .U8);
+
         separator("Channels inputs, hexadecimal");
         hexa_input(*my_color);
 
@@ -556,7 +576,6 @@ make_ui :: () -> UI_Draw_List {
         same_line();
         button(">");
     }
-
 
 
     ui_end();
