@@ -7,7 +7,6 @@
     - Fix some padding weirdness (aorund separator...).
     - Ability to get the layout of a window.
     - Add wrap mode.
-    - If no scrollbar, remove scrollbar width
     - select, use u32 and autocast as "selected_index" could crash everything...
     - disable input/button, region...
     - center vertically (undo/redo) and add vertical separator?
@@ -294,6 +293,9 @@ Scrollbar_State :: struct {
     #as using state : Widget_State;
 
     scroll          : Vector2;
+
+    has_scrollbar_x : bool;
+    has_scrollbar_y : bool;
 
     dragging_x : bool;
     dragging_y : bool;
@@ -741,8 +743,8 @@ window_begin :: (state: *Window_State, default_rect: Rect, title := "", flags :=
     layer_rect   := state.rect;
     layer_rect.x += content_padding;
     layer_rect.y += window_title_bar_height + content_padding;
-    layer_rect.w -= scrollbar_width + content_padding * 2;
-    layer_rect.h -= (scrollbar_width + window_title_bar_height + content_padding * 2);
+    layer_rect.w -= content_padding * 2;
+    layer_rect.h -= (window_title_bar_height + content_padding * 2);
 
     layer_rect = pad_rect(layer_rect, theme.border_width, theme.border_width);
 
@@ -965,7 +967,6 @@ dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc :=
     }
 
     return status & .PRESSED != 0;
-
 }
 
 flag_select :: (flag: *$T, size := Vector2.{ 100, -1 }, placeholder := "", max_items := 6, loc := #caller_location) -> modified: bool {
@@ -1100,14 +1101,16 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
 
         layer_rect   := dropdown_rect;
         layer_rect.x += theme.border_width;
-        layer_rect.w -= scrollbar_width + theme.border_width * 2;
+        layer_rect.w -= theme.border_width * 2;
         layer_rect.h -= theme.border_width;
 
         set_layout(layer_rect);
 
+        layout := current_layout();
+
         scroll := begin_scroll(loc);
 
-        items_region := alloc_space(.{ layer_rect.w, item_height * ti.names.count });
+        items_region := alloc_space(.{ layout.rect.w, item_height * ti.names.count });
 
         item_rect  := items_region;
         item_rect.h = item_height;
@@ -1312,15 +1315,16 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
 
         layer_rect   := dropdown_rect;
         layer_rect.x += theme.border_width;
-        layer_rect.w -= scrollbar_width + theme.border_width * 2;
+        layer_rect.w -= theme.border_width * 2;
         layer_rect.h -= theme.border_width;
 
         set_layout(layer_rect);
 
+        layout := current_layout();
+
         scroll := begin_scroll(loc);
 
-
-        items_region := alloc_space(.{ layer_rect.w, item_height * items.count });
+        items_region := alloc_space(.{ layout.rect.w, item_height * items.count });
 
         item_rect  := items_region;
         item_rect.h = item_height;
@@ -2318,7 +2322,17 @@ begin_scroll :: (loc := #caller_location) -> *Scrollbar_State {
     id      := make_id(loc, "scrollbar");
     state   := get_widget_state(Scrollbar_State, id);
 
-    current_layout().scroll = state.scroll;
+    layout := current_layout();
+
+    layout.scroll = state.scroll;
+
+    if state.has_scrollbar_y {
+        layout.rect.w -= scrollbar_width;
+    }
+
+    if state.has_scrollbar_x {
+        layout.rect.h -= scrollbar_width;
+    }
 
     return state;
 }
@@ -2330,7 +2344,6 @@ end_scroll :: (state: *Scrollbar_State) {
 
     scroll      := *state.scroll;
     prev_layout := current_layer.prev_layout;
-
 
     {
         // We compute the actual content size from the previous frame.
@@ -2347,6 +2360,8 @@ end_scroll :: (state: *Scrollbar_State) {
             scroll.y += xx wheel_y;
             scroll.y = clamp(scroll.y, 0.0, max_scroll);
         }
+
+        state.has_scrollbar_y = max_scroll > 0;
 
         if max_scroll > 0 {
             track_h  := layout.rect.h;
@@ -2399,6 +2414,8 @@ end_scroll :: (state: *Scrollbar_State) {
 
         max_scroll  := max(0.0, content_w - visible_w);
         scroll.x     = clamp(scroll.x, 0.0, max_scroll);
+
+        state.has_scrollbar_x = max_scroll > 6;
 
         if max_scroll > 6 {
             track_w  := layout.rect.w;
