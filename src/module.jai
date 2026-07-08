@@ -2,14 +2,13 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
+    - disable input/button, region...
     - Move window when click between its widgets.
     - Scroll in tabs.
     - Better y margin (collapser, first elem with tabs).
-    - Fix some padding weirdness (aorund separator...).
     - Ability to get the layout of a window.
     - Add wrap mode.
     - select, use u32 and autocast as "selected_index" could crash everything...
-    - disable input/button, region...
     - center vertically (undo/redo) and add vertical separator?
     - gradiant should vanish when content is at the bottom.
     - glitch in dropdown item list.
@@ -47,6 +46,10 @@ UI_Rect :: Rect;
 
 operator * :: (rect: Rect, scaler: float) -> Rect {
     return .{ rect.x * scaler, rect.y * scaler, rect.w * scaler, rect.h * scaler };
+}
+
+operator / :: (rect: Rect, scaler: float) -> Rect {
+    return .{ rect.x / scaler, rect.y / scaler, rect.w / scaler, rect.h / scaler };
 }
 
 operator == :: (a: Rect, b: Rect) -> bool {
@@ -140,6 +143,8 @@ glyph_count      := 0;
 
 wheel_scrolling_triggered := false;
 
+global_disabled := false;
+
 // initialized  := false;
 // ui_pool      : Flat_Pool;
 // ui_allocator : Allocator;
@@ -194,6 +199,8 @@ UI_Layout :: struct {
     cursor     : Vector2;
 
     columns    := 0;
+
+    row_max_height := 0.;
 
     should_inline      := false;
     should_fullwidth   := false;
@@ -780,7 +787,13 @@ window_end :: (loc := #caller_location) {
 }
 
 
+begin_disable_all :: () {
+    global_disabled = true;
+}
 
+end_disable_all :: () {
+    global_disabled = false;
+}
 
 begin_expander :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
     id          := make_id(loc);
@@ -1957,6 +1970,8 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
     }
 
 
+    layout := current_layout();
+
     rect := alloc_space(content_size, strict = false);
     mutate_state(state, rect);
 
@@ -1968,11 +1983,19 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
     }
 
     inner_color := get_color(state.status, ifx checked.* then theme.color.accent else theme.color.text_muted);
+    bg_color    := theme.color.bg;
+
+    if global_disabled {
+        bg_color    = disable(bg_color, 1.0);
+        inner_color = disable(inner_color, 0.8);
+    }
+
+    row_height := max(layout.row_max_height, rect.h);
 
     radius  := checkbox_size * 0.5;
-    pos     := xy(rect.x + radius, rect.y + rect.h * 0.5);
+    pos     := xy(rect.x + radius, rect.y + row_height * 0.5);
 
-    draw_circle(pos, radius, theme.color.bg);
+    draw_circle(pos, radius, bg_color);
     draw_circle_outline(pos, radius, theme.border_width, inner_color);
 
     if checked.* == true {
@@ -1982,9 +2005,7 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
 
     if text_label {
         pos.x += checkbox_size - radius + content_padding;
-        pos.y  = rect.y + rect.h * 0.5 - text_height * 0.5;
-
-        layout := current_layout();
+        pos.y  = rect.y + row_height * 0.5 - text_height * 0.5;
 
         // @note: If the layout currently has columns, we set want to computed
         //        the leftover against the cell width. If not, we currently do it
@@ -2096,14 +2117,15 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : *Texture_Type = nu
     return button(label, btn_rect, texture, toggle_value, disabled, loc);
 }
 
-// @todo: rename core_button?
-button :: (label := "", btn_rect : UI_Rect, texture : *Texture_Type = null, toggle_value : *bool = null, disabled := false, loc := #caller_location) -> bool {
+button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_value : *bool = null, disabled := false, loc := #caller_location) -> bool {
     defer navigation_widget_index += 1;
 
     id          := make_id(loc, label);
-    using state := get_widget_state(Button_State, id);
+    state := get_widget_state(Button_State, id);
 
-    mutate_state(state, btn_rect);
+    using, except(rect) state;
+
+    mutate_state(state, rect);
     if disabled state.status &= ~(.PRESSED | .DOWN);
 
     hover_strength, press_strength := update_times(state);
@@ -2117,36 +2139,38 @@ button :: (label := "", btn_rect : UI_Rect, texture : *Texture_Type = null, togg
 
     is_activated := status == .FOCUSED || status == .PRESSED;
 
-    color  := *theme.color;
-    colors := ifx color then color.* else theme.color;
+    color := theme.color;
 
-    border_color := colors.border;
-
-    fg_color := ifx toggle_value != null && toggle_value.* colors.accent else colors.fg;
+    fg_color := ifx toggle_value != null && toggle_value.* color.accent else color.fg;
     bg_color := lerp(fg_color, lighten(fg_color, 10), hover_strength);
-    bg_color = lerp(bg_color, lighten(fg_color, 30), press_strength);
+    bg_color  = lerp(bg_color, lighten(fg_color, 30), press_strength);
+
+    if disabled || global_disabled {
+        bg_color    = disable(bg_color, 1.0);
+        color.text  = disable(color.text, 0.8);
+    }
 
     if texture {
-        draw_rect(btn_rect, bg_color, .ROUND_ALL);
+        draw_rect(rect, bg_color, .ROUND_ALL);
 
         prev := set_texture(texture);
-        draw_img(btn_rect);
+        draw_img(rect);
         set_texture(prev);
     } else {
-        draw_rect(btn_rect, bg_color, .ROUND_ALL);
+        draw_rect(rect, bg_color, .ROUND_ALL);
     }
 
     if toggle_value != null  {
         if toggle_value.* {
-            draw_outline(btn_rect, darken(theme.color.accent, 20), theme.border_width, .ROUND_ALL);
+            draw_outline(rect, darken(theme.color.accent, 20), theme.border_width, .ROUND_ALL);
         } else {
-            draw_outline(btn_rect, theme.color.border, theme.border_width, .ROUND_ALL);
+            draw_outline(rect, theme.color.border, theme.border_width, .ROUND_ALL);
         }
     }
 
     if label {
         text_width, text_height   := get_text_size(font, label, theme.text_size);
-        text_rect                 := pad_rect(btn_rect, button_padding, 0);
+        text_rect                 := pad_rect(rect, button_padding, 0);
 
         // Center text in button rect.
         x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -2157,14 +2181,14 @@ button :: (label := "", btn_rect : UI_Rect, texture : *Texture_Type = null, togg
         x = lerp(x, x + offset, press_strength);
         y = lerp(y, y + offset, press_strength);
 
-        text_too_big := btn_rect.w < text_width;
-        if text_too_big push_clip(btn_rect);
-        draw_text(label, x, y, theme.text_size, colors.text);
+        text_too_big := rect.w < text_width;
+        if text_too_big push_clip(rect);
+        draw_text(label, x, y, theme.text_size, color.text);
         if text_too_big pop_clip();
     }
 
     if curr_navigation_widget == navigation_widget_index {
-        draw_outline(btn_rect, theme.color.blue, theme.border_width, .ROUND_ALL);
+        draw_outline(rect, theme.color.blue, theme.border_width, .ROUND_ALL);
     }
 
     return status & .PRESSED != 0;
@@ -2309,8 +2333,11 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
         if is_pressed(.MOUSE_LEFT) {
             status |= .PRESSED;
         }
-    }
 
+        if global_disabled {
+            status &= ~(.PRESSED | .DOWN);
+        }
+    }
 
 
     return status;
@@ -2641,10 +2668,13 @@ alloc_space :: (widget_size: Vector2, strict := true) -> Rect {
 
     size := min_size;
 
-    row_height := get_row_height();
-    should_use_y := prev_widget_size.y > row_height;
+    is_first     := prev_widget_size.x <= 0 && prev_widget_size.y <= 0;
+    was_inline   := layout.should_inline;
 
-    if prev_widget_size.x > 0 || prev_widget_size.y > 0 {
+    // Use the biggest widget height as row height.
+    row_height   := max(row_max_height, get_row_height());
+
+    if !is_first {
         if layout.columns > 0 {
             layout_width := layout.rect.w;
 
@@ -2653,7 +2683,7 @@ alloc_space :: (widget_size: Vector2, strict := true) -> Rect {
 
             if curr_column == 0 {
                 cursor.x     = 0;
-                cursor.y    += ifx should_use_y then prev_widget_size.y + gap_y else row_height + gap_y;
+                cursor.y    += row_height + gap_y;
                 curr_column += 1;
             } else {
                 cursor.x    += ifx curr_column > 0 col_width else 0;
@@ -2669,7 +2699,7 @@ alloc_space :: (widget_size: Vector2, strict := true) -> Rect {
             layout.should_inline = false;
         } else {
             cursor.x  = 0;
-            cursor.y += ifx should_use_y then prev_widget_size.y + gap_y else row_height + gap_y;
+            cursor.y += row_height + gap_y;
             layout.should_inline = false;
         }
 
@@ -2696,7 +2726,7 @@ alloc_space :: (widget_size: Vector2, strict := true) -> Rect {
     }
 
     if should_force_width > 0 {
-        size.x           = should_force_width;
+        size.x             = should_force_width;
         should_force_width = 0;
     }
 
@@ -2706,6 +2736,14 @@ alloc_space :: (widget_size: Vector2, strict := true) -> Rect {
     r.y = round_pixel(r.y);
     r.w = round_pixel(r.w);
     r.h = round_pixel(r.h);
+
+    start_new_row := is_first || (!was_inline && curr_column <= 1);
+
+    if start_new_row {
+        layout.row_max_height = size.y;
+    } else {
+        layout.row_max_height = max(layout.row_max_height, size.y);
+    }
 
     prev_widget_size = Vector2.{ size.x, size.y };
 
@@ -2769,6 +2807,18 @@ lighten :: (color: Vector4, percent : float) -> Vector4 {
     lighter.z = lerp(lighter.z, 1.0, t);
 
     return lighter;
+}
+
+disable :: (color: Vector4, amount : float) -> Vector4 {
+    c    := color;
+    grey := xyzw(0.5, 0.5, 0.5, 1.0);
+
+    c.x = c.x + (grey.x - c.x) * amount;
+    c.y = c.y + (grey.y - c.y) * amount;
+    c.z = c.z + (grey.z - c.z) * amount;
+    c.w = 0.6;
+
+    return c;
 }
 
 // @todo: rename this.

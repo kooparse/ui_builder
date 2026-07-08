@@ -326,6 +326,8 @@ my_hex       :  u32 = 0xffffee;
 my_enum_flag := Entity_Flags.SOLID;
 toggle       := false;
 
+disable_all  := false;
+
 position     := Vector3.{ 0.5, 12.3, 3.4 };
 rotation     := Quaternion.{ 0.7, 0, 0, 1 };
 scaler       := Vector3.{ 2, 2, 2 };
@@ -367,28 +369,33 @@ make_ui :: () -> UI_Draw_List {
         labels := string.["CPU:", "GPU:", "Draw calls:", "Vertex count:", "IO Captured:"];
         width  := get_longest_text_width(labels) + get_em(0.5);
 
-        set_width(width);
-        label(labels[0]); same_line(); label(tprint("%", dt_fmt));
-        set_width(width);
-        label(labels[1]); same_line(); label(tprint("%", gpu_fmt));
-        set_width(width);
-        label(labels[2]); same_line(); label(tprint("%", last_draw_calls));
-        set_width(width);
-        label(labels[3]); same_line(); label(tprint("%", last_vertex_count));
-        set_width(width);
-        label(labels[4]); same_line(); label(tprint("%", io_captured()));
+        field(labels[0], width);
+        label(tprint("%", dt_fmt));
+
+        field(labels[1], width);
+        label(tprint("%", gpu_fmt));
+
+        field(labels[2], width);
+        label(tprint("%", last_draw_calls));
+
+        field(labels[3], width);
+        label(tprint("%", last_vertex_count));
+
+        field(labels[4], width);
+        label(tprint("%", io_captured()));
 
         label("Text size:");
         same_line();
         number_input(*text_size);
 
-        if button("disabled?", disabled = true) {
-            log("click!?");
+        if button("Button Disabled", disabled = true) {
+            log("You can't click me!");
         }
 
-        if button("disabled?", disabled = true) {
-            log("click!?");
-        }
+        checkbox(*disable_all, "Disable All");
+
+        if disable_all begin_disable_all();
+        defer if disable_all end_disable_all();
 
         if tab_menu(xx *current_tab, enum_names(TABS)) {
             log("Select Tab: %", enum_names(TABS)[current_tab]);
