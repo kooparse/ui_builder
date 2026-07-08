@@ -8,7 +8,6 @@
     - Ability to get the layout of a window.
     - Add wrap mode.
     - If no scrollbar, remove scrollbar width
-    - ellipsis on label when set_width is set.
     - select, use u32 and autocast as "selected_index" could crash everything...
     - disable input/button, region...
     - center vertically (undo/redo) and add vertical separator?
@@ -1369,7 +1368,25 @@ label :: (text: string, label_size := 0., loc := #caller_location) {
     y      := rect.y;
     y      += get_row_height() * 0.5 - text_height * 0.5;
 
-    draw_text(text, rect.x, y, text_size, theme.color.text);
+    if text_width > rect.w {
+        text_index  := cursor_to_text_index(font, text, text_size, rect.w);
+
+        str_copied := copy_string(text);
+        defer free(str_copied);
+
+        str_copied = slice(str_copied, 0, str_copied.count - text_index);
+
+        // Put ellipsis at the end of the string.
+        for < * str_copied {
+            index := str_copied.count - 1 - it_index;
+            if index < 3 it.* = #char ".";
+        }
+
+        draw_text(str_copied, rect.x, y, text_size, theme.color.text);
+    } else {
+        draw_text(text, rect.x, y, text_size, theme.color.text);
+    }
+
 }
 
 separator :: (text := "") {
@@ -1928,7 +1945,7 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
 
     // Content size is the full space allocation of the checkbox + following
     // label.
-    content_size            := xy(checkbox_size);
+    content_size := xy(checkbox_size);
 
     if text_label {
         text_width, text_height = get_text_size(font, text_label, theme.text_size);
@@ -2658,6 +2675,7 @@ alloc_space :: (widget_size: Vector2) -> Rect {
         if leftover > 0 {
             size.x = leftover;
         }
+
         should_fullwidth = false;
     }
 
