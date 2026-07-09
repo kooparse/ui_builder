@@ -2,7 +2,6 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
-    - disable input/button, region...
     - Move window when click between its widgets.
     - Scroll in tabs.
     - Better y margin (collapser, first elem with tabs).
@@ -36,10 +35,10 @@
 
 #module_parameters(Texture_Type: Type = void);
 
-#load "theme.jai";
 #load "font.jai";
 
-theme := DEFAULT_THEME;
+DEFAULT_THEME :: Theme.{};
+theme         := DEFAULT_THEME;
 
 UI_Font :: Font;
 UI_Rect :: Rect;
@@ -70,7 +69,7 @@ get_longest_text_width :: (list: []string) -> max_width: float {
 
 #scope_file;
 
-WHITE :: Vector4.{ 1, 1, 1, 1 };
+WHITE         :: Vector4.{ 1, 1, 1, 1 };
 
 // @todo: explain.
 UV_DISCARD :: Vector2.{ 0, 0 };
@@ -143,7 +142,7 @@ glyph_count      := 0;
 
 wheel_scrolling_triggered := false;
 
-global_disabled := false;
+all_widget_disabled := false;
 
 // initialized  := false;
 // ui_pool      : Flat_Pool;
@@ -263,13 +262,13 @@ Widget_State :: struct {
     kind    : Type;
     rect    : Rect;
     status  : Widget_Status;
+
+    press_duration  := 0.;
+    hover_duration  := 0.;
 };
 
 Button_State :: struct {
     #as using base: Widget_State;
-
-    press_duration  := 0.;
-    hover_duration  := 0.;
 }
 
 Dropdown_State :: struct {
@@ -472,7 +471,7 @@ ui_begin :: () {
     prev_time = now;
 
 
-    update_size();
+    sync_theme_sizes();
 
     wheel_scrolling_triggered = false;
 
@@ -631,7 +630,6 @@ window_begin :: (state: *Window_State, default_rect: Rect, title := "", flags :=
             raise_layer(id);
             active_widget   = id;
             state.dragging  = .MOVE_WINDOW;
-            log("Start moving!");
         }
     }
 
@@ -645,25 +643,21 @@ window_begin :: (state: *Window_State, default_rect: Rect, title := "", flags :=
             raise_layer(id);
             active_widget   = id;
             state.dragging  = .RESIZE_WINDOW;
-            log("Start resizer!");
         }
     }
 
     if state.dragging != .NONE && !is_down(.MOUSE_LEFT) {
         active_widget   = -1;
         state.dragging  = .NONE;
-        log("Stop moving/resizer!");
     }
 
     if state.dragging == .MOVE_WINDOW {
-        log("moving!");
         state.rect.x += delta_x;
         state.rect.y += delta_y;
     }
 
     if state.dragging == .RESIZE_WINDOW {
         curr_cursor_icon = .RESIZE_ARROW;
-        log("resizing !");
         state.rect.w += delta_x;
         state.rect.h += delta_y;
     }
@@ -788,11 +782,11 @@ window_end :: (loc := #caller_location) {
 
 
 begin_disable_all :: () {
-    global_disabled = true;
+    all_widget_disabled = true;
 }
 
 end_disable_all :: () {
-    global_disabled = false;
+    all_widget_disabled = false;
 }
 
 begin_expander :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
@@ -1023,15 +1017,19 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
     rect := alloc_space(input_size);
     mutate_state(state, rect);
 
+    if all_widget_disabled then state.status &= ~(.PRESSED | .DOWN);
+
     input_rect      := rect;
     input_rect.w    -= rect.h; // because of the right side (clear/caret).
 
     bg_color := get_color(state.status, theme.color.fg);
+    text_color  := theme.color.text;
 
     font_size                 := theme.text_size;
     text_width, text_height   := get_text_size(font, button_label, xx font_size);
     text_rect                 := pad_rect(rect, button_padding, 0);
 
+    border_color := theme.color.border;
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -1048,13 +1046,18 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
     flags := Rect_Flags.TOP | .LEFT | .BOTTOM | .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT;
     if state.open then flags &= ~(.BOTTOM | .ROUND_BOTTOM_LEFT);
 
+    if all_widget_disabled {
+        bg_color           = disable(bg_color, 1.0);
+        border_color       = disable(border_color, 0.8);
+        text_color         = disable(text_color, 0.8);
+    }
+
     draw_rect(input_rect, bg_color, flags);
-    draw_outline(input_rect, theme.color.border, theme.border_width, flags);
+    draw_outline(input_rect, border_color, theme.border_width, flags);
 
 
 
     should_clip := text_width > input_rect.w;
-    text_color  := theme.color.text;
 
     if selected_count <= 0 then text_color.w = 0.4;
 
@@ -1189,6 +1192,8 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
     rect := alloc_space(select_size);
     mutate_state(state, rect);
 
+    if all_widget_disabled then state.status &= ~(.PRESSED | .DOWN);
+
     input_rect      := rect;
     input_rect.w    -= rect.h; // because of the right side (clear/caret).
 
@@ -1214,7 +1219,14 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
     rect_flags := Rect_Flags.TOP | .LEFT | .BOTTOM | .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT;
     if state.open then rect_flags &= ~(.BOTTOM | .ROUND_BOTTOM_LEFT);
 
-    bg_color := get_color(state.status, theme.color.fg);
+    bg_color     := get_color(state.status, theme.color.fg);
+    border_color := theme.color.border;
+
+    if all_widget_disabled {
+        bg_color           = disable(bg_color, 1.0);
+        border_color       = disable(border_color, 0.8);
+        select_label_color = disable(select_label_color, 0.8);
+    }
 
     if state.want_search && flags & .FILTER {
         _, updated_str := text_input(state.search, rect = input_rect, flags = rect_flags, loc = loc);
@@ -1783,7 +1795,7 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
         state.texting_start_time = cast(float, seconds_since_init());
     }
 
-    if state.status & .HOVERED {
+    if state.status & .HOVERED && !all_widget_disabled {
         set_cursor_icon(.TEXT_EDIT);
     }
 
@@ -1871,6 +1883,13 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
 
     bg_color      := get_color(status, theme.color.fg);
     outline_color := theme.color.border;
+    text_color    := theme.color.text;
+
+    if all_widget_disabled {
+        bg_color           = disable(bg_color, 1.0);
+        outline_color      = disable(outline_color, 0.8);
+        text_color         = disable(text_color, 0.8);
+    }
 
     draw_rect(input_rect, bg_color, flags);
     draw_outline(input_rect, outline_color, theme.border_width, flags);
@@ -1917,13 +1936,13 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
         blink_speed     := 8.0;
         alpha           := cast(float) (sin(elapsed * blink_speed) + 1.0) * 0.5;
 
-        cursor_color  := lighten(theme.color.text, 20);
+        cursor_color  := lighten(text_color, 20);
         cursor_color.w = alpha;
 
-        draw_text(text, text_x, text_y, theme.text_size, theme.color.text);
+        draw_text(text, text_x, text_y, theme.text_size, text_color);
         draw_rect(cursor_rect, cursor_color);
     } else {
-        draw_text(text, text_x, text_y, theme.text_size, theme.color.text);
+        draw_text(text, text_x, text_y, theme.text_size, text_color);
     }
 
     return modified, text, state.editing;
@@ -1985,7 +2004,7 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
     inner_color := get_color(state.status, ifx checked.* then theme.color.accent else theme.color.text_muted);
     bg_color    := theme.color.bg;
 
-    if global_disabled {
+    if all_widget_disabled {
         bg_color    = disable(bg_color, 1.0);
         inner_color = disable(inner_color, 0.8);
     }
@@ -2062,7 +2081,7 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
 
     is_activated := status & .FOCUSED || status & .PRESSED || active;
 
-    color        := ifx is_activated then theme.color.accent else theme.color.fg;
+    color        := theme.color.fg;
 
     bg_color     := get_color(status, color);
     border_color := theme.color.border;
@@ -2072,7 +2091,12 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
 
     draw_rect(rect, bg_color, .TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
 
+    if active {
+        draw_outline(rect, theme.color.accent, theme.border_width, .LEFT | .RIGHT | .TOP | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
+    }
     text_rect := pad_rect(rect, button_padding, 0);
+
+    label_color := ifx is_activated then theme.color.accent else theme.color.text;
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -2084,7 +2108,7 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
     y = lerp(y, y + offset, press_strength);
 
     if text_too_big push_clip(rect);
-    draw_text(label, x, y, theme.text_size, theme.color.text);
+    draw_text(label, x, y, theme.text_size, label_color);
     if text_too_big pop_clip();
 
     return status & .PRESSED != 0;
@@ -2145,7 +2169,7 @@ button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_v
     bg_color := lerp(fg_color, lighten(fg_color, 10), hover_strength);
     bg_color  = lerp(bg_color, lighten(fg_color, 30), press_strength);
 
-    if disabled || global_disabled {
+    if disabled || all_widget_disabled {
         bg_color    = disable(bg_color, 1.0);
         color.text  = disable(color.text, 0.8);
     }
@@ -2194,10 +2218,13 @@ button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_v
     return status & .PRESSED != 0;
 }
 
+
 // @todo: used?
-get_color :: (status: Widget_Status, color: Vector4) -> Vector4 {
-    if status & .PRESSED || status & .DOWN || status & .FOCUSED return lighten(color, 25);
-    if status & .HOVERED return lighten(color, 10);
+get_color :: (using status: Widget_Status, color: Vector4) -> Vector4 {
+    is_dark := is_dark_theme();
+
+    if status & .PRESSED || status & .DOWN || status & .FOCUSED return ifx is_dark lighten(color, 25) else darken(color, 25);
+    if status & .HOVERED return ifx is_dark lighten(color, 10) else darken(color, 10);
 
     return color;
 }
@@ -2332,10 +2359,6 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
 
         if is_pressed(.MOUSE_LEFT) {
             status |= .PRESSED;
-        }
-
-        if global_disabled {
-            status &= ~(.PRESSED | .DOWN);
         }
     }
 
@@ -2655,8 +2678,7 @@ record_draw_marker :: (rect: Rect) {
 raise_layer :: (id: UI_ID) {
     current_layer.depth = current_depth;
     current_depth += 1;
-
-    log("Want to raise window : % :: %", id, current_layer.depth);
+    // log("Want to raise window : % :: %", id, current_layer.depth);
 }
 
 alloc_space :: (widget_size: Vector2, strict := true) -> Rect {
@@ -3476,6 +3498,136 @@ draw_caret :: (rect: Rect, color : Vector4, up: bool, thickness := 3.0) {
 
     push_triangle(p0, p1, p2, theme.color.text);
 }
+
+
+
+
+#scope_export;
+
+is_dark_theme :: () -> bool {
+    color     := theme.color.bg;
+    luminance := 0.2126 * color.x + 0.7152 * color.y + 0.0722 * color.z;
+
+    return luminance < 0.5;
+}
+
+Color_Theme :: struct {
+    bg            : Vector4;
+    fg            : Vector4;
+    border        : Vector4;
+    text          : Vector4;
+    accent        : Vector4;
+    text_muted    : Vector4;
+
+    blue          : Vector4;
+    red           : Vector4;
+    green         : Vector4;
+};
+
+hexa_to_color :: (hex: u32) -> Vector4 {
+    r := (cast(float) (hex >> 16) & 0xFF)  / 255.0;
+    g := (cast(float) (hex >> 8)  & 0xFF)  / 255.0;
+    b := (cast(float) (hex >> 0)  & 0xFF)  / 255.0;
+
+    return xyzw(r, g, b, 1.0);
+}
+
+color_to_hexa :: (vec: Vector4) -> u32 {
+    r := cast(u8) (clamp(vec.x, 0, 1.) * 255);
+    g := cast(u8) (clamp(vec.y, 0, 1.) * 255);
+    b := cast(u8) (clamp(vec.z, 0, 1.) * 255);
+
+    hex : u32;
+    hex |= cast(u32, r) << 16;
+    hex |= cast(u32, g) << 8;
+    hex |= cast(u32, b) << 0;
+
+    return hex;
+}
+
+LIPKO :: Color_Theme.{
+    bg          = #run hexa_to_color(0x427b58),
+    fg          = #run hexa_to_color(0x2f6247),
+    text        = #run hexa_to_color(0xebdbb2),
+    text_muted  = #run hexa_to_color(0xbdb291),
+    border      = #run hexa_to_color(0x638a5e),
+    accent      = #run hexa_to_color(0xd79921),
+    red         = #run hexa_to_color(0xa62a1e),
+    green       = #run hexa_to_color(0x6b8e3d),
+    blue        = #run hexa_to_color(0x7ba0c8),
+};
+
+GRUVBOX_DARK :: Color_Theme.{
+    bg          = #run hexa_to_color(0x1d2021),
+    fg          = #run hexa_to_color(0x3c3836),
+
+    text        = #run hexa_to_color(0xebdbb2),
+    text_muted  = #run hexa_to_color(0x928374),
+    border      = #run hexa_to_color(0x504945),
+    accent      = #run hexa_to_color(0x7daea3),
+
+    red         = #run hexa_to_color(0xfb4934),
+    green       = #run hexa_to_color(0xb8bb26),
+    blue        = #run hexa_to_color(0x83a598),
+};
+
+GRUVBOX_LIGHT :: Color_Theme.{
+    bg          = #run hexa_to_color(0xfbf1c7),
+    fg          = #run hexa_to_color(0xbdae93),
+    text        = #run hexa_to_color(0x654735),
+    text_muted  = #run hexa_to_color(0x7c6f64),
+    border      = #run hexa_to_color(0x877461),
+    accent      = #run hexa_to_color(0x45707a),
+    red         = #run hexa_to_color(0x9d0006),
+    green       = #run hexa_to_color(0x79740e),
+    blue        = #run hexa_to_color(0x076678),
+};
+
+NORD :: Color_Theme.{
+    bg          = #run hexa_to_color(0x2e3440),
+    fg          = #run hexa_to_color(0x3b4252),
+
+    text        = #run hexa_to_color(0xeceff4),
+    text_muted  = #run hexa_to_color(0xd8dee9),
+    border      = #run hexa_to_color(0x4c566a),
+    accent      = #run hexa_to_color(0x88c0d0),
+
+    red         = #run hexa_to_color(0xbf616a),
+    green       = #run hexa_to_color(0xa3be8c),
+    blue        = #run hexa_to_color(0x5e81ac),
+};
+
+get_em :: (ratio: float) -> em: float {
+    return theme.text_size * ratio;
+}
+
+content_padding     := 0.;
+button_padding      := 0.;
+scrollbar_width     := 0.;
+input_padding       := 0.;
+gap_x               := 0.;
+gap_y               := 0.;
+
+sync_theme_sizes :: () {
+    content_padding  = get_em(0.25);
+    button_padding   = get_em(1.);
+    scrollbar_width  = get_em(0.8);
+    input_padding    = get_em(0.25);
+    gap_x            = get_em(0.25);
+    gap_y            = get_em(0.20);
+}
+
+Theme :: struct {
+    color                   := GRUVBOX_DARK;
+    alpha                   := 1.0;
+    input_cursor_size       := 2.;
+    separator_size          := 1.0;
+    corner_radius           := 8.;
+    radius_sample           := 20;
+    circle_sample           := 30;
+    border_width            := 4.;
+    text_size               := 18.;
+};
 
 
 #import "Basic";

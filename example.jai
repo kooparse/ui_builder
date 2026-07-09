@@ -366,7 +366,7 @@ make_ui :: () -> UI_Draw_List {
         gpu_fmt := FormatFloat.{ value = gpu_time, trailing_width = 1 };
 
 
-        labels := string.["CPU:", "GPU:", "Draw calls:", "Vertex count:", "IO Captured:"];
+        labels := string.["CPU:", "GPU:", "Draw calls:", "Vertex count:", "IO Captured:", "Dark Theme:"];
         width  := get_longest_text_width(labels) + get_em(0.5);
 
         field(labels[0], width);
@@ -383,6 +383,9 @@ make_ui :: () -> UI_Draw_List {
 
         field(labels[4], width);
         label(tprint("%", io_captured()));
+
+        field(labels[5], width);
+        label(tprint("%", is_dark_theme()));
 
         label("Text size:");
         same_line();
