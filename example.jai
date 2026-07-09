@@ -392,9 +392,6 @@ make_ui :: () -> UI_Draw_List {
         field(labels[4], width);
         label(tprint("%", io_captured()));
 
-        field(labels[5], width);
-        label(tprint("%", is_dark_theme()));
-
         label("Text size:");
         same_line();
         number_input(*text_size);

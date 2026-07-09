@@ -11,17 +11,12 @@
     - gradiant should vanish when content is at the bottom.
     - glitch in dropdown item list.
     - better design for inputs, radius...
+    - Finish input text
 
-    - use some pool allocator
+    - use some pool allocator / clear memory.
 
     TODO:
     - Should makes radius samples relative to size.
-
-    - Finish input text
-    - Get proper color state.
-    - design tab area. (another background too?).
-    - text_codepoint in io struct... ?
-    - clear memory of hashtable.
 
     Blog post:
 
@@ -3521,13 +3516,6 @@ interact_color :: (using state: Widget_State, base_color: Vector4) -> Vector4 {
     }
 
     return color;
-}
-
-is_dark_theme :: () -> bool {
-    color     := theme.color.bg;
-    luminance := 0.2126 * color.x + 0.7152 * color.y + 0.0722 * color.z;
-
-    return luminance < 0.5;
 }
 
 Color_Theme :: struct {
