@@ -2389,8 +2389,11 @@ end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
             handle_state := get_widget_state(Widget_State, handle_id);
             mutate_state(handle_state, handle, check_layout = false);
 
+            handle_state.status &= ~.DISABLED;
+
             hit      := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
             bg_color := interact_color(handle_state, ifx (hit || state.dragging_y) theme.color.accent else theme.color.text_muted);
+
 
             if !state.dragging_x {
                 is_dragging := active_widget == id;
@@ -2445,6 +2448,8 @@ end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
             handle_id    := make_id(loc, "horizontal_scrollbar");
             handle_state := get_widget_state(Widget_State, handle_id);
             mutate_state(handle_state, handle, check_layout = false);
+
+            handle_state.status &= ~.DISABLED;
 
             hit      := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
             bg_color := interact_color(handle_state, ifx (hit || state.dragging_x) theme.color.accent else theme.color.text_muted);
