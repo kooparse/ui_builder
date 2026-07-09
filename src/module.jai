@@ -4,7 +4,6 @@
 
     - Move window when click between its widgets.
     - Scroll in tabs.
-    - Better y margin (collapser, first elem with tabs).
     - Ability to get the layout of a window.
     - Add wrap mode.
     - select, use u32 and autocast as "selected_index" could crash everything...
@@ -36,6 +35,10 @@
 #module_parameters(Texture_Type: Type = void);
 
 #load "font.jai";
+
+HOVER_TIME    :: 0.6;
+PRESS_TIME    :: 0.4;
+
 
 DEFAULT_THEME :: Theme.{};
 theme         := DEFAULT_THEME;
@@ -252,10 +255,11 @@ Layer :: struct {
 
 
 Widget_Status :: enum_flags {
-    HOVERED     :: (1 << 0);
-    DOWN        :: (1 << 1);
-    PRESSED     :: (1 << 2);
-    FOCUSED     :: (1 << 3);
+    HOVERED;
+    DOWN;
+    PRESSED;
+    FOCUSED;
+    DISABLED;
 };
 
 Widget_State :: struct {
@@ -722,16 +726,12 @@ window_begin :: (state: *Window_State, default_rect: Rect, title := "", flags :=
         btn_state := get_widget_state(Button_State, btn_id);
 
         mutate_state(btn_state, close_rect, check_layout = false);
-        hover_strength, press_strength := update_times(btn_state);
 
         if btn_state.status & .PRESSED {
             state.open = false;
         }
 
-        color    := theme.color.fg;
-        clear_bg := lerp(color, lighten(color, 20), hover_strength);
-        clear_bg  = lerp(clear_bg, lighten(color, 30), press_strength);
-
+        clear_bg := interact_color(btn_state, theme.color.fg);
         draw_rect(close_rect, clear_bg, .ROUND_ALL);
 
         cross_pad := max(theme.border_width, close_rect.h * 0.3);
@@ -789,7 +789,7 @@ window_end :: (loc := #caller_location) {
         internal_draw_gradiant(rect, c1, c2, c3, c4);
     }
 
-    if curr_window_scroll then end_scroll(curr_window_scroll);
+    if curr_window_scroll then end_scroll(curr_window_scroll, loc);
     pop_layer();
 }
 
@@ -816,7 +816,7 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
     rect := alloc_space(size);
     mutate_state(state, rect);
 
-    bg_color := get_color(state.status, theme.color.fg);
+    bg_color := interact_color(state, theme.color.fg);
 
     text_width, text_height   := get_text_size(font, title, theme.text_size);
     text_rect                 := pad_rect(rect, button_padding, 0);
@@ -938,12 +938,11 @@ tab_menu :: (tab_index : *int, tabs: []string) -> modified: bool {
 
 dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc := #caller_location) -> bool {
     id          := make_id(loc, label);
-    using state := get_widget_state(Button_State, id);
+    using state := get_widget_state(Widget_State, id);
 
     text_width, text_height := get_text_size(font, label, theme.text_size);
 
     mutate_state(state, item_rect);
-    hover_strength, press_strength := update_times(state);
 
     clip := peek(current_layer.clip_stack);
     if !rect_vs_rect(rect, clip) return status & .PRESSED != 0;
@@ -951,12 +950,7 @@ dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc :=
     text_too_big := rect.w < text_width + button_padding;
 
     fg_color := ifx selected theme.color.accent else xyzw(theme.color.fg.xyz, 0.4);
-
-    bg_color     := get_color(status, fg_color);
-    border_color := theme.color.border;
-
-    bg_color = lerp(fg_color, lighten(fg_color, 10), hover_strength);
-    bg_color = lerp(bg_color, lighten(fg_color, 30), press_strength);
+    bg_color := interact_color(state, fg_color);
 
     btn_rect := rect;
     draw_rect(btn_rect, bg_color);
@@ -968,9 +962,8 @@ dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc :=
     y := text_rect.y + text_rect.h * 0.5 - text_height * 0.5;
 
     offset := text_height * 0.15;
-
-    x = lerp(x, x + offset, press_strength);
-    y = lerp(y, y + offset, press_strength);
+    x = interact_lerp(state, x, x + offset);
+    y = interact_lerp(state, y, y + offset);
 
     if text_too_big push_clip(btn_rect);
     draw_text(label, x, y, theme.text_size, theme.color.text);
@@ -1035,14 +1028,14 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
     input_rect      := rect;
     input_rect.w    -= rect.h; // because of the right side (clear/caret).
 
-    bg_color := get_color(state.status, theme.color.fg);
-    text_color  := theme.color.text;
+    bg_color     := interact_color(state, theme.color.fg);
+    border_color := interact_color(state, theme.color.border);
+    text_color   := theme.color.text;
 
     font_size                 := theme.text_size;
     text_width, text_height   := get_text_size(font, button_label, xx font_size);
     text_rect                 := pad_rect(rect, button_padding, 0);
 
-    border_color := theme.color.border;
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -1058,12 +1051,6 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
 
     flags := Rect_Flags.TOP | .LEFT | .BOTTOM | .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT;
     if state.open then flags &= ~(.BOTTOM | .ROUND_BOTTOM_LEFT);
-
-    if all_widget_disabled {
-        bg_color           = disable(bg_color, 1.0);
-        border_color       = disable(border_color, 0.8);
-        text_color         = disable(text_color, 0.8);
-    }
 
     draw_rect(input_rect, bg_color, flags);
     draw_outline(input_rect, border_color, theme.border_width, flags);
@@ -1153,7 +1140,7 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
             item_rect.y += item_height;
         }
 
-        end_scroll(scroll);
+        end_scroll(scroll, loc);
 
         draw_outline(dropdown_rect, theme.color.border, theme.border_width, dropdown_flags);
 
@@ -1185,9 +1172,10 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
 
     placeholder_text := ifx placeholder placeholder else "<Choose>";
 
-    // Because
+    // If T is not signed, we remove the clearable flag because the "null"
+    // value is signed, -1.
     ti := cast(*Type_Info_Integer) T;
-    if ti.signed flags &= ~.CLEARABLE;
+    if !ti.signed flags &= ~.CLEARABLE;
 
     select_size := size;
     if size.x <= 0 {
@@ -1232,14 +1220,8 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
     rect_flags := Rect_Flags.TOP | .LEFT | .BOTTOM | .ROUND_TOP_LEFT | .ROUND_BOTTOM_LEFT;
     if state.open then rect_flags &= ~(.BOTTOM | .ROUND_BOTTOM_LEFT);
 
-    bg_color     := get_color(state.status, theme.color.fg);
-    border_color := theme.color.border;
-
-    if all_widget_disabled {
-        bg_color           = disable(bg_color, 1.0);
-        border_color       = disable(border_color, 0.8);
-        select_label_color = disable(select_label_color, 0.8);
-    }
+    bg_color     := interact_color(state, theme.color.fg);
+    border_color := interact_color(state, theme.color.border);
 
     if state.want_search && flags & .FILTER {
         _, updated_str := text_input(state.search, rect = input_rect, flags = rect_flags, loc = loc);
@@ -1287,7 +1269,6 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
             btn_state := get_widget_state(Button_State, btn_id);
 
             mutate_state(btn_state, clear_rect);
-            hover_strength, press_strength := update_times(btn_state);
 
             if btn_state.status & .PRESSED {
                 selected.*        = cast, no_check(T) -1;
@@ -1297,9 +1278,7 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
                 state.search.count = 0;
             }
 
-            color    := lighten(theme.color.border, 10);
-            clear_bg := lerp(color, lighten(color, 20), hover_strength);
-            clear_bg  = lerp(clear_bg, lighten(color, 30), press_strength);
+            clear_bg := interact_color(btn_state, theme.color.border);
 
             draw_rect(clear_rect, clear_bg, right_flags);
 
@@ -1804,11 +1783,12 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
 
     // We start the edit process if user click on the input.
     if !state.editing && (status & .PRESSED) {
+        active_widget = id;
         state.editing = true;
         state.texting_start_time = cast(float, seconds_since_init());
     }
 
-    if state.status & .HOVERED && !all_widget_disabled {
+    if state.status & .HOVERED && !(state.status & .DISABLED) {
         set_cursor_icon(.TEXT_EDIT);
     }
 
@@ -1819,6 +1799,7 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
 
         if is_pressed(.RETURN) {
             state.editing = false;
+            active_widget = -1;
             modified      = state.text != user_str;
         }
 
@@ -1849,7 +1830,8 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
         }
 
         if is_pressed(.ESCAPE) || click_outside {
-            state.editing = false;
+            state.editing    = false;
+            active_widget    = -1;
             modified         = state.text != user_str;
         }
 
@@ -1894,15 +1876,9 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
         }
     }
 
-    bg_color      := get_color(status, theme.color.fg);
-    outline_color := theme.color.border;
+    bg_color      := interact_color(state, theme.color.fg);
+    outline_color := interact_color(state, theme.color.border);
     text_color    := theme.color.text;
-
-    if all_widget_disabled {
-        bg_color           = disable(bg_color, 1.0);
-        outline_color      = disable(outline_color, 0.8);
-        text_color         = disable(text_color, 0.8);
-    }
 
     draw_rect(input_rect, bg_color, flags);
     draw_outline(input_rect, outline_color, theme.border_width, flags);
@@ -2014,13 +1990,10 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
         checked.* = !checked.*;
     }
 
-    inner_color := get_color(state.status, ifx checked.* then theme.color.accent else theme.color.text_muted);
-    bg_color    := theme.color.bg;
+    base_color := ifx checked.* then theme.color.accent else theme.color.text_muted;
 
-    if all_widget_disabled {
-        bg_color    = disable(bg_color, 1.0);
-        inner_color = disable(inner_color, 0.8);
-    }
+    inner_color := interact_color(state, base_color);
+    bg_color    := interact_color(state, theme.color.bg);
 
     row_height := max(layout.row_max_height, rect.h);
 
@@ -2085,7 +2058,6 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
     }
 
     mutate_state(state, alloc_space(button_size));
-    hover_strength, press_strength := update_times(state);
 
     clip := peek(current_layer.clip_stack);
     if !rect_vs_rect(state.rect, clip) return status & .PRESSED != 0;
@@ -2096,11 +2068,8 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
 
     color        := theme.color.fg;
 
-    bg_color     := get_color(status, color);
-    border_color := theme.color.border;
-
-    bg_color = lerp(color, lighten(color, 10), hover_strength);
-    bg_color = lerp(bg_color, lighten(color, 30), press_strength);
+    bg_color     := interact_color(state, theme.color.fg);
+    border_color := interact_color(state, theme.color.border);
 
     draw_rect(rect, bg_color, .TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
 
@@ -2117,8 +2086,8 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
 
     offset := text_height * 0.15;
 
-    x = lerp(x, x + offset, press_strength);
-    y = lerp(y, y + offset, press_strength);
+    x = interact_lerp(state, x, x + offset);
+    y = interact_lerp(state, y, y + offset);
 
     if text_too_big push_clip(rect);
     draw_text(label, x, y, theme.text_size, label_color);
@@ -2162,10 +2131,7 @@ button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_v
 
     using, except(rect) state;
 
-    mutate_state(state, rect);
-    if disabled state.status &= ~(.PRESSED | .DOWN);
-
-    hover_strength, press_strength := update_times(state);
+    mutate_state(state, rect, disabled = disabled);
 
     if toggle_value != null && status & .PRESSED {
         toggle_value.* = !toggle_value.*;
@@ -2179,13 +2145,7 @@ button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_v
     color := theme.color;
 
     fg_color := ifx toggle_value != null && toggle_value.* color.accent else color.fg;
-    bg_color := lerp(fg_color, lighten(fg_color, 10), hover_strength);
-    bg_color  = lerp(bg_color, lighten(fg_color, 30), press_strength);
-
-    if disabled || all_widget_disabled {
-        bg_color    = disable(bg_color, 1.0);
-        color.text  = disable(color.text, 0.8);
-    }
+    bg_color := interact_color(state, fg_color);
 
     if texture {
         draw_rect(rect, bg_color, .ROUND_ALL);
@@ -2215,8 +2175,8 @@ button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_v
 
         offset := text_height * 0.15;
 
-        x = lerp(x, x + offset, press_strength);
-        y = lerp(y, y + offset, press_strength);
+        x = interact_lerp(state, x, x + offset);
+        y = interact_lerp(state, y, y + offset);
 
         text_too_big := rect.w < text_width;
         if text_too_big push_clip(rect);
@@ -2231,16 +2191,6 @@ button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_v
     return status & .PRESSED != 0;
 }
 
-
-// @todo: used?
-get_color :: (using status: Widget_Status, color: Vector4) -> Vector4 {
-    is_dark := is_dark_theme();
-
-    if status & .PRESSED || status & .DOWN || status & .FOCUSED return ifx is_dark lighten(color, 25) else darken(color, 25);
-    if status & .HOVERED return ifx is_dark lighten(color, 10) else darken(color, 10);
-
-    return color;
-}
 
 full_width :: () {
     layout := current_layout();
@@ -2310,12 +2260,8 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
     return cast(*T) state.*, new;
 }
 
-update_times :: (state: *Button_State) -> float, float {
-    status := get_status(state.rect);
-
-    HOVER_TIME    :: 0.6;
-    PRESS_TIME    :: 0.4;
-
+// @todo: rename this proc.
+update_interaction_time :: (state: *Widget_State) {
     now := cast(float) seconds_since_init();
 
     if state.status & .HOVERED {
@@ -2326,18 +2272,16 @@ update_times :: (state: *Button_State) -> float, float {
         state.hover_duration = max(state.hover_duration, 0);
     }
 
-    if state.status & .DOWN {
+    if (state.status & (.DOWN | .FOCUSED)) {
         state.press_duration += dt * 2;
         state.press_duration = min(state.press_duration, PRESS_TIME);
     } else {
         state.press_duration -= dt * 4;
         state.press_duration = max(state.press_duration, 0);
     }
-
-    return (state.hover_duration / HOVER_TIME), (state.press_duration / PRESS_TIME);
 }
 
-mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true) {
+mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true, disabled := false) {
     // Always update rect value.
     state.rect = rect;
 
@@ -2346,12 +2290,18 @@ mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true) {
         return;
     }
 
-
     state.status = get_status(rect, check_layout);
 
     if state.widget_id == active_widget {
         state.status |= .FOCUSED;
     }
+
+    if all_widget_disabled || disabled {
+        state.status &= ~(.FOCUSED | .DOWN | .PRESSED);
+        state.status |= .DISABLED;
+    }
+
+    update_interaction_time(state);
 }
 
 // @todo: Explain why check_layout or rename.
@@ -2398,7 +2348,7 @@ begin_scroll :: (loc := #caller_location) -> *Scrollbar_State {
     return state;
 }
 
-end_scroll :: (state: *Scrollbar_State) {
+end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
     id := state.widget_id;
 
     layout := current_layout();
@@ -2432,7 +2382,6 @@ end_scroll :: (state: *Scrollbar_State) {
             travel   := track_h - handle_h;
             scroll_t := ifx max_scroll > 0 scroll.y / max_scroll else 0.0;
 
-
             handle := Rect.{
                 layout.rect.x + layout.rect.w + content_padding * 0.5,
                 layout.rect.y + scroll_t * travel,
@@ -2440,12 +2389,15 @@ end_scroll :: (state: *Scrollbar_State) {
                 handle_h,
             };
 
-            status   := get_status(handle, check_layout = false);
-            bg_color := get_color(status, ifx state.dragging_y then theme.color.accent else theme.color.text_muted);
+            handle_id    := make_id(loc, "vertical_scrollbar");
+            handle_state := get_widget_state(Widget_State, handle_id);
+            mutate_state(handle_state, handle, check_layout = false);
+
+            hit      := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
+            bg_color := interact_color(handle_state, ifx (hit || state.dragging_y) theme.color.accent else theme.color.text_muted);
 
             if !state.dragging_x {
                 is_dragging := active_widget == id;
-                hit         := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
 
                 if hit && !is_dragging && abs(delta_y) > 0 {
                     active_widget = id;
@@ -2486,7 +2438,6 @@ end_scroll :: (state: *Scrollbar_State) {
             travel   := track_w - handle_w;
             scroll_t := ifx max_scroll > 0 scroll.x / max_scroll else 0;
 
-
             handle := Rect.{
                 layout.rect.x + scroll_t * travel,
                 layout.rect.y + layout.rect.h + content_padding * 0.5,
@@ -2494,13 +2445,16 @@ end_scroll :: (state: *Scrollbar_State) {
                 scrollbar_width,
             };
 
-            status := get_status(handle, check_layout = false);
 
-            bg_color := get_color(status, ifx state.dragging_x then theme.color.accent else theme.color.text_muted);
+            handle_id    := make_id(loc, "horizontal_scrollbar");
+            handle_state := get_widget_state(Widget_State, handle_id);
+            mutate_state(handle_state, handle, check_layout = false);
+
+            hit      := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
+            bg_color := interact_color(handle_state, ifx (hit || state.dragging_x) theme.color.accent else theme.color.text_muted);
 
             if !state.dragging_y {
                 is_dragging := active_widget == id;
-                hit         := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
 
                 if hit && !is_dragging && abs(delta_x) > 0 {
                     active_widget = id;
@@ -2845,6 +2799,31 @@ lighten :: (color: Vector4, percent : float) -> Vector4 {
     lighter.z = lerp(lighter.z, 1.0, t);
 
     return lighter;
+}
+
+hexa_to_color :: (hex: u32) -> Vector4 {
+    r := (cast(float) (hex >> 16) & 0xFF)  / 255.0;
+    g := (cast(float) (hex >> 8)  & 0xFF)  / 255.0;
+    b := (cast(float) (hex >> 0)  & 0xFF)  / 255.0;
+
+    return xyzw(r, g, b, 1.0);
+}
+
+color_to_hexa :: (vec: Vector4) -> u32 {
+    r := cast(u8) (clamp(vec.x, 0, 1.) * 255);
+    g := cast(u8) (clamp(vec.y, 0, 1.) * 255);
+    b := cast(u8) (clamp(vec.z, 0, 1.) * 255);
+
+    hex : u32;
+    hex |= cast(u32, r) << 16;
+    hex |= cast(u32, g) << 8;
+    hex |= cast(u32, b) << 0;
+
+    return hex;
+}
+
+get_em :: (ratio: float) -> em: float {
+    return theme.text_size * ratio;
 }
 
 disable :: (color: Vector4, amount : float) -> Vector4 {
@@ -3517,7 +3496,31 @@ draw_caret :: (rect: Rect, color : Vector4, up: bool, thickness := 3.0) {
 
 
 
+
 #scope_export;
+
+interact_lerp :: (using state: *Widget_State, from: float, to: float) -> float {
+    press_strength := press_duration / PRESS_TIME;
+    return lerp(from, to, press_strength);
+}
+
+interact_color :: (using state: Widget_State, base_color: Vector4) -> Vector4 {
+    theme_bg := theme.color.bg;
+    luminance := 0.2126 * theme_bg.x + 0.7152 * theme_bg.y + 0.0722 * theme_bg.z;
+    is_dark := luminance < 0.5;
+
+    hover_strength := hover_duration / HOVER_TIME;
+    press_strength := press_duration / PRESS_TIME;
+
+    color := lerp(base_color, ifx is_dark then lighten(base_color, 20) else darken(base_color, 20), hover_strength);
+    color  = lerp(color, ifx is_dark then lighten(base_color, 30) else darken(base_color, 30), press_strength);
+
+    if status & .DISABLED {
+        color = disable(color, 1.0);
+    }
+
+    return color;
+}
 
 is_dark_theme :: () -> bool {
     color     := theme.color.bg;
@@ -3538,27 +3541,6 @@ Color_Theme :: struct {
     red           : Vector4;
     green         : Vector4;
 };
-
-hexa_to_color :: (hex: u32) -> Vector4 {
-    r := (cast(float) (hex >> 16) & 0xFF)  / 255.0;
-    g := (cast(float) (hex >> 8)  & 0xFF)  / 255.0;
-    b := (cast(float) (hex >> 0)  & 0xFF)  / 255.0;
-
-    return xyzw(r, g, b, 1.0);
-}
-
-color_to_hexa :: (vec: Vector4) -> u32 {
-    r := cast(u8) (clamp(vec.x, 0, 1.) * 255);
-    g := cast(u8) (clamp(vec.y, 0, 1.) * 255);
-    b := cast(u8) (clamp(vec.z, 0, 1.) * 255);
-
-    hex : u32;
-    hex |= cast(u32, r) << 16;
-    hex |= cast(u32, g) << 8;
-    hex |= cast(u32, b) << 0;
-
-    return hex;
-}
 
 LIPKO :: Color_Theme.{
     bg          = #run hexa_to_color(0x427b58),
@@ -3611,10 +3593,6 @@ NORD :: Color_Theme.{
     green       = #run hexa_to_color(0xa3be8c),
     blue        = #run hexa_to_color(0x5e81ac),
 };
-
-get_em :: (ratio: float) -> em: float {
-    return theme.text_size * ratio;
-}
 
 content_padding     := 0.;
 button_padding      := 0.;

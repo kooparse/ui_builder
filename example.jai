@@ -356,13 +356,15 @@ make_ui :: () -> UI_Draw_List {
         replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
     }
 
-    if button("Hey!", UI_Rect.{ 500, 10, 200, 60 } * dpi_scale) {
-        log("click button!");
+    {
+        if button("Hey!", UI_Rect.{ 500, 10, 200, 60 } * dpi_scale) {
+            log("click button!");
+        }
+
+        label("Label without window!");
     }
 
-    label("Label without window!");
-
-    if window_begin(*ed_widgets, UI_Rect.{ 10, 25, 450, 600 } * dpi_scale, "Widgets") {
+    if window_begin(*ed_widgets, UI_Rect.{ 25, 50, 450, 600 } * dpi_scale, "Widgets") {
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
             gpu_time = get_last_frame_gpu_time() * 1000;
@@ -373,7 +375,7 @@ make_ui :: () -> UI_Draw_List {
 
 
         labels := string.["CPU:", "GPU:", "Draw calls:", "Vertex count:", "IO Captured:", "Dark Theme:"];
-        width  := get_longest_text_width(labels) + get_em(0.5);
+        width  := get_longest_text_width(labels) + (text_size * 0.5);
 
         field(labels[0], width);
         label(tprint("%", dt_fmt));
@@ -436,13 +438,13 @@ make_ui :: () -> UI_Draw_List {
 
             row_start := 140. * dpi_scale;
 
-            field("Position", 0.3);
+            field("Position", row_start);
             vec_input(*position);
 
-            field("quaternion", 0.3);
+            field("quaternion", row_start);
             vec_input(*rotation);
 
-            field("Scale", 0.3);
+            field("Scale", row_start);
             vec_input(*scaler);
 
             set_width(row_start);
@@ -505,7 +507,7 @@ make_ui :: () -> UI_Draw_List {
         window_end();
     }
 
-    if window_begin(*ed_theme, UI_Rect.{ 600, 10, 350, 400 } * dpi_scale, "Themes") {
+    if window_begin(*ed_theme, UI_Rect.{ window_width - 350 - 25, 10, 350, 400 } * dpi_scale, "Themes") {
 
         begin_column(2);
         if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
@@ -566,7 +568,7 @@ make_ui :: () -> UI_Draw_List {
     }
 
 
-    if window_begin(*ed_color_picker, UI_Rect.{ 600, 450, 400, 300 } * dpi_scale, "Color Picker") {
+    if window_begin(*ed_color_picker, UI_Rect.{ window_width - 400 - 25, 450, 400, 300 } * dpi_scale, "Color Picker") {
         full_width();
         rgba_input(*my_color, format = .FLOAT);
 
@@ -580,7 +582,7 @@ make_ui :: () -> UI_Draw_List {
         window_end();
     }
 
-    if window_begin(*ed_undo_redo, UI_Rect.{ 10, 650, 300, 100 } * dpi_scale, "Undo/Redo") {
+    if window_begin(*ed_undo_redo, UI_Rect.{ 25, window_height - 100 - 25, 300, 100 } * dpi_scale, "Undo/Redo") {
         button("<");
         same_line();
         label("Entity moved");
