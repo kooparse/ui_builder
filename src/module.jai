@@ -2178,7 +2178,7 @@ button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_v
         draw_rect(rect, bg_color, .ROUND_ALL);
 
         prev := set_texture(texture);
-        draw_img(rect);
+        draw_img(rect, .ROUND_ALL);
         set_texture(prev);
     } else {
         draw_rect(rect, bg_color, .ROUND_ALL);
