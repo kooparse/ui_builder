@@ -356,7 +356,13 @@ make_ui :: () -> UI_Draw_List {
         replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
     }
 
-    if window_begin(*ed_widgets, UI_Rect.{ 10, 10, 450, 600 } * dpi_scale, "Widgets") {
+    if button("Hey!", UI_Rect.{ 500, 10, 200, 60 } * dpi_scale) {
+        log("click button!");
+    }
+
+    label("Label without window!");
+
+    if window_begin(*ed_widgets, UI_Rect.{ 10, 25, 450, 600 } * dpi_scale, "Widgets") {
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
             gpu_time = get_last_frame_gpu_time() * 1000;

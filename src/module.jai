@@ -84,6 +84,7 @@ prev_layer_list  : [..] Layer;
 curr_layer_list  : [..] Layer;
 layer_stack      : [..] int; // Index of layers from our current layer list.
 current_layer    : *Layer;
+background_layer :  Layer; // All widgets set outside windows will used this layer.
 
 widget_states   : Table(UI_ID, *Widget_State);
 
@@ -525,6 +526,18 @@ ui_begin :: () {
             hovered_layer = it.widget_id;
             break;
         }
+    }
+
+    // Reset and set background layer.
+    {
+        array_reset(*background_layer.vertices);
+        array_reset(*background_layer.draw_markers);
+        array_reset(*background_layer.clip_stack);
+
+        rect := UI_Rect.{ 0, 0, FLOAT32_MAX, FLOAT32_MAX };
+        push_layer(S64_MAX, rect);
+        set_layout(rect);
+        push_clip(rect);
     }
 }
 
@@ -2616,7 +2629,10 @@ restore_layout :: (layout: UI_Layout) {
 }
 
 get_vertices :: () -> *[..] UI_Vertex {
-    assert(current_layer != null);
+    if current_layer == null {
+        return *background_layer.vertices;
+    }
+
     return *current_layer.vertices;
 }
 
@@ -3446,7 +3462,6 @@ internal_draw_gradiant :: (r: Rect, _c0: Vector4, _c1: Vector4, _c2: Vector4, _c
 }
 
 internal_draw_rect :: (r: Rect, color: Vector4, uv := Rect.{ 0, 0, 0, 0 }) {
-
     p0 := Vector2.{ r.x, r.y };
     p1 := Vector2.{ r.x + r.w, r.y };
     p2 := Vector2.{ r.x, r.y + r.h };
