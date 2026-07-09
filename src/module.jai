@@ -1224,6 +1224,9 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
     border_color := interact_color(state, theme.color.border);
 
     if state.want_search && flags & .FILTER {
+        push_id("select_filter_input");
+        defer pop_id();
+
         _, updated_str := text_input(state.search, rect = input_rect, flags = rect_flags, loc = loc);
 
         copied := copy_string(updated_str);
@@ -1783,7 +1786,6 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
 
     // We start the edit process if user click on the input.
     if !state.editing && (status & .PRESSED) {
-        active_widget = id;
         state.editing = true;
         state.texting_start_time = cast(float, seconds_since_init());
     }
@@ -1799,7 +1801,6 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
 
         if is_pressed(.RETURN) {
             state.editing = false;
-            active_widget = -1;
             modified      = state.text != user_str;
         }
 
@@ -1831,7 +1832,6 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
 
         if is_pressed(.ESCAPE) || click_outside {
             state.editing    = false;
-            active_widget    = -1;
             modified         = state.text != user_str;
         }
 
