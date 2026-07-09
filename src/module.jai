@@ -268,6 +268,12 @@ Widget_State :: struct {
     hover_duration  := 0.;
 };
 
+Checkbox_State :: struct {
+    #as using base: Widget_State;
+
+    checked_duration := 0.;
+};
+
 Button_State :: struct {
     #as using base: Widget_State;
 }
@@ -1956,7 +1962,7 @@ radio_buttons :: (items: [] string, index: *int, loc := #caller_location) -> boo
 
 checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modified: bool {
     id      := make_id(loc, text_label);
-    state   := get_widget_state(Widget_State, id);
+    state   := get_widget_state(Checkbox_State, id);
 
     checkbox_size := get_row_height();
 
@@ -1986,6 +1992,16 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
         checked.* = !checked.*;
     }
 
+    CHECKED_TIME  :: 0.2;
+
+    if checked.* {
+        state.checked_duration += dt * 2;
+        state.checked_duration = min(state.checked_duration, CHECKED_TIME);
+    } else {
+        state.checked_duration -= dt * 2;
+        state.checked_duration = max(state.checked_duration, 0);
+    }
+
     base_color := ifx checked.* then theme.color.accent else theme.color.text_muted;
 
     inner_color := interact_color(state, base_color);
@@ -1999,9 +2015,10 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
     draw_circle(pos, radius, bg_color);
     draw_circle_outline(pos, radius, theme.border_width, inner_color);
 
-    if checked.* == true {
-        inner_circle := radius * 0.5;
-        draw_circle(pos, inner_circle, inner_color);
+    {
+        inner_circle   := radius * 0.5;
+        current_radius := lerp(0, inner_circle, state.checked_duration / CHECKED_TIME);
+        draw_circle(pos, current_radius, inner_color);
     }
 
     if text_label {
@@ -2258,8 +2275,6 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
 
 // @todo: rename this proc.
 update_interaction_time :: (state: *Widget_State) {
-    now := cast(float) seconds_since_init();
-
     if state.status & .HOVERED {
         state.hover_duration += dt * 2;
         state.hover_duration = min(state.hover_duration, HOVER_TIME);
