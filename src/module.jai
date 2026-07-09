@@ -909,7 +909,7 @@ end_expander :: () {
 
         restore_layout(curr_expander.prev_layout);
 
-        current_layer.layout.cursor.y += content_height + (gap_y * 4);
+        current_layer.layout.cursor.y += content_height + (gap_y * 8);
     }
 
     curr_expander = null;
