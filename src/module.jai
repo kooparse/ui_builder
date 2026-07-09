@@ -36,10 +36,6 @@
 
 #load "font.jai";
 
-HOVER_TIME    :: 0.6;
-PRESS_TIME    :: 0.4;
-
-
 DEFAULT_THEME :: Theme.{};
 theme         := DEFAULT_THEME;
 
@@ -72,12 +68,17 @@ get_longest_text_width :: (list: []string) -> max_width: float {
 
 #scope_file;
 
+HOVER_TIME    :: 0.6;
+PRESS_TIME    :: 0.4;
+
+
 WHITE         :: Vector4.{ 1, 1, 1, 1 };
 
 // @todo: explain.
 UV_DISCARD :: Vector2.{ 0, 0 };
 
-UI_ID      :: int;
+UI_ID       :: int;
+BG_LAYER_ID :: S64_MAX;
 
 key_count       :: #run enum_names(UI_Key).count;
 key_state       : [key_count] UI_Key_Info;
@@ -395,7 +396,7 @@ unfreeze_io :: inline () {
 }
 
 io_captured :: () -> bool {
-    return hovered_layer > 0 || active_widget > 0;
+    return hovered_layer != BG_LAYER_ID && (hovered_layer > 0 || active_widget > 0);
 }
 
 set_modifiers :: (mod: UI_Modifiers) {
@@ -539,7 +540,7 @@ ui_begin :: () {
         array_reset(*background_layer.clip_stack);
 
         rect := UI_Rect.{ 0, 0, FLOAT32_MAX, FLOAT32_MAX };
-        push_layer(S64_MAX, rect);
+        push_layer(BG_LAYER_ID, rect);
         set_layout(rect);
         push_clip(rect);
     }
