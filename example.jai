@@ -586,8 +586,9 @@ make_ui :: () -> UI_Draw_List {
         label("Entity moved");
         same_line();
         button(">");
+
+        end_window();
     }
-    end_window();
 
 
     ui_end();

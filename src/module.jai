@@ -68,6 +68,8 @@ get_longest_text_width :: (list: []string) -> max_width: float {
 HOVER_TIME    :: 0.6;
 PRESS_TIME    :: 0.4;
 
+KEY_REPEAT_DELAY    :: 0.275;
+KEY_REPEAT_RATE     :: 0.020;
 
 WHITE         :: Vector4.{ 1, 1, 1, 1 };
 
@@ -108,9 +110,11 @@ delta_y  : float;
 current_window       : *Window_State;
 current_section      : *Section_State;
 
-// @todo: do a better job... here.
-navigation_widget_index := 0;
-curr_navigation_widget  := -1;
+
+prev_nav_counter      := 0;
+nav_counter           := 0;
+nav_focused_index     := -1;
+nav_focused_id        := -1;
 
 Cursor_Icon :: enum {
     ARROW;
@@ -144,11 +148,6 @@ glyph_count      := 0;
 wheel_scrolling_triggered := false;
 
 all_widget_disabled := false;
-
-// initialized  := false;
-// ui_pool      : Flat_Pool;
-// ui_allocator : Allocator;
-
 
 UI_Key :: enum {
     ESCAPE;
@@ -420,20 +419,33 @@ get_cursor_icon :: () -> Cursor_Icon {
     return prev_cursor_icon;
 }
 
-KEY_REPEAT_DELAY    :: 0.275;
-KEY_REPEAT_RATE     :: 0.020;
+mark_widget_as_navigable :: (id: UI_ID) {
+    if nav_counter == nav_focused_index {
+        nav_focused_id = id;
+    }
+
+    nav_counter += 1;
+}
 
 update_io :: () {
     text_codepoint.count = 0;
 
+    // Update keyboard navigation.
     if is_pressed(.TAB) {
         if modifiers & .CTRL {
-            curr_navigation_widget -= 1;
-            if curr_navigation_widget < 0 curr_navigation_widget = 0;
+            nav_focused_index -= 1;
+            if nav_focused_index < 0 {
+                nav_focused_index = prev_nav_counter;
+            }
         } else {
-            curr_navigation_widget += 1;
+            nav_focused_index += 1;
+            if nav_focused_index > prev_nav_counter {
+                nav_focused_index = 0;
+            }
         }
     }
+
+
 
     mask := ~(Key_State.START | .REPEAT);
 
@@ -506,14 +518,6 @@ ui_free :: () {
 }
 
 ui_begin :: () {
-
-    // if !initialized {
-    //     ui_allocator.proc = flat_pool_allocator_proc;
-    //     ui_allocator.data = *ui_pool;
-    //     initialized       = true;
-    // }
-
-
     now      := cast(float) seconds_since_init();
     dt        = now - prev_time;
     prev_time = now;
@@ -537,7 +541,8 @@ ui_begin :: () {
         }
     }
 
-    navigation_widget_index = 0;
+    prev_nav_counter  = nav_counter;
+    nav_counter       = 0;
 
     // Reset flat vertices.
     array_reset_keeping_memory(*draw_list.vertices);
@@ -1000,6 +1005,10 @@ dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc :=
     btn_rect := rect;
     draw_rect(btn_rect, bg_color);
 
+    if nav_focused_id == id {
+        draw_outline(btn_rect, theme.color.blue, theme.border_width, .TOP | .LEFT | .BOTTOM | .RIGHT);
+    }
+
     text_rect := shrink_rect(btn_rect, button_padding, 0);
 
     // Center text in button rect.
@@ -1013,10 +1022,6 @@ dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc :=
     if text_too_big push_clip(btn_rect);
     draw_text(label, x, y, theme.text_size, theme.color.text);
     if text_too_big pop_clip();
-
-    if curr_navigation_widget == navigation_widget_index {
-        draw_outline(btn_rect, theme.color.blue, theme.border_width);
-    }
 
     return status & .PRESSED != 0;
 }
@@ -1100,8 +1105,6 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
     draw_rect(input_rect, bg_color, flags);
     draw_outline(input_rect, border_color, theme.border_width, flags);
 
-
-
     should_clip := text_width > input_rect.w;
 
     if selected_count <= 0 then text_color.w = 0.4;
@@ -1133,6 +1136,9 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
     }
 
 
+    if nav_focused_id == id {
+        draw_outline(rect, theme.color.blue, theme.border_width, .ROUND_ALL);
+    }
 
     if state.open {
         dropdown_height := cast(float, max_items) * (item_height + content_padding * 2);
@@ -1288,7 +1294,13 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
         should_clip := text_width > input_rect.w;
 
         draw_rect(input_rect, bg_color, rect_flags);
-        draw_outline(input_rect, theme.color.border, theme.border_width, rect_flags);
+
+        if nav_focused_id == id {
+            draw_outline(input_rect, theme.color.blue, theme.border_width, rect_flags | .RIGHT);
+        } else {
+            draw_outline(input_rect, theme.color.border, theme.border_width, rect_flags);
+        }
+
         if should_clip push_clip(input_rect);
         draw_text(button_label, x, y, theme.text_size, select_label_color);
         if should_clip pop_clip();
@@ -1333,7 +1345,11 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
             cross_pad := max(theme.border_width, clear_rect.h * 0.3);
             draw_cross(shrink_rect(clear_rect, cross_pad, cross_pad), theme.color.text, 2);
 
-            draw_outline(clear_rect, border_color, theme.border_width, right_flags);
+            if nav_focused_id == btn_id {
+                draw_outline(clear_rect, theme.color.blue, theme.border_width, rect_flags | .RIGHT | .ROUND_TOP_RIGHT | .ROUND_BOTTOM_RIGHT);
+            } else {
+                draw_outline(clear_rect, border_color, theme.border_width, right_flags);
+            }
         } else {
             caret_rect := rect;
             caret_rect.x += (rect.w - rect.h);
@@ -1926,7 +1942,12 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
     text_color    := theme.color.text;
 
     draw_rect(input_rect, bg_color, flags);
-    draw_outline(input_rect, outline_color, theme.border_width, flags);
+
+    if nav_focused_id == id {
+        draw_outline(input_rect, theme.color.blue, theme.border_width, flags);
+    } else {
+        draw_outline(input_rect, outline_color, theme.border_width, flags);
+    }
 
     text_width, text_height := get_text_size(font, state.text, theme.text_size);
 
@@ -2098,6 +2119,10 @@ checkbox :: (checked: *bool, text_label := "", loc := #caller_location) -> modif
 
     }
 
+    if nav_focused_id == id {
+        draw_outline(rect, theme.color.blue, theme.border_width, .ROUND_ALL);
+    }
+
     return modified;
 }
 
@@ -2127,11 +2152,16 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
     bg_color     := interact_color(state, theme.color.fg);
     border_color := interact_color(state, theme.color.border);
 
-    draw_rect(rect, bg_color, .TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
+    flags := Rect_Flags.TOP | .LEFT | .RIGHT | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT;
 
-    if active {
-        draw_outline(rect, theme.color.accent, theme.border_width, .LEFT | .RIGHT | .TOP | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
+    draw_rect(rect, bg_color, flags);
+
+    if nav_focused_id == id {
+        draw_outline(rect, theme.color.blue, theme.border_width, flags);
+    } else if active {
+        draw_outline(rect, theme.color.accent, theme.border_width, flags);
     }
+
     text_rect := shrink_rect(rect, button_padding, 0);
 
     label_color := ifx is_activated then theme.color.accent else theme.color.text;
@@ -2180,14 +2210,13 @@ button :: (label := "", size := Vector2.{ -1, -1 }, texture : *Texture_Type = nu
 }
 
 button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_value : *bool = null, disabled := false, loc := #caller_location) -> bool {
-    defer navigation_widget_index += 1;
-
-    id          := make_id(loc, label);
+    id    := make_id(loc, label);
     state := get_widget_state(Button_State, id);
 
     using, except(rect) state;
 
     mutate_state(state, rect, disabled = disabled);
+
 
     if toggle_value != null && status & .PRESSED {
         toggle_value.* = !toggle_value.*;
@@ -2240,7 +2269,8 @@ button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_v
         if text_too_big pop_clip();
     }
 
-    if curr_navigation_widget == navigation_widget_index {
+
+    if nav_focused_id == id {
         draw_outline(rect, theme.color.blue, theme.border_width, .ROUND_ALL);
     }
 
@@ -2335,7 +2365,7 @@ update_interaction_time :: (state: *Widget_State) {
     }
 }
 
-mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true, disabled := false) {
+mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true, disabled := false, navigable := true) {
     // Always update rect value.
     state.rect = rect;
 
@@ -2353,6 +2383,14 @@ mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true, disable
     if all_widget_disabled || disabled {
         state.status &= ~(.FOCUSED | .DOWN | .PRESSED);
         state.status |= .DISABLED;
+    }
+
+    if !(state.status & .DISABLED) && navigable {
+        mark_widget_as_navigable(state.widget_id);
+    }
+
+    if state.widget_id == nav_focused_id && is_pressed(.RETURN) {
+        state.status |= .PRESSED;
     }
 
     update_interaction_time(state);
@@ -2901,7 +2939,6 @@ disable :: (color: Vector4, amount : float) -> Vector4 {
     return c;
 }
 
-// @todo: rename this.
 shrink_rect :: (rect: Rect, pad_x : float, pad_y : float) -> Rect {
     return .{
         x = rect.x + pad_x,
