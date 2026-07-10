@@ -111,10 +111,13 @@ current_window       : *Window_State;
 current_section      : *Section_State;
 
 
-prev_nav_counter      := 0;
-nav_counter           := 0;
-nav_focused_index     := -1;
-nav_focused_id        := -1;
+
+
+prev_nav_counter        := 0;
+nav_counter             := 0;
+nav_focused_index       := -1;
+nav_focused_id          := -1;
+next_nav_focused_index  := -1;
 
 Cursor_Icon :: enum {
     ARROW;
@@ -443,6 +446,11 @@ update_io :: () {
                 nav_focused_index = 0;
             }
         }
+
+        if next_nav_focused_index != -1 {
+            nav_focused_index        = next_nav_focused_index;
+            next_nav_focused_index   = -1;
+        }
     }
 
 
@@ -667,7 +675,7 @@ begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags :=
     // "active".
     is_topmost  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
 
-    mutate_state(state, state.rect, check_layout = false);
+    mutate_state(state, state.rect, check_layout = false, navigable = false);
     // If we click somewhere on the layer, we want to raise it to the top of
     // the stack.
     want_raise := !is_new && !is_topmost && state.status & .PRESSED != 0 && active_widget == -1;
@@ -783,7 +791,11 @@ begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags :=
         cross_pad := max(theme.border_width, close_rect.h * 0.3);
         draw_cross(shrink_rect(close_rect, cross_pad, cross_pad), lighten(clear_bg, 60), 2);
 
-        draw_outline(close_rect, border_color, theme.border_width, .ROUND_ALL);
+        if btn_id == nav_focused_id {
+            draw_outline(close_rect, theme.color.blue, theme.border_width, .ROUND_ALL);
+        } else {
+            draw_outline(close_rect, border_color, theme.border_width, .ROUND_ALL);
+        }
     }
 
     content_border := state.rect;
@@ -914,6 +926,10 @@ begin_section :: (title : string, open_by_default := false, loc := #caller_locat
     draw_rect(input_rect, bg_color, flags);
     draw_outline(input_rect, theme.color.border, theme.border_width, flags);
     draw_text(title, x, y, theme.text_size, theme.color.text);
+
+    if id == nav_focused_id {
+        draw_outline(rect, theme.color.blue, theme.border_width, .ROUND_ALL);
+    }
 
     if state.open {
         bg_region  := rect;
@@ -2389,9 +2405,8 @@ mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true, disable
         state.status |= .DISABLED;
     }
 
-    if state.status & .PRESSED {
-        nav_focused_index = nav_counter;
-        nav_focused_id    = state.widget_id;
+    if state.status & .PRESSED && state.widget_id != nav_focused_id {
+        next_nav_focused_index = nav_counter;
     }
 
     if !(state.status & .DISABLED) && navigable {
@@ -2493,7 +2508,7 @@ end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
 
             handle_id    := make_id(loc, "vertical_scrollbar");
             handle_state := get_widget_state(Widget_State, handle_id);
-            mutate_state(handle_state, handle, check_layout = false);
+            mutate_state(handle_state, handle, check_layout = false, navigable = false);
 
             handle_state.status &= ~.DISABLED;
 
@@ -2553,7 +2568,7 @@ end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
 
             handle_id    := make_id(loc, "horizontal_scrollbar");
             handle_state := get_widget_state(Widget_State, handle_id);
-            mutate_state(handle_state, handle, check_layout = false);
+            mutate_state(handle_state, handle, check_layout = false, navigable = false);
 
             handle_state.status &= ~.DISABLED;
 
