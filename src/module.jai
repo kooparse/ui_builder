@@ -325,6 +325,7 @@ Window_State :: struct {
 
     init        := false;
     scrollbar   : *Scrollbar_State;
+    layout_rect : Rect;
 };
 
 UI_Modifiers :: enum_flags {
@@ -735,7 +736,7 @@ begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags :=
         draw_rect(close_rect, clear_bg, .ROUND_ALL);
 
         cross_pad := max(theme.border_width, close_rect.h * 0.3);
-        draw_cross(pad_rect(close_rect, cross_pad, cross_pad), lighten(clear_bg, 60), 2);
+        draw_cross(shrink_rect(close_rect, cross_pad, cross_pad), lighten(clear_bg, 60), 2);
 
         draw_outline(close_rect, border_color, theme.border_width, .ROUND_ALL);
     }
@@ -748,20 +749,21 @@ begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags :=
     if flags & .TITLE_BAR == 0 rect_flags = .ROUND_ALL;
     draw_outline(content_border, border_color, theme.border_width, rect_flags);
 
-    layer_rect   := state.rect;
-    layer_rect.x += content_padding;
-    layer_rect.y += window_title_bar_height + content_padding;
-    layer_rect.w -= content_padding * 2;
-    layer_rect.h -= (window_title_bar_height + content_padding * 2);
+    layout_rect   := state.rect;
+    layout_rect.x += content_padding;
+    layout_rect.y += window_title_bar_height + content_padding;
+    layout_rect.w -= content_padding * 2;
+    layout_rect.h -= (window_title_bar_height + content_padding * 2);
 
-    layer_rect = pad_rect(layer_rect, theme.border_width, theme.border_width);
+    layout_rect = shrink_rect(layout_rect, theme.border_width, theme.border_width);
 
-    set_layout(layer_rect);
+    set_layout(layout_rect);
 
-    state.scrollbar = begin_scroll(loc);
-    current_window  = state;
+    state.layout_rect = layout_rect;
+    state.scrollbar   = begin_scroll(loc);
+    current_window    = state;
 
-    push_clip(layer_rect);
+    push_clip(layout_rect);
 
     return state.open;
 }
@@ -822,7 +824,7 @@ begin_section :: (title : string, open_by_default := false, loc := #caller_locat
     bg_color := interact_color(state, theme.color.fg);
 
     text_width, text_height   := get_text_size(font, title, theme.text_size);
-    text_rect                 := pad_rect(rect, button_padding, 0);
+    text_rect                 := shrink_rect(rect, button_padding, 0);
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -854,7 +856,7 @@ begin_section :: (title : string, open_by_default := false, loc := #caller_locat
         draw_outline(caret_rect, border_color, theme.border_width, left_flags);
 
         caret_pad := max(theme.border_width, caret_rect.h * 0.3);
-        draw_caret(pad_rect(caret_rect, caret_pad, caret_pad), theme.color.text, up = state.open, 2);
+        draw_caret(shrink_rect(caret_rect, caret_pad, caret_pad), theme.color.text, up = state.open, 2);
     }
 
     flags := Rect_Flags.ROUND_TOP_RIGHT | .ROUND_BOTTOM_RIGHT | .TOP | .BOTTOM | .RIGHT;
@@ -958,7 +960,7 @@ dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc :=
     btn_rect := rect;
     draw_rect(btn_rect, bg_color);
 
-    text_rect := pad_rect(btn_rect, button_padding, 0);
+    text_rect := shrink_rect(btn_rect, button_padding, 0);
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width  * 0.5;
@@ -1037,7 +1039,7 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
 
     font_size                 := theme.text_size;
     text_width, text_height   := get_text_size(font, button_label, xx font_size);
-    text_rect                 := pad_rect(rect, button_padding, 0);
+    text_rect                 := shrink_rect(rect, button_padding, 0);
 
 
     // Center text in button rect.
@@ -1087,7 +1089,7 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
         draw_outline(caret_rect, border_color, theme.border_width, right_flags);
 
         caret_pad := max(theme.border_width, caret_rect.h * 0.3);
-        draw_caret(pad_rect(caret_rect, caret_pad, caret_pad), theme.color.text, up = state.open, 2);
+        draw_caret(shrink_rect(caret_rect, caret_pad, caret_pad), theme.color.text, up = state.open, 2);
     }
 
 
@@ -1202,7 +1204,7 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
     input_rect.w    -= rect.h; // because of the right side (clear/caret).
 
     text_width, text_height   := get_text_size(font, button_label, theme.text_size);
-    text_rect                 := pad_rect(rect, button_padding, 0);
+    text_rect                 := shrink_rect(rect, button_padding, 0);
 
     // Center text in button rect.
     x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -1289,7 +1291,7 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
             draw_rect(clear_rect, clear_bg, right_flags);
 
             cross_pad := max(theme.border_width, clear_rect.h * 0.3);
-            draw_cross(pad_rect(clear_rect, cross_pad, cross_pad), theme.color.text, 2);
+            draw_cross(shrink_rect(clear_rect, cross_pad, cross_pad), theme.color.text, 2);
 
             draw_outline(clear_rect, border_color, theme.border_width, right_flags);
         } else {
@@ -1306,7 +1308,7 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
             draw_outline(caret_rect, border_color, theme.border_width, right_flags);
 
             caret_pad := max(theme.border_width, caret_rect.h * 0.3);
-            draw_caret(pad_rect(caret_rect, caret_pad, caret_pad), theme.color.text, up = state.open, 2);
+            draw_caret(shrink_rect(caret_rect, caret_pad, caret_pad), theme.color.text, up = state.open, 2);
         }
     }
 
@@ -2090,7 +2092,7 @@ tab :: (label: string, active: bool, size := Vector2.{ -1, -1 }, loc := #caller_
     if active {
         draw_outline(rect, theme.color.accent, theme.border_width, .LEFT | .RIGHT | .TOP | .ROUND_TOP_LEFT | .ROUND_TOP_RIGHT);
     }
-    text_rect := pad_rect(rect, button_padding, 0);
+    text_rect := shrink_rect(rect, button_padding, 0);
 
     label_color := ifx is_activated then theme.color.accent else theme.color.text;
 
@@ -2181,7 +2183,7 @@ button :: (label := "", rect : UI_Rect, texture : *Texture_Type = null, toggle_v
 
     if label {
         text_width, text_height   := get_text_size(font, label, theme.text_size);
-        text_rect                 := pad_rect(rect, button_padding, 0);
+        text_rect                 := shrink_rect(rect, button_padding, 0);
 
         // Center text in button rect.
         x := text_rect.x + text_rect.w * 0.5 - text_width * 0.5;
@@ -2860,7 +2862,7 @@ disable :: (color: Vector4, amount : float) -> Vector4 {
 }
 
 // @todo: rename this.
-pad_rect :: (rect: Rect, pad_x : float, pad_y : float) -> Rect {
+shrink_rect :: (rect: Rect, pad_x : float, pad_y : float) -> Rect {
     return .{
         x = rect.x + pad_x,
         y = rect.y + pad_y,
@@ -3518,7 +3520,24 @@ draw_caret :: (rect: Rect, color : Vector4, up: bool, thickness := 3.0) {
 
 
 
-#scope_export;
+#scope_file;
+
+content_padding     := 0.;
+button_padding      := 0.;
+scrollbar_width     := 0.;
+input_padding       := 0.;
+gap_x               := 0.;
+gap_y               := 0.;
+
+sync_theme_sizes :: () {
+    content_padding  = get_em(0.25);
+    button_padding   = get_em(1.);
+    scrollbar_width  = get_em(0.8);
+    input_padding    = get_em(0.25);
+    gap_x            = get_em(0.25);
+    gap_y            = get_em(0.20);
+}
+
 
 interact_lerp :: (using state: *Widget_State, from: float, to: float) -> float {
     press_strength := press_duration / PRESS_TIME;
@@ -3542,6 +3561,8 @@ interact_color :: (using state: Widget_State, base_color: Vector4) -> Vector4 {
 
     return color;
 }
+
+#scope_export;
 
 Color_Theme :: struct {
     bg            : Vector4;
@@ -3607,22 +3628,6 @@ NORD :: Color_Theme.{
     green       = #run hexa_to_color(0xa3be8c),
     blue        = #run hexa_to_color(0x5e81ac),
 };
-
-content_padding     := 0.;
-button_padding      := 0.;
-scrollbar_width     := 0.;
-input_padding       := 0.;
-gap_x               := 0.;
-gap_y               := 0.;
-
-sync_theme_sizes :: () {
-    content_padding  = get_em(0.25);
-    button_padding   = get_em(1.);
-    scrollbar_width  = get_em(0.8);
-    input_padding    = get_em(0.25);
-    gap_x            = get_em(0.25);
-    gap_y            = get_em(0.20);
-}
 
 Theme :: struct {
     color                   := GRUVBOX_DARK;
