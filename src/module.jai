@@ -103,9 +103,8 @@ mouse_y  : float;
 delta_x  : float;
 delta_y  : float;
 
-// @todo: Not great...
-curr_window_scroll : *Scrollbar_State;
-curr_expander      : *Expander_State;
+current_window       : *Window_State;
+current_section      : *Section_State;
 
 // @todo: do a better job... here.
 navigation_widget_index := 0;
@@ -308,7 +307,7 @@ Scrollbar_State :: struct {
     dragging_y : bool;
 };
 
-Expander_State :: struct {
+Section_State :: struct {
     #as using state : Widget_State;
 
     open            : bool;
@@ -324,7 +323,8 @@ Window_State :: struct {
     open     := true;
     dragging : enum { NONE; MOVE_WINDOW; RESIZE_WINDOW; }
 
-    init     := false;
+    init        := false;
+    scrollbar   : *Scrollbar_State;
 };
 
 UI_Modifiers :: enum_flags {
@@ -603,9 +603,7 @@ Window_Flags :: enum_flags {
 
 
 // Make moveable ok when clicking IN the window (not just the title bar).
-
-// @todo: rename begin_window.
-window_begin :: (state: *Window_State, default_rect: Rect, title := "", flags := Window_Flags.ALL, loc := #caller_location) -> bool {
+begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags := Window_Flags.ALL, loc := #caller_location) -> bool {
     if !state.init {
         state.rect = default_rect;
         state.init = true;
@@ -760,24 +758,23 @@ window_begin :: (state: *Window_State, default_rect: Rect, title := "", flags :=
 
     set_layout(layer_rect);
 
-    curr_window_scroll = begin_scroll(loc);
+    state.scrollbar = begin_scroll(loc);
+    current_window  = state;
 
     push_clip(layer_rect);
 
     return state.open;
 }
 
-window_end :: (loc := #caller_location) {
+end_window :: (loc := #caller_location) {
     pop_clip();
 
     // Draw opacity gradiant at the bottom.
     if theme.alpha >= 1.0 {
         layout := current_layout();
 
-        c1 := theme.color.bg;
-        c1.w = 0;
-        c2 := theme.color.bg;
-        c2.w = 0;
+        c1 := xyzw(theme.color.bg.xyz, 0);
+        c2 := xyzw(theme.color.bg.xyz, 0);
 
         c3 := theme.color.bg;
         c4 := theme.color.bg;
@@ -791,8 +788,12 @@ window_end :: (loc := #caller_location) {
         internal_draw_gradiant(rect, c1, c2, c3, c4);
     }
 
-    if curr_window_scroll then end_scroll(curr_window_scroll, loc);
-    pop_layer();
+    if current_window then end_scroll(current_window.scrollbar, loc);
+
+    prev_layer := pop_layer();
+    assert(prev_layer.widget_id == current_window.widget_id, "Pairs of begin_window/end_window doesn't match with each other.");
+
+    current_window = null;
 }
 
 
@@ -804,11 +805,11 @@ end_disable_all :: () {
     all_widget_disabled = false;
 }
 
-begin_expander :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
+begin_section :: (title : string, open_by_default := false, loc := #caller_location) -> bool {
     id          := make_id(loc);
-    state, new  := get_widget_state(Expander_State, id);
+    state, new  := get_widget_state(Section_State, id);
 
-    curr_expander = state;
+    current_section = state;
 
     if new state.open = open_by_default;
 
@@ -898,21 +899,21 @@ begin_expander :: (title : string, open_by_default := false, loc := #caller_loca
     return state.open;
 }
 
-end_expander :: () {
-    assert(curr_expander != null);
+end_section :: () {
+    assert(current_section != null, "No begin_section found before ending it.");
 
-    if curr_expander.open {
+    if current_section.open {
         collapser_layout := current_layout().*;
         content_height   := collapser_layout.cursor.y + collapser_layout.prev_widget_size.y;
 
-        curr_expander.computed_height = content_height;
+        current_section.computed_height = content_height;
 
-        restore_layout(curr_expander.prev_layout);
+        restore_layout(current_section.prev_layout);
 
         current_layer.layout.cursor.y += content_height + (gap_y * 8);
     }
 
-    curr_expander = null;
+    current_section = null;
 }
 
 tab_menu :: (tab_index : *int, tabs: []string) -> modified: bool {
@@ -2538,9 +2539,13 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
 }
 
 // todo: some asserts could be cool to put there.
-pop_layer :: () {
-    _ := pop(*layer_stack); // @todo: assert bunch of stuff.
+pop_layer :: () -> prev_layer: Layer {
+    layer_id    := pop(*layer_stack); // @todo: assert bunch of stuff.
+    prev_layer  := curr_layer_list[layer_id];
+
     current_layer = ifx layer_stack then *curr_layer_list[peek(layer_stack)] else null;
+
+    return prev_layer;
 }
 
 cursor_vs_rect :: (rect: Rect) -> bool {

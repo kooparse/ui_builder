@@ -364,7 +364,7 @@ make_ui :: () -> UI_Draw_List {
         label("Label without window!");
     }
 
-    if window_begin(*ed_widgets, UI_Rect.{ 25, 50, 450, 600 } * dpi_scale, "Widgets") {
+    if begin_window(*ed_widgets, UI_Rect.{ 25, 50, 450, 600 } * dpi_scale, "Widgets") {
         if (frame_count % 8 == 0) {
             cpu_time = dt * 1000;
             gpu_time = get_last_frame_gpu_time() * 1000;
@@ -480,14 +480,14 @@ make_ui :: () -> UI_Draw_List {
                 log("playstation!");
             }
 
-            if begin_expander("Expand to see buttons!") {
+            if begin_section("Expand section to see buttons!") {
                 begin_column(3);
                 for 1..2000 {
                     if button(tprint("%", it)) then log("button %", it);
                 }
                 end_column();
             }
-            end_expander();
+            end_section();
 
             begin_column(2);
             for 1..15 {
@@ -501,10 +501,10 @@ make_ui :: () -> UI_Draw_List {
             label(tprint("YOU ARE ON TAB NUMBER %", current_tab));
         }
 
-        window_end();
+        end_window();
     }
 
-    if window_begin(*ed_theme, UI_Rect.{ window_width - 350 - 25, 10, 350, 400 } * dpi_scale, "Themes") {
+    if begin_window(*ed_theme, UI_Rect.{ window_width - 350 - 25, 10, 350, 400 } * dpi_scale, "Themes") {
 
         begin_column(2);
         if radio_buttons(enum_names(Color_Themes), *chosen_theme) {
@@ -561,11 +561,11 @@ make_ui :: () -> UI_Draw_List {
         same_line();
         hexa_input(*custom_theme.blue);
 
-        window_end();
+        end_window();
     }
 
 
-    if window_begin(*ed_color_picker, UI_Rect.{ window_width - 400 - 25, 450, 400, 300 } * dpi_scale, "Color Picker") {
+    if begin_window(*ed_color_picker, UI_Rect.{ window_width - 400 - 25, 450, 400, 300 } * dpi_scale, "Color Picker") {
         full_width();
         rgba_input(*my_color, format = .FLOAT);
 
@@ -576,16 +576,17 @@ make_ui :: () -> UI_Draw_List {
         separator("Channels inputs, hexadecimal");
         hexa_input(*my_color);
 
-        window_end();
+        end_window();
     }
 
-    if window_begin(*ed_undo_redo, UI_Rect.{ 25, window_height - 100 - 25, 300, 100 } * dpi_scale, "Undo/Redo") {
+    if begin_window(*ed_undo_redo, UI_Rect.{ 25, window_height - 100 - 25, 300, 100 } * dpi_scale, "Undo/Redo") {
         button("<");
         same_line();
         label("Entity moved");
         same_line();
         button(">");
     }
+    end_window();
 
 
     ui_end();
