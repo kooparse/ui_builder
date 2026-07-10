@@ -1844,10 +1844,12 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
         state.text = str_copied;
     }
 
+    state_changed_this_frame := false;
 
     // We start the edit process if user click on the input.
     if !state.editing && (status & .PRESSED) {
-        state.editing = true;
+        state.editing            = true;
+        state_changed_this_frame = true;
         state.texting_start_time = cast(float, seconds_since_init());
     }
 
@@ -1860,7 +1862,9 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
     if state.editing {
         click_outside := !cursor_vs_rect(state.rect) && is_pressed(.MOUSE_LEFT);
 
-        if is_pressed(.RETURN) {
+        // When state_changed_this_frame is false, otherwise the keyboard
+        // navigation will cancel itself.
+        if is_pressed(.RETURN) && !state_changed_this_frame {
             state.editing = false;
             modified      = state.text != user_str;
         }
@@ -2385,9 +2389,15 @@ mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true, disable
         state.status |= .DISABLED;
     }
 
+    if state.status & .PRESSED {
+        nav_focused_index = nav_counter;
+        nav_focused_id    = state.widget_id;
+    }
+
     if !(state.status & .DISABLED) && navigable {
         mark_widget_as_navigable(state.widget_id);
     }
+
 
     if state.widget_id == nav_focused_id && is_pressed(.RETURN) {
         state.status |= .PRESSED;
