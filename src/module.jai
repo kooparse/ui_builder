@@ -2,6 +2,9 @@
 
     reminder: coord 0,0 is top left, max_width,max_height is bottom right
 
+    TODO:
+
+    - Keyboard navigation.
     - Move window when click between its widgets.
     - Scroll in tabs.
     - Ability to get the layout of a window.
@@ -13,10 +16,9 @@
     - better design for inputs, radius...
     - Finish input text
 
-    - use some pool allocator / clear memory.
-
-    TODO:
     - Should makes radius samples relative to size.
+
+
 
     Blog post:
 
@@ -87,7 +89,7 @@ background_layer :  Layer; // All widgets set outside windows will used this lay
 
 widget_states   : Table(UI_ID, *Widget_State);
 
-active_widget   : UI_ID = -1; // I want a pointer to the state directly....
+active_widget   : UI_ID = -1;
 hovered_layer   : UI_ID = -1;
 
 // @todo: explain that.
@@ -193,7 +195,6 @@ Draw_Marker :: struct {
 
 UI_Layout :: struct {
     rect         : Rect;
-
     cursor     : Vector2;
 
     columns    := 0;
@@ -463,6 +464,45 @@ update_io :: () {
 
     wheel_x = 0;
     wheel_y = 0;
+}
+
+ui_free :: () {
+    free_font(font);
+
+    deinit(*widget_states);
+
+    // Reset flat vertices.
+    array_free(draw_list.vertices);
+    array_free(draw_list.draw_calls);
+
+    // Reset our stack of contextual ids.
+    array_free(context_ids);
+
+    {
+        for * prev_layer_list {
+            array_free(it.vertices);
+            array_free(it.draw_markers);
+            array_free(it.clip_stack);
+        }
+
+        for * curr_layer_list {
+            array_free(it.vertices);
+            array_free(it.draw_markers);
+            array_free(it.clip_stack);
+        }
+
+        array_free(curr_layer_list);
+        array_free(prev_layer_list);
+        array_free(layer_stack);
+    }
+
+    // Free background layer.
+    {
+        array_free(background_layer.vertices);
+        array_free(background_layer.draw_markers);
+        array_free(background_layer.clip_stack);
+    }
+
 }
 
 ui_begin :: () {

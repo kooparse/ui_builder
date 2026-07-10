@@ -63,6 +63,16 @@ get_raw_bitmap_texture :: (font: *Font) -> *void, int, int {
     return font.font_atlas.bitmap.data, font.font_atlas.WIDTH, font.font_atlas.HEIGHT;
 }
 
+free_font :: (using font: *Font) {
+    FT_Done_Face(ft_face);
+    FT_Done_FreeType(ft_library);
+
+    deinit(*glyph_table);
+    deinit(*font_atlas);
+    free(ttf_file);
+}
+
+
 #scope_module;
 
 find_or_add_glyph :: (using font: *Font, char: u32, font_size: int) -> Glyph_Info {
@@ -203,14 +213,6 @@ cursor_to_text_index :: (using font: *Font, text: string, text_size: float, curs
 }
 
 
-free_font:: (using font: *Font) {
-    FT_Done_Face(ft_face);
-    FT_Done_FreeType(ft_library);
-
-    deinit(*glyph_table);
-    free(ttf_file);
-}
-
 Rect_Pos :: struct {
     x, y, w, h : int;
 }
@@ -220,6 +222,10 @@ Texture_Packer :: struct($WIDTH: s64, $HEIGHT: s64) {
     cursor        : struct { x, y: int; };
 
     largest_height_in_row: int;
+}
+
+deinit :: (packer: *Texture_Packer) {
+    free(packer.bitmap.data);
 }
 
 push_white_bitmap_and_set_alpha_values :: (using packer: *Texture_Packer,

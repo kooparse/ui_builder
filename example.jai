@@ -253,6 +253,7 @@ main :: () {
     }
 
     if quit {
+        ui_free();
         SDL_DestroyWindow(window);
     }
 }
