@@ -4,6 +4,7 @@
 
     TODO:
 
+    - Fix issue when release scrollbar on another scrollbar.
     - Keyboard navigation.
     - Move window when click between its widgets.
     - Scroll in tabs.
@@ -2515,17 +2516,16 @@ end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
             hit      := cursor_vs_rect(handle) && is_down(.MOUSE_LEFT);
             bg_color := interact_color(handle_state, ifx (hit || state.dragging_y) theme.color.accent else theme.color.text_muted);
 
-
             if !state.dragging_x {
                 is_dragging := active_widget == id;
 
                 if hit && !is_dragging && abs(delta_y) > 0 {
-                    active_widget = id;
+                    active_widget    = id;
                     state.dragging_y = true;
                 }
 
-                if is_dragging && !is_down(.MOUSE_LEFT) {
-                    active_widget = -1;
+                if is_pressed(.MOUSE_LEFT) {
+                    active_widget    = -1;
                     state.dragging_y = false;
                 }
 
@@ -2579,12 +2579,12 @@ end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
                 is_dragging := active_widget == id;
 
                 if hit && !is_dragging && abs(delta_x) > 0 {
-                    active_widget = id;
+                    active_widget    = id;
                     state.dragging_x = true;
                 }
 
-                if is_dragging && !is_down(.MOUSE_LEFT) {
-                    active_widget = -1;
+                if is_pressed(.MOUSE_LEFT) {
+                    active_widget    = -1;
                     state.dragging_x = false;
                 }
 

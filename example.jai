@@ -647,8 +647,8 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
                 default_sampler   : GFX_Pipeline_Binding;
             }
 
-            vert := get_binding(*loaded_shader.vertex_shader, Shader_Params.{});
-            frag := get_binding(*loaded_shader.fragment_shader, Shader_Params.{});
+            vert := get_binding(*loaded_shader.vertex_shader, Shader_Params);
+            frag := get_binding(*loaded_shader.fragment_shader, Shader_Params);
 
 
             set_buffer(*pass, vert.frame_info, *frame_info_buffer, 0, size_of(Matrix4));
