@@ -8,42 +8,60 @@ always escape it by passing youself a rect.
 
 <img width="1196" height="827" alt="Screenshot 2026-07-13 at 14 52 19" src="https://github.com/user-attachments/assets/4ce3830e-f068-4bde-ba2e-937370f6cb7f" />
 
-Here's an example of the API, but `example.jai` is way more complete than this:
+Here's a snippet of the shape of your program using this library, for a bigger
+and complete example, see `example.jai`:
 
 ```jai
 
-set_theme({
-    color     = GRUVBOX_THEME,
-    text_size = 16.,
-});
+for program_loop {
+    set_theme({
+        color     = GRUVBOX_THEME,
+        text_size = 16.,
+    });
 
-ui_begin();
+    ui_begin();
 
-if begin_window(*ed_widgets, UI_Rect.{ 25, 50, 450, 600 }, "Widgets") {
+    if begin_window(*ed_widgets, UI_Rect.{ 25, 50, 450, 600 }, "Widgets") {
 
-    select(*selected, plants, .{ 300, -1 }, "Pick a plant...", max_items = 4);
-    flag_select(*my_enum_flag, .{ 300, -1 });
+        select(*selected, plants, .{ 300, -1 }, "Pick a plant...", max_items = 4);
+        flag_select(*my_enum_flag, .{ 300, -1 });
 
-    if button("Hey") {
-        log("You click on the button");
+        if button("Hey") {
+            log("You click on the button");
+        }
+
+
+        separator("Spread widgets on given columns");
+
+        begin_column(2);
+        checkbox(*checked, "Show Color Picker");
+        checkbox(*checked, "Show Theme Picker");
+        checkbox(*checked, "Show Undo/Redo");
+        checkbox(*checked, "Translucent");
+        end_column();
+
+        separator();
+
+        field("Hexa input:", 0.5);
+        hexa_input(*hexa_value);
     }
 
+    ui_end();
 
-    separator("Spread widgets on given columns");
 
-    begin_column(2);
-    checkbox(*checked, "Show Color Picker");
-    checkbox(*checked, "Show Theme Picker");
-    checkbox(*checked, "Show Undo/Redo");
-    checkbox(*checked, "Translucent");
-    end_column();
+    drawlist := get_draw_list();
 
-    separator();
+    memcpy(your_buffer.data, drawlist.vertices.data, drawlist.vertices.count * size_of(UI_Vertex));
 
-    field("Hexa input:", 0.5);
-    hexa_input(*hexa_value);
+    for draw_list.draw_calls {
+        if it.texture {
+            set_texture(*pass, it.texture);
+        }
+
+        set_scissor(true, it.clip);
+        draw_primitives(*pass, it.vertex_count, 1, base_vertex = it.vertex_start);
+    }
 }
 
-ui_end();
 
 ```
