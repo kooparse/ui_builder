@@ -1,22 +1,18 @@
 /*
 
-    reminder: coord 0,0 is top left, max_width,max_height is bottom right
+    reminder: Coord 0,0 is top left, max_width, max_height is bottom right.
 
-    TODO:
+    @todo:
 
     - Fix issue when release scrollbar on another scrollbar.
-    - Keyboard navigation.
+    - Finish keyboard navigation.
     - Move window when click between its widgets.
     - Scroll in tabs.
     - Ability to get the layout of a window.
-    - Add wrap mode.
+    - Add auto wrap mode for widgets.
     - select, use u32 and autocast as "selected_index" could crash everything...
-    - center vertically (undo/redo) and add vertical separator?
-    - gradiant should vanish when content is at the bottom.
-    - glitch in dropdown item list.
-    - better design for inputs, radius...
-    - Finish input text
-
+    - Gradiant should vanish when content is at the bottom.
+    - Finish input text.
     - Should makes radius samples relative to size.
 
 

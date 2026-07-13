@@ -2,15 +2,13 @@
 
 
 /*
+    TODO:
 
-    1) make SDL not required in Pixel_Maker (it's just the type window)
+    1) make SDL not required in Pixel_Maker.
     2) make load_shaders in its own module.
-    3) put everything in exemple.
-    4) do better for text... it's rather pretty messy.
-    5) should get max frame in gflight from Pixel_Maker.
 
 
-    Advice that we want to capture mouse as far as possible.
+    Note: we want to capture mouse as far as possible.
 
 */
 
