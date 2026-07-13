@@ -1456,6 +1456,35 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
     return modified;
 }
 
+label :: (text: string, rect: UI_Rect, label_size := 0., loc := #caller_location) {
+    text_size := ifx label_size <= 0 theme.text_size else label_size;
+    text_width, text_height := get_text_size(font, text, xx text_size);
+
+    x := rect.x + rect.w * 0.5 - text_width * 0.5;
+    y := rect.y + rect.h * 0.5 - text_height * 0.5;
+
+    if text_width > rect.w {
+        text_index  := cursor_to_text_index(font, text, text_size, rect.w);
+
+        str_copied := copy_string(text);
+        defer free(str_copied);
+
+        str_copied = slice(str_copied, 0, str_copied.count - text_index);
+
+        // Put ellipsis at the end of the string.
+        for < * str_copied {
+            index := str_copied.count - 1 - it_index;
+            if index < 3 it.* = #char ".";
+        }
+
+        draw_text(str_copied, x, y, text_size, theme.color.text);
+    } else {
+        draw_text(text, x, y, text_size, theme.color.text);
+    }
+
+}
+
+
 label :: (text: string, label_size := 0., loc := #caller_location) {
     text_size := ifx label_size <= 0 theme.text_size else label_size;
     text_width, text_height := get_text_size(font, text, xx text_size);

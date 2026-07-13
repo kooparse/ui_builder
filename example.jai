@@ -581,11 +581,31 @@ make_ui :: () -> UI_Draw_List {
     }
 
     if begin_window(*ed_undo_redo, UI_Rect.{ 25, window_height - 100 - 25, 300, 100 } * dpi_scale, "Undo/Redo") {
-        button("<");
-        same_line();
-        label("Entity moved");
-        same_line();
-        button(">");
+        rect := ed_undo_redo.layout_rect;
+
+        btn_height := text_size * 4;
+        btn_width  := btn_height;
+
+        prev_btn  := rect;
+        prev_btn.y = rect.y + rect.h * 0.5 - btn_height * 0.5;
+        prev_btn.w = btn_height;
+        prev_btn.h = btn_height;
+
+        next_btn  := prev_btn;
+        next_btn.x = rect.x + rect.w - btn_width;
+
+        button("<", prev_btn);
+
+        label_rect := UI_Rect.{
+            x = prev_btn.x + prev_btn.w,
+            y = rect.y,
+            w = next_btn.x - (prev_btn.x + prev_btn.w),
+            h = rect.h,
+        };
+
+        label("Entity moved", label_rect);
+
+        button(">", next_btn);
 
         end_window();
     }
