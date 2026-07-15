@@ -21,6 +21,8 @@ Frame_Info :: struct {
 
 MAX_FRAME_IN_FLIGHT :: 2;
 
+VERTEX_BIND_INDEX :: 10;
+
 vertex_buffers        : [MAX_FRAME_IN_FLIGHT] GFX_Buffer;
 frame_info_buffer     : GFX_Buffer;
 quad_buffer           : GFX_Buffer;
@@ -48,6 +50,7 @@ white_texture       : GFX_Texture;
 playstation_icon    : GFX_Texture;
 xbox_icon           : GFX_Texture;
 
+shader: *GFX_Loaded_Shader;
 
 main :: () {
     window_flags := SDL_WindowFlags.SDL_WINDOW_RESIZABLE;
@@ -76,7 +79,8 @@ main :: () {
     success := create_gfx_context(window);
     assert(success == true);
 
-    load_all_shaders();
+    shader = add_shader("shaders/ui.slang");
+
     init_gfx_buffers();
 
 
@@ -648,11 +652,11 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
             reset_render_state();
 
             set_pso_name("UI_Builder");
-            set_vertex_shader(*loaded_shader.vertex_shader);
-            set_pixel_shader(*loaded_shader.fragment_shader);
+            set_vertex_shader(*shader.vertex_shader);
+            set_pixel_shader(*shader.fragment_shader);
             set_color_format(get_swapchain_pixel_format());
             set_blend_mode(.ADDITIVE);
-            set_vertex_layout(UI_Vertex);
+            set_vertex_layout(UI_Vertex, VERTEX_BIND_INDEX);
 
             set_cull_face(.NONE);
 
@@ -665,8 +669,8 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
                 default_sampler   : GFX_Pipeline_Binding;
             }
 
-            vert := get_binding(*loaded_shader.vertex_shader, Shader_Params);
-            frag := get_binding(*loaded_shader.fragment_shader, Shader_Params);
+            vert := get_binding(*shader.vertex_shader, Shader_Params);
+            frag := get_binding(*shader.fragment_shader, Shader_Params);
 
 
             set_buffer(*pass, vert.frame_info, *frame_info_buffer, 0, size_of(Matrix4));
@@ -679,7 +683,7 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
             }
 
             vertex_buffer := *vertex_buffers[get_backbuffer_index()];
-            set_vertex_buffer(*pass, 10, vertex_buffer, 0, vertex_buffer.size, size_of(UI_Vertex));
+            set_vertex_buffer(*pass, VERTEX_BIND_INDEX, vertex_buffer, 0, vertex_buffer.size, size_of(UI_Vertex));
 
             for draw_list.draw_calls {
                 if it.texture {
@@ -780,10 +784,9 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
 #import "stb_image";
 #import "Hash_Table";
 #import "Hash";
+#import "File";
 #import "Pixel_Maker"(MAX_FRAME_IN_FLIGHT = MAX_FRAME_IN_FLIGHT);
 
 #import, file "./src/module.jai"(Texture_Type = GFX_Texture);
 
 using, except(NO) SDL :: #import "SDL";
-
-#load "shader.jai";
