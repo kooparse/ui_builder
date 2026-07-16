@@ -76,7 +76,21 @@ main :: () {
     dpi_scale = xx (dw / window_width);
     log("dpi_scale: %", dpi_scale);
 
-    success := create_gfx_context(window);
+    platform_window: *void;
+
+    winfo : SDL_SysWMinfo;
+    SDL_GetWindowWMInfo(window, *winfo);
+
+    #if OS == {
+        case .MACOS;
+            assert(winfo.subsystem == .SDL_SYSWM_COCOA);
+            platform_window = winfo.info.cocoa.window;
+        case .WINDOWS;
+            assert(winfo.subsystem == .SDL_SYSWM_WINDOWS);
+            platform_window = winfo.info.win.window;
+    }
+
+    success := create_gfx_context(platform_window);
     assert(success == true);
 
     shader = add_shader("shaders/ui.slang");
