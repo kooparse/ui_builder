@@ -426,6 +426,7 @@ mark_widget_as_navigable :: (id: UI_ID) {
     nav_counter += 1;
 }
 
+
 update_io :: () {
     text_codepoint.count = 0;
 
@@ -448,7 +449,6 @@ update_io :: () {
             next_nav_focused_index   = -1;
         }
     }
-
 
 
     mask := ~(Key_State.START | .REPEAT);
@@ -1259,8 +1259,12 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
 
     item_height := get_row_height() * 0.8;
 
+    base_focused_index := nav_counter;
+
     rect := alloc_space(select_size);
     mutate_state(state, rect);
+
+
 
     if all_widget_disabled then state.status &= ~(.PRESSED | .DOWN);
 
@@ -1280,9 +1284,10 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
     }
 
     if is_pressed(.ESCAPE) {
-        state.open        = false;
-        state.want_search = false;
+        state.open         = false;
+        state.want_search  = false;
         state.search.count = 0;
+        nav_focused_index  = base_focused_index;
     }
 
 
@@ -1423,7 +1428,6 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
         item_rect.h = item_height;
 
         for items {
-
             if state.search && !contains_nocase(it, state.search) {
                 continue;
             }
@@ -1432,11 +1436,12 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
             defer pop_id();
 
             if dropdown_item(it, item_rect) {
-                selected.*        = cast(T) it_index;
-                modified          = true;
-                state.open        = false;
-                state.want_search = false;
+                selected.*         = cast(T) it_index;
+                modified           = true;
+                state.open         = false;
+                state.want_search  = false;
                 state.search.count = 0;
+                nav_focused_index  = base_focused_index;
             }
 
             item_rect.y += item_height;
@@ -2808,7 +2813,7 @@ raise_layer :: (id: UI_ID) {
 }
 
 /*
-    This code allocate some space in the current layout. Layouts has a cursor
+    This code allocate some space in the current layout. Layouts embed a cursor
     to keep track of the next widget position.
 
 */
