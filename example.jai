@@ -1,17 +1,3 @@
-
-
-
-/*
-    TODO:
-
-    1) make SDL not required in Pixel_Maker.
-    2) make load_shaders in its own module.
-
-
-    Note: we want to capture mouse as far as possible.
-
-*/
-
 quit   := false;
 window : *SDL_Window;
 
@@ -349,10 +335,10 @@ position     := Vector3.{ 0.5, 12.3, 3.4 };
 rotation     := Quaternion.{ 0.7, 0, 0, 1 };
 scaler       := Vector3.{ 2, 2, 2 };
 
-ed_widgets       : Window_State;
-ed_color_picker  : Window_State;
-ed_undo_redo     : Window_State;
-ed_theme         : Window_State;
+ed_widgets       :  Window_State;
+ed_color_picker  := Window_State.{ open = true };
+ed_undo_redo     := Window_State.{ open = true };
+ed_theme         := Window_State.{ open = true };
 
 make_ui :: () -> UI_Draw_List {
 

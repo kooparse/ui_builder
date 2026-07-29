@@ -3,8 +3,8 @@
 An immediate-mode GUI, with a simple layout system. This library currently
 powered my own game editor, and my forthcoming projects.
 
-All widget position and size are computed from a layout system, but you can
-always escape it by passing youself a rect.
+All widget position and size are computed from by a layout machinery, but you
+can always escape it by passing youself a rect.
 
 <img width="1196" height="827" alt="Screenshot 2026-07-13 at 14 52 19" src="https://github.com/user-attachments/assets/4ce3830e-f068-4bde-ba2e-937370f6cb7f" />
 

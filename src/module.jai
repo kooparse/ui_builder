@@ -11,7 +11,6 @@
     - Ability to get the layout of a window.
     - Add auto wrap mode for widgets.
     - select, use u32 and autocast as "selected_index" could crash everything...
-    - Gradiant should vanish when content is at the bottom.
     - Finish input text.
     - Should makes radius samples relative to size.
 
@@ -193,27 +192,27 @@ Draw_Marker :: struct {
 };
 
 UI_Layout :: struct {
-    rect         : Rect;
+    rect       : Rect;
     cursor     : Vector2;
 
-    columns    := 0;
-
+    columns        := 0;
     row_max_height := 0.;
 
-    should_inline      := false;
-    should_fullwidth   := false;
-    should_force_width := 0.0;
-
     // We compute after each alloc_space the total space our widgets takes
-    // within its layout rect. Used notably for the scrollbar.
+    // within its layout rect. Used notably for the scrollbar and gradiant at
+    // the bottom of the window.
     content_height : float;
     content_width  : float;
 
     scroll         : Vector2;
 
     // For auto layout.
-    curr_column      := 0;
-    prev_widget_size : Vector2;
+    curr_column        := 0;
+    prev_widget_size   : Vector2;
+    should_inline      := false;
+    should_fullwidth   := false;
+    should_force_width := 0.0;
+
 };
 
 Rect :: struct {
@@ -607,7 +606,7 @@ ui_end :: () {
         We want an easy way to send the data on the GPU, so we construct a flat
         array with all vertices of the current frame.
 
-        And each draw call is a slice of this big buffer, with specific clip
+        And each draw call is a slice of this big buffer, with a specific clip
         region and texture pointer.
 
     */
@@ -825,7 +824,8 @@ begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags :=
 end_window :: (loc := #caller_location) {
     pop_clip();
 
-    // Draw opacity gradiant at the bottom.
+    // Draw opacity gradiant at the bottom of the window, only if content is
+    // opaque.
     if theme.alpha >= 1.0 {
         layout := current_layout();
 
@@ -835,7 +835,12 @@ end_window :: (loc := #caller_location) {
         c3 := theme.color.bg;
         c4 := theme.color.bg;
 
-        height  := 20.;
+        content_h   := layout.content_height;
+        visible_h   := layout.rect.h;
+        max_scroll  := max(0.0, content_h - visible_h);
+        scroll_y    := layout.scroll.y;
+
+        height  := min(max_scroll - scroll_y, 20.);
 
         rect    := layout.rect;
         rect.y   = rect.y + rect.h - height;
@@ -2646,7 +2651,7 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
         }
     }
 
-    // If it's a new layout, we simply initialize it on the top of the stack.
+    // If new layout, we simply initialize it on the top of the stack.
     if depth == -1 {
         is_new         = true;
         depth          = current_depth;
@@ -2668,7 +2673,7 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
     return is_new;
 }
 
-// todo: some asserts could be cool to put there.
+// @todo: some asserts could be cool to put there.
 pop_layer :: () -> prev_layer: Layer {
     layer_id    := pop(*layer_stack); // @todo: assert bunch of stuff.
     prev_layer  := curr_layer_list[layer_id];
@@ -2802,6 +2807,11 @@ raise_layer :: (id: UI_ID) {
     // log("Want to raise window : % :: %", id, current_layer.depth);
 }
 
+/*
+    This code allocate some space in the current layout. Layouts has a cursor
+    to keep track of the next widget position.
+
+*/
 alloc_space :: (widget_size: Vector2, strict := true) -> Rect {
     using layout := current_layout();
 
@@ -2847,10 +2857,9 @@ alloc_space :: (widget_size: Vector2, strict := true) -> Rect {
         }
 
     } else {
-
         if layout.columns > 0 {
-            col_width := (layout.rect.w) / max(1, columns);
-            size.x     = col_width - gap_x;
+            col_width   := (layout.rect.w) / max(1, columns);
+            size.x       = col_width - gap_x;
             curr_column += 1;
         }
     }
@@ -2912,7 +2921,9 @@ is_down :: (key: UI_Key) -> bool {
 is_pressed :: (key: UI_Key, repeat := false) -> bool {
     using info := key_state[key];
 
-    if io_frozen return false;
+    if io_frozen {
+        return false;
+    }
 
     if repeat {
         return state & (.REPEAT | .END) != 0;
@@ -3041,9 +3052,8 @@ find_lead_from_right :: (str: string) -> int {
 
 /*
 
-
-        Draw functions
-
+    All primitive draw functions are there, all of these append vertices to the
+    draw list. We use a couple of flag of radiuses and borders.
 
 */
 
