@@ -7,7 +7,6 @@
     - returning "state" for each widgets.
     - C-bindings?
 
-
     - Fix issue when release scrollbar on another scrollbar.
     - Finish keyboard navigation.
     - Move window when click between its widgets.

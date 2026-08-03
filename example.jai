@@ -1,13 +1,10 @@
 quit   := false;
 window : *SDL_Window;
 
-Frame_Info :: struct {
-    ortho : Matrix4;
-};
+ortho : Matrix4;
 
 MAX_FRAME_IN_FLIGHT :: 2;
-
-VERTEX_BIND_INDEX :: 10;
+VERTEX_BIND_INDEX   :: 10;
 
 vertex_buffers        : [MAX_FRAME_IN_FLIGHT] GFX_Buffer;
 frame_info_buffer     : GFX_Buffer;
@@ -723,7 +720,7 @@ init_gfx_buffers :: () {
         vertex_buffers[it] = create_gfx_buffer("UI Vertices", capacity, xx stride, null, .CPU_WRITE, .VERTEX_BUFFER);
     }
 
-    frame_info_buffer = create_gfx_buffer("Frame Info", size_of(Frame_Info), size_of(Frame_Info), null, .CPU_WRITE, .CONSTANT_BUFFER);
+    frame_info_buffer = create_gfx_buffer("Frame Info", size_of(Matrix4), size_of(Matrix4), null, .CPU_WRITE, .CONSTANT_BUFFER);
 
     quad_buffer = create_gfx_buffer("QUAD", 6 * size_of(UI_Vertex), size_of(UI_Vertex), null, .CPU_WRITE, .VERTEX_BUFFER);
 
@@ -754,10 +751,8 @@ update_gfx_buffers :: (vertices: [] UI_Vertex) {
     // Copy frame data to GPU.
     {
         lock_buffer(*frame_info_buffer, .WRITE_AND_FLUSH);
-        frame_info := Frame_Info.{
-            ortho = orthographic_projection_matrix(0, window_width * dpi_scale, window_height * dpi_scale, 0, -1, 1, depth_range_01=true),
-        };
-        memcpy(frame_info_buffer.data_ptr, *frame_info, size_of(Frame_Info));
+        ortho := orthographic_projection_matrix(0, window_width * dpi_scale, window_height * dpi_scale, 0, -1, 1, depth_range_01=true);
+        memcpy(frame_info_buffer.data_ptr, *ortho, size_of(Matrix4));
         unlock_buffer(*frame_info_buffer);
     }
 
