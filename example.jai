@@ -364,7 +364,7 @@ make_ui :: () -> UI_Draw_List {
             log("click button!");
         }
 
-        label("Label without window!");
+        checkbox(*ed_widgets.open, "Show main widgets window");
     }
 
     if begin_window(*ed_widgets, UI_Rect.{ 25, 50, 450, 600 } * dpi_scale, "Widgets") {

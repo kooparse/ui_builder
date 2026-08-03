@@ -4,6 +4,10 @@
 
     @todo:
 
+    - returning "state" for each widgets.
+    - C-bindings?
+
+
     - Fix issue when release scrollbar on another scrollbar.
     - Finish keyboard navigation.
     - Move window when click between its widgets.
@@ -132,9 +136,8 @@ wheel_y  : float;
 font         : *Font;
 font_texture : *Texture_Type;
 
-
-// @todo: rename.
-current_depth := 0; // for layers
+// For ordering layers.
+topmost_serial := 0;
 
 io_frozen    := false;
 
@@ -237,7 +240,7 @@ Layer :: struct {
     rect         : Rect;
 
     widget_id    : UI_ID;
-    depth        : int; // Used to sort the layer list.
+    serial       : int;
 
     layout       : UI_Layout;
     prev_layout  : UI_Layout;
@@ -279,6 +282,7 @@ Button_State :: struct {
 Dropdown_State :: struct {
     #as using state : Widget_State;
     open            : bool;
+    first_init      : bool;
     want_search     : bool;
     search          : string;
 };
@@ -334,6 +338,11 @@ UI_Modifiers :: enum_flags {
     OS      :: 1 << 3;
 };
 
+UI_Draw_List  :: struct {
+    vertices    : [..] UI_Vertex;
+    draw_calls  : [..] UI_Draw_Call;
+};
+
 UI_Draw_Call :: struct {
     vertex_start : int;
     vertex_count : int;
@@ -341,10 +350,6 @@ UI_Draw_Call :: struct {
     texture      : *Texture_Type;
 };
 
-UI_Draw_List  :: struct {
-    vertices    : [..] UI_Vertex;
-    draw_calls  : [..] UI_Draw_Call;
-};
 
 UI_Vertex :: struct {
     position : Vector2; @TEXCOORD;
@@ -364,7 +369,7 @@ pop_id :: inline () {
     if context_ids then pop(*context_ids);
 }
 
-set_theme :: (given_theme: Theme) {
+set_theme :: inline (given_theme: Theme) {
     theme = given_theme;
 }
 
@@ -598,8 +603,9 @@ ui_begin :: () {
 }
 
 ui_end :: () {
-    // @todo: Add comment.
-    quick_sort(curr_layer_list, (a, b) => a.depth - b.depth);
+    // We sort the layer list by the topmost z order value just before
+    // constructing our draw list.
+    quick_sort(curr_layer_list, (a, b) => a.serial - b.serial);
 
     /*
 
@@ -611,10 +617,10 @@ ui_end :: () {
 
     */
 
-    global_index := 0; // Base index on the flat vertices buffer.
+    // Base index on the flat vertices buffer.
+    global_index := 0;
 
     for curr_layer_list {
-
         for marker, index: it.draw_markers {
             vertex_end   := ifx  index == it.draw_markers.count - 1 it.vertices.count
                             else it.draw_markers[index + 1].vertex_start;
@@ -629,7 +635,7 @@ ui_end :: () {
             });
         }
 
-        // Append the local layer vertices to the flat one.
+        // Append the local layer vertices to the global flat one.
         array_add(*draw_list.vertices, ..it.vertices);
 
         global_index += it.vertices.count;
@@ -652,8 +658,9 @@ Window_Flags :: enum_flags {
 };
 
 
-// Make moveable ok when clicking IN the window (not just the title bar).
+// @todo: Make moveable ok when clicking IN the window (not just the title bar).
 begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags := Window_Flags.ALL, loc := #caller_location) -> bool {
+
     if !state.init {
         state.rect = default_rect;
         state.init = true;
@@ -667,7 +674,7 @@ begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags :=
 
 
     is_new := push_layer(id, state.rect);
-    // If window's layer was the topmost one of the last frame, we consider it as
+    // If window's layer was the topmost of the last frame, we consider it as
     // "active".
     is_topmost  := ifx prev_layer_list peek(prev_layer_list).widget_id == id;
 
@@ -799,7 +806,7 @@ begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags :=
     content_border.h -= window_title_bar_height;
 
     rect_flags := Rect_Flags.BOTTOM | .LEFT | .RIGHT | .ROUND_BOTTOM_LEFT | .ROUND_BOTTOM_RIGHT;
-    if flags & .TITLE_BAR == 0 rect_flags = .ROUND_ALL;
+    if flags & .TITLE_BAR == 0 then rect_flags = .ROUND_ALL;
     draw_outline(content_border, border_color, theme.border_width, rect_flags);
 
     layout_rect   := state.rect;
@@ -827,7 +834,7 @@ end_window :: (loc := #caller_location) {
     // Draw opacity gradiant at the bottom of the window, only if content is
     // opaque.
     if theme.alpha >= 1.0 {
-        layout := current_layout();
+        layout    := current_layout();
 
         c1 := xyzw(theme.color.bg.xyz, 0);
         c2 := xyzw(theme.color.bg.xyz, 0);
@@ -846,6 +853,10 @@ end_window :: (loc := #caller_location) {
         rect.y   = rect.y + rect.h - height;
         rect.h   = height;
 
+        if current_window.scrollbar.has_scrollbar_x {
+            rect.h += scrollbar_width;
+        }
+
         internal_draw_gradiant(rect, c1, c2, c3, c4);
     }
 
@@ -858,6 +869,7 @@ end_window :: (loc := #caller_location) {
 }
 
 
+// @todo, rename "begin_ui_disable"?
 begin_disable_all :: () {
     all_widget_disabled = true;
 }
@@ -1004,7 +1016,7 @@ tab_menu :: (tab_index : *int, tabs: []string) -> modified: bool {
 
 }
 
-dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc := #caller_location) -> bool {
+dropdown_item :: (label: string, item_rect : Rect, selected := false, loc := #caller_location) -> bool {
     id          := make_id(loc, label);
     using state := get_widget_state(Widget_State, id);
 
@@ -1020,7 +1032,7 @@ dropdown_item :: (label: string, item_rect := Rect.{}, selected := false, loc :=
     fg_color := ifx selected theme.color.accent else xyzw(theme.color.fg.xyz, 0.4);
     bg_color := interact_color(state, fg_color);
 
-    btn_rect := rect;
+    btn_rect := item_rect;
     draw_rect(btn_rect, bg_color);
 
     if nav_focused_id == id {
@@ -1053,7 +1065,8 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
     id      := make_id(loc);
     state   := get_widget_state(Dropdown_State, id);
 
-    item_height := get_row_height() * 0.8;
+    item_height    := get_row_height() * 0.8;
+    content_height := item_height * ti.names.count;
 
     modified     := false;
 
@@ -1187,7 +1200,7 @@ flag_select :: (flag: *$T, ti: *Type_Info_Enum, size := Vector2.{ 100, -1 }, pla
 
         layout := current_layout();
 
-        scroll := begin_scroll(loc);
+        scroll := begin_scroll(loc, show_scroll_y = content_height > layer_rect.h);
 
         items_region := alloc_space(.{ layout.rect.w, item_height * ti.names.count });
 
@@ -1257,7 +1270,8 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
     select_label_color := theme.color.text;
     if selected.* < 0 then select_label_color.w = 0.4;
 
-    item_height := get_row_height() * 0.8;
+    item_height    := get_row_height() * 0.8;
+    content_height := item_height * items.count;
 
     base_focused_index := nav_counter;
 
@@ -1420,9 +1434,9 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
 
         layout := current_layout();
 
-        scroll := begin_scroll(loc);
+        scroll := begin_scroll(loc, show_scroll_y = content_height > layer_rect.h);
 
-        items_region := alloc_space(.{ layout.rect.w, item_height * items.count });
+        items_region := alloc_space(.{ layout.rect.w, content_height });
 
         item_rect  := items_region;
         item_rect.h = item_height;
@@ -2482,7 +2496,9 @@ get_status :: (rect: Rect, check_layout := true) -> Widget_Status {
     return status;
 }
 
-begin_scroll :: (loc := #caller_location) -> *Scrollbar_State {
+// @note: Sometimes we know the content height (for dropdowns), so
+//        show_scroll_x/show_scroll_y let us remove the 1 frame delay.
+begin_scroll :: (loc := #caller_location, show_scroll_x := false, show_scroll_y := false) -> *Scrollbar_State {
     id      := make_id(loc, "scrollbar");
     state   := get_widget_state(Scrollbar_State, id);
 
@@ -2490,11 +2506,11 @@ begin_scroll :: (loc := #caller_location) -> *Scrollbar_State {
 
     layout.scroll = state.scroll;
 
-    if state.has_scrollbar_y {
+    if state.has_scrollbar_y || show_scroll_y {
         layout.rect.w -= scrollbar_width;
     }
 
-    if state.has_scrollbar_x {
+    if state.has_scrollbar_x || show_scroll_x {
         layout.rect.h -= scrollbar_width;
     }
 
@@ -2535,12 +2551,26 @@ end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
             travel   := track_h - handle_h;
             scroll_t := ifx max_scroll > 0 scroll.y / max_scroll else 0.0;
 
+            padding := scrollbar_width * 0.2;
+            // @hack: We want to check if the layer is a Window_State or not
+            // (to enlarge the scrollbar width by the content_padding). And
+            // because Window_State lays in the user's code instead of our
+            // internal widget catalog, we simply lookup if the layer widget id
+            // is contains in our table or not.
+            found       := table_contains(*widget_states, current_layer.widget_id);
+            extra_width := ifx !found content_padding else 0;
+
+            // scrollbar  := layout.rect;
+            // scrollbar.x = layout.rect.x + layout.rect.w;
+            // scrollbar.w = scrollbar_width + extra_width;
+
             handle := Rect.{
-                layout.rect.x + layout.rect.w + content_padding * 0.5,
+                layout.rect.x + layout.rect.w + padding * 0.5,
                 layout.rect.y + scroll_t * travel,
-                scrollbar_width,
+                (scrollbar_width + extra_width) - padding,
                 handle_h,
             };
+
 
             handle_id    := make_id(loc, "vertical_scrollbar");
             handle_state := get_widget_state(Widget_State, handle_id);
@@ -2570,6 +2600,7 @@ end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
                 }
             }
 
+            // draw_rect(scrollbar, theme.color.fg);
             draw_rect(handle, bg_color, (.ROUND_ALL | .HALF_RADIUS));
         }
 
@@ -2642,25 +2673,25 @@ is_occluded :: inline (rect: Rect) -> bool {
 }
 
 push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
-    is_new      := false;
-    depth       := -1;
+    is_new     := false;
+    serial     := -1;
 
     prev_layout : UI_Layout;
 
     // Find old z order.
     for prev_layer_list {
         if it.widget_id == id {
-            depth        = it.depth;
+            serial       = it.serial;
             prev_layout  = it.layout;
             break;
         }
     }
 
     // If new layout, we simply initialize it on the top of the stack.
-    if depth == -1 {
-        is_new         = true;
-        depth          = current_depth;
-        current_depth += 1;
+    if serial == -1 {
+        is_new           = true;
+        serial          = topmost_serial;
+        topmost_serial += 1;
     }
 
     index := curr_layer_list.count;
@@ -2668,7 +2699,7 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
     array_add(*curr_layer_list, .{
         widget_id   = id,
         rect        = rect,
-        depth       = depth,
+        serial      = serial,
         prev_layout = prev_layout,
     });
 
@@ -2697,8 +2728,7 @@ point_vs_rect :: (x: float, y: float, rect: Rect) -> bool {
 }
 
 rect_vs_rect :: inline (rect: Rect, other: Rect) -> bool {
-    return other.x < rect.x + rect.w && rect.x < other.x + other.w
-    && other.y < rect.y + rect.h && rect.y < other.y + other.h;
+    return other.x < rect.x + rect.w && rect.x < other.x + other.w && other.y < rect.y + rect.h && rect.y < other.y + other.h;
 }
 
 push_triangle :: (p0: Vector2, p1: Vector2, p2: Vector2, color: Vector4, uv0 := UV_DISCARD, uv1 := UV_DISCARD, uv2 := UV_DISCARD) {
@@ -2807,9 +2837,8 @@ record_draw_marker :: (rect: Rect) {
 }
 
 raise_layer :: (id: UI_ID) {
-    current_layer.depth = current_depth;
-    current_depth += 1;
-    // log("Want to raise window : % :: %", id, current_layer.depth);
+    current_layer.serial = topmost_serial;
+    topmost_serial += 1;
 }
 
 /*
@@ -3686,10 +3715,14 @@ interact_lerp :: (using state: *Widget_State, from: float, to: float) -> float {
     return lerp(from, to, press_strength);
 }
 
+get_luminance :: inline (color: Vector4) -> float {
+    luminance := 0.2126 * color.x + 0.7152 * color.y + 0.0722 * color.z;
+    return luminance;
+}
+
 interact_color :: (using state: Widget_State, base_color: Vector4) -> Vector4 {
     theme_bg := theme.color.bg;
-    luminance := 0.2126 * theme_bg.x + 0.7152 * theme_bg.y + 0.0722 * theme_bg.z;
-    is_dark := luminance < 0.5;
+    is_dark := get_luminance(theme_bg) < 0.5;
 
     hover_strength := hover_duration / HOVER_TIME;
     press_strength := press_duration / PRESS_TIME;
