@@ -111,13 +111,13 @@ current_window       : *Window_State;
 current_section      : *Section_State;
 
 
-
-
 prev_nav_counter        := 0;
 nav_counter             := 0;
 nav_focused_index       := -1;
 nav_focused_id          := -1;
 next_nav_focused_index  := -1;
+
+
 
 Cursor_Icon :: enum {
     ARROW;
