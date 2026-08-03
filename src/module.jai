@@ -6,6 +6,7 @@
 
     - returning "state" for each widgets.
     - C-bindings?
+    - dropdown, after scrolling, we loose focus of the search input.
 
     - Fix issue when release scrollbar on another scrollbar.
     - Finish keyboard navigation.
@@ -1310,13 +1311,19 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
     bg_color     := interact_color(state, theme.color.fg);
     border_color := interact_color(state, theme.color.border);
 
+    should_reset_scroll := false;
+
     if state.want_search && flags & .FILTER {
         push_id("select_filter_input");
         defer pop_id();
 
-        _, updated_str := text_input(state.search, rect = input_rect, flags = rect_flags, loc = loc);
+        _, modified_string := text_input(state.search, rect = input_rect, flags = rect_flags, loc = loc);
 
-        copied := copy_string(updated_str);
+        if modified_string != state.search {
+            should_reset_scroll = true;
+        }
+
+        copied := copy_string(modified_string);
         if state.search free(state.search);
         state.search = copied;
 
@@ -1434,6 +1441,7 @@ select :: (selected: *$T, items: [] string, size := Vector2.{ -1, -1 }, placehol
         layout := current_layout();
 
         scroll := begin_scroll(loc, show_scroll_y = content_height > layer_rect.h);
+        if should_reset_scroll then reset_scroll(scroll);
 
         items_region := alloc_space(.{ layout.rect.w, content_height });
 
@@ -2514,6 +2522,11 @@ begin_scroll :: (loc := #caller_location, show_scroll_x := false, show_scroll_y 
     }
 
     return state;
+}
+
+reset_scroll :: (state: *Scrollbar_State) {
+    state.scroll.x = 0;
+    state.scroll.y = 0;
 }
 
 end_scroll :: (state: *Scrollbar_State, loc := #caller_location) {
