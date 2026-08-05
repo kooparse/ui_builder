@@ -170,7 +170,6 @@ UI_Key :: enum {
     KEY_V;
     KEY_X;
     KEY_A;
-    CTRL;
 };
 
 Key_State :: enum_flags {

@@ -3,7 +3,6 @@
         - Should implement kerning.
 */
 
-
 #scope_module;
 
 DEFAULT_FT_SIZE :: 18;

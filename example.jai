@@ -13,8 +13,6 @@ quad_buffer           : GFX_Buffer;
 window_width    := 1200.;
 window_height   := 800.;
 
-left_down   : bool;
-
 our_font: *UI_Font;
 
 dpi_scale := 1.;
@@ -176,10 +174,6 @@ main :: () {
 
                     down := event.key.state == SDL_PRESSED;
 
-                    // if event.key.keysym.sym == .SDLK_f {
-                    //     if down freeze_io(); else unfreeze_io();
-                    // }
-
                     if event.key.keysym.sym == {
                         case .SDLK_ESCAPE;      set_key_event(.ESCAPE, down);
                         case .SDLK_BACKSPACE;   set_key_event(.BACKSPACE, down);
@@ -212,6 +206,7 @@ main :: () {
                     if event.button.button == {
                         case SDL_BUTTON_LEFT;   set_key_event(.MOUSE_LEFT, down);
                         case SDL_BUTTON_RIGHT;  set_key_event(.MOUSE_RIGHT, down);
+
                         case SDL_BUTTON_MIDDLE; set_key_event(.MOUSE_MIDDLE, down);
                     }
 
