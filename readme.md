@@ -1,22 +1,20 @@
 # UI Builder
 
-_I'm not accepting pull requests, but the code is designed with my own usage
-and preferences in mind, and is available publicaly as I think it is valuable
-informations for people who are looking to own the GUI part of their software._
-
+_I'm not accepting pull requests, the code is designed with my own usage
+and preferences in mind, and is available publicly as I think it is valuable
+information for people who are looking to make their own GUI._
 
 An immediate-mode GUI, with a simple layout system. This library currently
-powered my own game editor, and my forthcoming projects.
-
-All widget position and size are computed from by a layout machinery, but you
-can always escape it by passing youself a rect.
+powers my own game editor, and my forthcoming projects. I explain the core
+mechanisms and technical choices
+[there](https://fomenko.fr/devlogs/gui-programming/).
 
 <img width="1196" height="827" alt="Screenshot" src="https://github.com/user-attachments/assets/4ce3830e-f068-4bde-ba2e-937370f6cb7f" />
 
 ---------------------
 
-Here's a snippet of the shape of your program using this library, for a bigger
-and complete example, see `example.jai`:
+Here's a snippet to see the shape of the user code, for more complete example,
+see `demo/demo.jai`:
 
 ```jai
 
@@ -34,7 +32,7 @@ for program_loop {
         flag_select(*my_enum_flag, .{ 300, -1 });
 
         if button("Hey") {
-            log("You click on the button");
+            log("Clicked.");
         }
 
 
@@ -60,7 +58,7 @@ for program_loop {
 
     memcpy(your_buffer.data, drawlist.vertices.data, drawlist.vertices.count * size_of(UI_Vertex));
 
-    for draw_list.draw_calls {
+    for drawlist.draw_calls {
         if it.texture {
             set_texture(*pass, it.texture);
         }
@@ -75,4 +73,24 @@ for program_loop {
 
 # License
 
+MIT License
 
+Copyright (c) 2026 Alexandre Chêne
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
