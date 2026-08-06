@@ -28,9 +28,8 @@ Glyph_Info :: struct {
 
 #scope_export;
 
-bake_font :: (ttf_filepath: string, white_2x2_pixel := false) -> *Font {
-    content := read_entire_file(ttf_filepath);
-    count32 := cast,trunc(s32) content.count;
+bake_font :: (font_buf: string, white_2x2_pixel := false) -> *Font {
+    count32 := cast,trunc(s32) font_buf.count;
 
     font := New(Font);
 
@@ -40,7 +39,7 @@ bake_font :: (ttf_filepath: string, white_2x2_pixel := false) -> *Font {
         log_error("Error while loading ft_library.");
     }
 
-    if FT_New_Memory_Face(ft_library, content.data, count32, 0, *ft_face) {
+    if FT_New_Memory_Face(ft_library, font_buf.data, count32, 0, *ft_face) {
         log_error("Error while loading ft_face.");
     }
 

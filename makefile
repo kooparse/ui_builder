@@ -1,5 +1,5 @@
 compile:
-	jai example.jai -import_dir ../oleg/modules -output_path output/
+	jai demo/demo.jai -output_path output/
 
 run:
-	jai example.jai -import_dir ../oleg/modules -output_path output/ && output/example
+	jai demo/demo.jai -output_path output/ && demo/output/demo

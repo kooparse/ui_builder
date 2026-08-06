@@ -2387,7 +2387,6 @@ end_column :: () {
     layout.curr_column  = 0;
 }
 
-
 #scope_file;
 
 set_cursor_icon :: (icon: Cursor_Icon) {
