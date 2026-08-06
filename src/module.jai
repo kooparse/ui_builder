@@ -281,7 +281,6 @@ Button_State :: struct {
 Dropdown_State :: struct {
     #as using state : Widget_State;
     open            : bool;
-    first_init      : bool;
     want_search     : bool;
     search          : string;
 };
@@ -2389,15 +2388,6 @@ end_column :: () {
 }
 
 
-
-
-
-
-
-
-
-
-
 #scope_file;
 
 set_cursor_icon :: (icon: Cursor_Icon) {
@@ -2422,7 +2412,6 @@ get_widget_state :: ($T: Type, id: UI_ID, default_rect := Rect.{}) -> *T, bool {
     return cast(*T) state.*, new;
 }
 
-// @todo: rename this proc.
 update_interaction_time :: (state: *Widget_State) {
     if state.status & .HOVERED {
         state.hover_duration += dt * 2;
