@@ -1,37 +1,29 @@
-/*
-
-    reminder: Coord 0,0 is top left, max_width, max_height is bottom right.
-
-    @todo:
-
-    - returning "state" for each widgets.
-    - C-bindings?
-    - dropdown, after scrolling, we loose focus of the search input.
-
-    - Fix issue when release scrollbar on another scrollbar.
-    - Finish keyboard navigation.
-    - Move window when click between its widgets.
-    - Scroll in tabs.
-    - Ability to get the layout of a window.
-    - Add auto wrap mode for widgets.
-    - select, use u32 and autocast as "selected_index" could crash everything...
-    - Finish input text.
-    - Should makes radius samples relative to size.
-
-
-
-    Blog post:
-
-    1) Explain our the UI backbones : layers, occluders, dragging.
-
-    2) Explain "nice" tricks, like white pixel reserve in the font atlas, the
-       double array we swap, the hovered_layer at begin...
-
-*/
-
 #module_parameters(Texture_Type: Type = void);
 
 #load "font.jai";
+
+/*
+    Reminder: Coord 0,0 is top left.
+
+    @todo:
+    - A way to return state flags for each widget.
+    - Fix the fact that we can loose focus of the seartch input by scrolling in
+      a dropdown.
+    - C-bindings (not sure yet tho).
+
+    - Fix glitch wen releasing scrolbar when mouse is on another scrollbar
+      (from a second window).
+    - Finish (and refacto>) keyboard navigation.
+    - Could be cool to allow moving window when we drag from a whatever point
+      in the window which is not a widget.
+    - Add ability to scroll tabs if they are too long
+    - Add an auto wrap mode for widgets (column should do the trick already
+      no?).
+    - Impl all number types for select, otherwise it could crash.
+    - Add text selection on text input.
+    - Add radius samples relative to size (saving many vertices).
+*/
+
 
 DEFAULT_THEME :: Theme.{};
 theme         := DEFAULT_THEME;
