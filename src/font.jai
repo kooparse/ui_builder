@@ -7,7 +7,7 @@
 
 DEFAULT_FT_SIZE :: 18;
 
-Font_Atlas :: Texture_Packer(2024, 2024);
+Font_Atlas :: Texture_Packer(2048, 2048);
 
 Font :: struct {
     ft_buffer     : string; // A copy of the given buffer from a font file.
