@@ -136,9 +136,6 @@ io_frozen    := false;
 dt        := 0.;
 prev_time := 0.;
 
-prev_glyph_count := 0;
-glyph_count      := 0;
-
 wheel_scrolling_triggered := false;
 
 all_widget_disabled := false;
@@ -363,11 +360,9 @@ set_theme :: inline (given_theme: Theme) {
     theme = given_theme;
 }
 
-set_font :: (font_to_set: *Font, font_texture_atlas: *Texture_Type) -> bool {
+set_font :: (font_to_set: *Font, font_texture_atlas: *Texture_Type) {
     font            = font_to_set;
     font_texture    = font_texture_atlas;
-
-    return prev_glyph_count != glyph_count;
 }
 
 set_mouse_position :: (x: float, y: float) {
@@ -525,12 +520,6 @@ ui_begin :: () {
     sync_theme_sizes();
 
     wheel_scrolling_triggered = false;
-
-
-    if font != null {
-        prev_glyph_count = glyph_count;
-        glyph_count      = font.glyph_table.count;
-    }
 
     if io_frozen {
         hovered_layer = -1;

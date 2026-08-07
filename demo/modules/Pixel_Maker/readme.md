@@ -16,7 +16,6 @@ alongside the corresponding shader program; we use Slang reflection system to
 find the name of bindings, slot numbers, and types.
 
 
-
 # License
 
 I'm not accepting pull requests, but the code is available publicaly as I think
@@ -34,38 +33,3 @@ The article written by Sebastian Aaltonen, [No Graphics
 API](https://www.sebastianaaltonen.com/blog/no-graphics-api) opened my eyes on
 my things, and drive me towards this similar design (but I'm a bit blocked by
 DX11 and not ready to move on).
-
-
-
-
-
-
-
-
-The very very first version was made by Stefan, who worked on my game, before
-
-
-manageable with some warmup PSO loop
-
-we keep a pipeline state (PSO)
-table which we lookup just before draw calls. Yup, we create new PSO on the
-fly (and then cached them), so it could cost some ms for the first frames.
-
-
-state machine with properties attached to a draw call, like color format, attachement textures, which shader to use...
-
-like
-which shader to use, color format, scissor, etc... and just before the draw call, we
-lookup
-
-we (re)construct pipelines on the draw call where we lookup our internal state machine
-
-
-
-I wanted simpicity as much as possible as well. So users of this module don't have to describe
-
-
-
-
-
-

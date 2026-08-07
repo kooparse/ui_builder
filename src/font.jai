@@ -1,6 +1,6 @@
 /*
         @todo:
-        - Should implement kerning.
+        - Should implement better kerning.
 */
 
 #scope_module;
@@ -17,6 +17,7 @@ Font :: struct {
     glyph_table   : Table(u32, Glyph_Info);
 
     font_atlas    : Font_Atlas;
+    atlas_dirty   : bool;
 
     white_pixel_position : Vector2;
 }
@@ -48,6 +49,8 @@ bake_font :: (font_buf: string, white_2x2_pixel := false) -> *Font {
         WHITE_PIXELS :: u8.[255, 255, 255, 255];
         white_pos := push_white_bitmap_and_set_alpha_values(*font_atlas, 2, 2, xx *WHITE_PIXELS);
 
+        atlas_dirty = true;
+
         font.white_pixel_position = Vector2.{
             (white_pos.x + 0.5) / cast(float) font_atlas.WIDTH,
             (white_pos.y + 0.5) / cast(float) font_atlas.HEIGHT,
@@ -55,6 +58,15 @@ bake_font :: (font_buf: string, white_2x2_pixel := false) -> *Font {
     }
 
     return font;
+}
+
+check_if_font_atlas_is_dirty_this_frame :: (font: *Font) -> bool {
+    if font.atlas_dirty {
+        font.atlas_dirty = false;
+        return true;
+    }
+
+    return false;
 }
 
 get_raw_bitmap_texture :: (font: *Font) -> *void, int, int {
@@ -84,8 +96,9 @@ find_or_add_glyph :: (using font: *Font, char: u32, font_size: int) -> Glyph_Inf
         return glyph;
     }
 
-    // @speed (stefan): This retrieves some info about the font metrics
-    // each time it is called, so it may not be a good idea to call this per glyph
+    // New glyph, so we want to notify the user to update the atlas texture.
+    atlas_dirty = true;
+
     FT_Set_Pixel_Sizes(ft_face, 0, xx font_size);
 
     glyph_index := FT_Get_Char_Index(ft_face, char);

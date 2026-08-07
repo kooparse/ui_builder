@@ -324,6 +324,7 @@ ed_undo_redo     := Window_State.{ open = true };
 ed_theme         := Window_State.{ open = true };
 
 make_ui :: () -> UI_Draw_List {
+    set_font(our_font, *font_atlas_texture);
 
     set_theme(Theme.{
         color                   = ifx chosen_theme >= THEMES.count then custom_theme else THEMES[chosen_theme],
@@ -334,13 +335,6 @@ make_ui :: () -> UI_Draw_List {
         separator_size          = DEFAULT_THEME.separator_size          * dpi_scale,
         corner_radius           = DEFAULT_THEME.corner_radius           * dpi_scale,
     });
-
-    modified := set_font(our_font, *font_atlas_texture);
-
-    if modified {
-        bitmap, width, height := get_raw_bitmap_texture(our_font);
-        replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
-    }
 
     {
         if button("Hey!", UI_Rect.{ 500, 10, 200, 60 } * dpi_scale) {
@@ -597,6 +591,11 @@ make_ui :: () -> UI_Draw_List {
 
 
     ui_end();
+
+    if check_if_font_atlas_is_dirty_this_frame(our_font) {
+        bitmap, width, height := get_raw_bitmap_texture(our_font);
+        replace_texture_region(*font_atlas_texture, .{ 0, 0, 0 }, .{ xx width, xx height, 1 }, 0, 0, bitmap);
+    }
 
     last_draw_calls   = get_draw_list().draw_calls.count;
     last_vertex_count = get_draw_list().vertices.count;
