@@ -10,9 +10,9 @@ DEFAULT_FT_SIZE :: 18;
 Font_Atlas :: Texture_Packer(2024, 2024);
 
 Font :: struct {
+    ft_buffer     : string; // A copy of the given buffer from a font file.
     ft_library    : FT_Library;
     ft_face       : FT_Face;
-    ttf_file      : string;
 
     glyph_table   : Table(u32, Glyph_Info);
 
@@ -29,10 +29,9 @@ Glyph_Info :: struct {
 
 #scope_export;
 
-bake_font :: (font_buf: string, white_2x2_pixel := false) -> *Font {
-    count32 := cast,trunc(s32) font_buf.count;
-
-    font := New(Font);
+bake_font :: (buffer: string, white_2x2_pixel := false) -> *Font {
+    count32 := cast,trunc(s32) buffer.count;
+    font    := New(Font);
 
     using font;
 
@@ -40,7 +39,9 @@ bake_font :: (font_buf: string, white_2x2_pixel := false) -> *Font {
         log_error("Error while loading ft_library.");
     }
 
-    if FT_New_Memory_Face(ft_library, font_buf.data, count32, 0, *ft_face) {
+    ft_buffer = copy_string(buffer);
+
+    if FT_New_Memory_Face(ft_library, ft_buffer.data, count32, 0, *ft_face) {
         log_error("Error while loading ft_face.");
     }
 
@@ -79,7 +80,7 @@ free_font :: (using font: *Font) {
 
     deinit(*glyph_table);
     deinit(*font_atlas);
-    free(ttf_file);
+    free(ft_buffer);
 }
 
 
