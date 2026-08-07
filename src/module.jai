@@ -6,6 +6,7 @@
     Reminder: Coord 0,0 is top left.
 
     @todo:
+    - Finish (and refacto?) keyboard navigation.
     - A way to return state flags for each widget.
     - Fix the fact that we can loose focus of the seartch input by scrolling in
       a dropdown.
@@ -13,7 +14,6 @@
 
     - Fix glitch wen releasing scrolbar when mouse is on another scrollbar
       (from a second window).
-    - Finish (and refacto>) keyboard navigation.
     - Could be cool to allow moving window when we drag from a whatever point
       in the window which is not a widget.
     - Add ability to scroll tabs if they are too long
@@ -2445,9 +2445,9 @@ mutate_state :: (state: *Widget_State, rect: Rect, check_layout := true, disable
         next_nav_focused_index = nav_counter;
     }
 
-    if !(state.status & .DISABLED) && navigable {
-        mark_widget_as_navigable(state.widget_id);
-    }
+    // if !(state.status & .DISABLED) && navigable {
+    //     mark_widget_as_navigable(state.widget_id);
+    // }
 
 
     if state.widget_id == nav_focused_id && is_pressed(.RETURN) {
