@@ -183,27 +183,35 @@ Draw_Marker :: struct {
 };
 
 UI_Layout :: struct {
+    // The layout rect, relative to the layer rect.
     rect       : Rect;
+    // The cursor we mutate.
     cursor     : Vector2;
-
+    // If columns value is above 0, it means we are in columns mode.
     columns        := 0;
+    // Used to center widgets on a row, when previous widget height is bigger than the row height.
     row_max_height := 0.;
 
     // We compute after each alloc_space the total space our widgets takes
-    // within its layout rect. Used notably for the scrollbar and gradiant at
+    // within its layout rect. Used notably for the scrollbar and gradient at
     // the bottom of the window.
     content_height : float;
     content_width  : float;
 
+    // Set the scroll offset, this is set by the scrollbar widget.
     scroll         : Vector2;
 
-    // For auto layout.
+    // Tracks which column we are now.
     curr_column        := 0;
+    // Tracks previous widget size.
     prev_widget_size   : Vector2;
-    should_inline      := false;
-    should_fullwidth   := false;
-    should_force_width := 0.0;
 
+    // If we should inline the next widget to the previous row.
+    should_inline      := false;
+    // If next widget should takes leftover width of the row.
+    should_fullwidth   := false;
+    // If we should unforce a specific width to the next widget.
+    should_force_width := 0.0;
 };
 
 Rect :: struct {
@@ -810,7 +818,7 @@ begin_window :: (state: *Window_State, default_rect: Rect, title := "", flags :=
 end_window :: (loc := #caller_location) {
     pop_clip();
 
-    // Draw opacity gradiant at the bottom of the window, only if content is
+    // Draw opacity gradient at the bottom of the window, only if content is
     // opaque.
     if theme.alpha >= 1.0 {
         layout    := current_layout();
@@ -2669,7 +2677,7 @@ push_layer :: (id: UI_ID, rect: Rect) -> is_new: bool {
 
     // If new layout, we simply initialize it on the top of the stack.
     if serial == -1 {
-        is_new           = true;
+        is_new          = true;
         serial          = topmost_serial;
         topmost_serial += 1;
     }
