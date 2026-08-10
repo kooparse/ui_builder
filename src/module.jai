@@ -265,6 +265,14 @@ Widget_State :: struct {
     hover_duration  := 0.;
 };
 
+Slider_State :: struct {
+    #as using base: Widget_State;
+
+    dragging        : bool;
+    drag_x          : float;
+    handle_x        : float;
+};
+
 Checkbox_State :: struct {
     #as using base: Widget_State;
 
@@ -1525,7 +1533,92 @@ label :: (text: string, label_size := 0., loc := #caller_location) {
     } else {
         draw_text(text, rect.x, y, text_size, theme.color.text);
     }
+}
 
+slider :: (value: *$T, min: T, max: T, size := Vector2.{ -1, -1 }, rect := Rect.{}, trailing_width := 1, loc := #caller_location) -> modified: bool {
+    is_int :: #run is_integer_type(T);
+
+    id    := make_id(loc, "slider");
+    state := get_widget_state(Slider_State, id);
+
+    input_rect := rect;
+
+    if rect.w <= 0 || rect.h <= 0 {
+        input_rect = alloc_space(size);
+    }
+
+    using, except(rect) state;
+
+    user_value := cast(float) value.*;
+
+    handle_width := get_em(3);
+    handle_max   := input_rect.w - handle_width;
+
+    handle := UI_Rect.{ x = input_rect.x + handle_x, y = input_rect.y, w = handle_width, h = input_rect.h };
+    handle = shrink_rect(handle, theme.border_width * 2, theme.border_width * 2);
+
+    mutate_state(state, handle);
+
+    handle_color := interact_color(state, theme.color.text_muted);
+
+    draw_rect(input_rect, theme.color.fg, .ROUND_ALL | .HALF_RADIUS);
+
+    modified         := false;
+    dragging_allowed := active_widget == -1 && !dragging && is_down(.MOUSE_LEFT);
+
+    if dragging_allowed && !is_occluded(handle) && cursor_vs_rect(handle) {
+        if (abs(delta_x) > 0 || abs(delta_y) > 0) {
+            drag_x          = handle_x;
+            dragging        = true;
+            active_widget  = id;
+        }
+    }
+
+    value_as_float := cast(float, value.*);
+    percent        := cast(float, (value_as_float - min) / (max - min));
+
+    if dragging {
+        drag_x += delta_x;
+        Clamp(*drag_x, 0, handle_max);
+
+        new_percent := drag_x / handle_max;
+        new_value   := new_percent * (max - min) + min;
+
+        value.* = cast(T) new_value;
+        Clamp(value, min, max);
+
+        percent = (cast(float) value.* - min) / (max - min);
+    }
+
+    handle_x = percent * handle_max;
+
+    if dragging && !is_down(.MOUSE_LEFT) {
+        active_widget  = -1;
+        dragging       = false;
+        modified       = true;
+    }
+
+    // Reset the handle position after mutating the offset, removing lag.
+    handle = UI_Rect.{ x = input_rect.x + handle_x, y = input_rect.y, w = handle_width, h = input_rect.h };
+    handle = shrink_rect(handle, theme.border_width * 2, theme.border_width * 2);
+
+    text: string;
+
+    #if is_int {
+        text = tprint("%", value.*);
+    } else {
+        text = tprint("%", FormatFloat.{ value = value.*, trailing_width = trailing_width, zero_removal = .NO });
+    }
+
+    text_size := get_em(0.9);
+    text_width, text_height := get_text_size(font, text, text_size);
+
+    draw_rect(handle, handle_color, .ROUND_ALL | .HALF_RADIUS);
+    draw_text(text, handle.x + handle.w * 0.5 - text_width * 0.5, handle.y + handle.h * 0.5 - text_height * 0.5, text_size, theme.color.text);
+
+    draw_outline(input_rect, theme.color.border, theme.border_width, .ROUND_ALL | .HALF_RADIUS);
+
+    return modified;
 }
 
 separator :: (text := "") {

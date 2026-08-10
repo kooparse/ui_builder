@@ -312,6 +312,9 @@ my_hex       :  u32 = 0xffffee;
 my_enum_flag := Entity_Flags.SOLID;
 toggle       := false;
 
+int_slider   := 10;
+float_slider := 30.;
+
 disable_all  := false;
 
 position     := Vector3.{ 0.5, 12.3, 3.4 };
@@ -395,6 +398,13 @@ make_ui :: () -> UI_Draw_List {
             placeholder := "Pick a plant...";
             select(*selected, plants, .{ 300, -1 } * dpi_scale, placeholder, max_items = 4);
             flag_select(*my_enum_flag, .{ 300, -1 } * dpi_scale, placeholder);
+
+            separator("Sliders");
+            field("Int slider:", width);
+            slider(*int_slider, -50, 50);
+
+            field("Float slider:", width);
+            slider(*float_slider, -50, 50);
 
             separator("Button with img");
 
