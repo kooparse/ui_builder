@@ -1539,8 +1539,11 @@ label :: (text: string, label_size := 0., loc := #caller_location) {
 slider :: (value: *$T, min: T, max: T, size := Vector2.{ -1, -1 }, rect := Rect.{}, trailing_width := 1, loc := #caller_location) -> modified: bool {
     is_int :: #run is_integer_type(T);
 
-    id    := make_id(loc, "slider");
-    state := get_widget_state(Slider_State, id);
+    slider_id    := make_id(loc, "slider");
+    handle_id    := make_id(loc, "slider_handle");
+
+    slider_state := get_widget_state(Widget_State, slider_id);
+    handle_state := get_widget_state(Slider_State, handle_id);
 
     input_rect := rect;
 
@@ -1548,7 +1551,7 @@ slider :: (value: *$T, min: T, max: T, size := Vector2.{ -1, -1 }, rect := Rect.
         input_rect = alloc_space(size);
     }
 
-    using, except(rect) state;
+    using, except(rect) handle_state;
 
     if handle_width <= 0 {
         handle_width = get_text_size(font, "-100.00", theme.text_size);
@@ -1563,20 +1566,22 @@ slider :: (value: *$T, min: T, max: T, size := Vector2.{ -1, -1 }, rect := Rect.
     handle := UI_Rect.{ x = input_rect.x + handle_x, y = input_rect.y, w = handle_width, h = input_rect.h };
     handle = shrink_rect(handle, theme.border_width * 2, theme.border_width * 2);
 
-    mutate_state(state, handle);
-
-    handle_color := interact_color(state, theme.color.text_muted);
-
-    draw_rect(input_rect, theme.color.fg, .ROUND_ALL | .HALF_RADIUS);
+    mutate_state(slider_state, input_rect);
+    mutate_state(handle_state, handle);
 
     modified         := false;
     dragging_allowed := active_widget == -1 && !dragging && is_down(.MOUSE_LEFT);
+
+    slider_color := interact_color(slider_state, theme.color.fg);
+    handle_color := interact_color(handle_state, ifx (dragging || status & .DOWN) theme.color.accent else theme.color.text_muted);
+
+    draw_rect(input_rect, slider_color, .ROUND_ALL | .HALF_RADIUS);
 
     if dragging_allowed && !is_occluded(handle) && cursor_vs_rect(handle) {
         if (abs(delta_x) > 0 || abs(delta_y) > 0) {
             drag_x          = handle_x;
             dragging        = true;
-            active_widget  = id;
+            active_widget   = handle_id;
         }
     }
 
