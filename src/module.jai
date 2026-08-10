@@ -3213,6 +3213,8 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
     radius  = min(radius, r.w * 0.5);
     radius  = min(radius, r.h * 0.5);
 
+    k := border_width / radius;
+
     top_left     := Rect.{ r.x, r.y, radius, radius };
     top_right    := Rect.{ r.x + r.w - radius, r.y, radius, radius };
     bottom_left  := Rect.{ r.x, r.y + r.h - radius, radius, radius };
@@ -3236,10 +3238,10 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
             p1     := prev;
             p2     := p0 + xy(-sin(theta) * radius, -cos(theta) * radius);
 
-            a := p1 + normalize(p0 - p1) * border_width;
+            a := p1 + (p0 - p1) * k;
             b := p1;
             c := p2;
-            d := p2 + normalize(p0 - p2) * border_width;
+            d := p2 + (p0 - p2) * k;
 
             push_triangle(a, b, c, color);
             push_triangle(a, c, d, color);
@@ -3259,10 +3261,10 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
             p1     := prev;
             p2     := p0 + xy(sin(theta) * radius, -cos(theta) * radius);
 
-            a := p1 + normalize(p0 - p1) * border_width;
+            a := p1 + (p0 - p1) * k;
             b := p1;
             c := p2;
-            d := p2 + normalize(p0 - p2) * border_width;
+            d := p2 + (p0 - p2) * k;
 
             push_triangle(a, b, c, color);
             push_triangle(a, c, d, color);
@@ -3281,10 +3283,10 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
             p1 := prev;
             p2 := p0 + xy(-sin(theta) * radius, cos(theta) * radius);
 
-            a := p1 + normalize(p0 - p1) * border_width;
+            a := p1 + (p0 - p1) * k;
             b := p1;
             c := p2;
-            d := p2 + normalize(p0 - p2) * border_width;
+            d := p2 + (p0 - p2) * k;
 
             push_triangle(a, b, c, color);
             push_triangle(a, c, d, color);
@@ -3303,10 +3305,10 @@ draw_outline :: (r: Rect, color: Vector4, border_width: float, flags: Rect_Flags
             p1 := prev;
             p2 := p0 + xy(sin(theta) * radius, cos(theta) * radius);
 
-            a := p1 + normalize(p0 - p1) * border_width;
+            a := p1 + (p0 - p1) * k;
             b := p1;
             c := p2;
-            d := p2 + normalize(p0 - p2) * border_width;
+            d := p2 + (p0 - p2) * k;
 
             push_triangle(a, b, c, color);
             push_triangle(a, c, d, color);
@@ -3376,6 +3378,8 @@ draw_circle_outline :: (pos: Vector2, radius: float, border_size: float, color: 
     p0   := pos;
     prev := pos - xy(-1, 0) * radius;
 
+    k := border_size / radius;
+
     for 1..theme.circle_sample {
         theta  := 2 * PI * (it / cast(float) theme.circle_sample);
 
@@ -3384,8 +3388,8 @@ draw_circle_outline :: (pos: Vector2, radius: float, border_size: float, color: 
 
         a := p1;
         b := p2;
-        c := p2 + normalize(p0 - p2) * border_size;
-        d := p1 + normalize(p0 - p1) * border_size;
+        c := p2 + (p0 - p2) * k;
+        d := p1 + (p0 - p1) * k;
 
         push_triangle(a, b, c, color);
         push_triangle(a, c, d, color);
