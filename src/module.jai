@@ -3902,7 +3902,7 @@ Theme :: struct {
     input_cursor_size       := 2.;
     separator_size          := 1.0;
     corner_radius           := 8.;
-    radius_sample           := 20;
+    radius_sample           := 6;
     circle_sample           := 30;
     border_width            := 4.;
     text_size               := 18.;
