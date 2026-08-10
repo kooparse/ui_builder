@@ -268,6 +268,7 @@ Widget_State :: struct {
 Slider_State :: struct {
     #as using base: Widget_State;
 
+    handle_width    : float;
     dragging        : bool;
     drag_x          : float;
     handle_x        : float;
@@ -1549,9 +1550,14 @@ slider :: (value: *$T, min: T, max: T, size := Vector2.{ -1, -1 }, rect := Rect.
 
     using, except(rect) state;
 
-    user_value := cast(float) value.*;
+    if handle_width <= 0 {
+        handle_width = get_text_size(font, "-100.00", theme.text_size);
 
-    handle_width := get_em(3);
+        if handle_width < get_em(3) {
+            handle_width = get_em(3);
+        }
+    }
+
     handle_max   := input_rect.w - handle_width;
 
     handle := UI_Rect.{ x = input_rect.x + handle_x, y = input_rect.y, w = handle_width, h = input_rect.h };
