@@ -57,7 +57,7 @@ set_layer :: (view: *NSView, layer: *CAMetalLayer) {
 
 #scope_export
 
-create_gfx_context :: (ns_window: *void) -> bool {
+create_context :: (ns_window: *void) -> bool {
     init_objective_c();
     init_app_kit();
     init_metal();
@@ -111,7 +111,7 @@ create_gfx_context :: (ns_window: *void) -> bool {
     return true;
 }
 
-destroy_gfx_context :: () {
+destroy_context :: () {
     using context.graphics_context;
 
     release(cmd_queue);
@@ -135,13 +135,13 @@ get_swapchain_pixel_format :: () -> GFX_Pixel_Format {
     return make_gfx_pixel_format(swapchain.pixelFormat(swapchain));
 }
 
-get_display_swap_interval :: () -> s32 {
+get_swapchain_interval :: () -> s32 {
     using context.graphics_context;
 
     return xx swapchain.displaySyncEnabled(swapchain);
 }
 
-set_display_swap_interval :: (interval : s32) {
+set_swapchain_interval :: (interval : s32) {
     using context.graphics_context;
 
     swapchain.setDisplaySyncEnabled(swapchain, xx (interval != 0));
@@ -153,7 +153,7 @@ get_backbuffer_index :: () -> int {
     return backbuffer_index;
 }
 
-begin_gfx_frame :: () {
+begin_frame :: () {
     using context.graphics_context;
 
     gpu_frame_count += 1;
@@ -195,7 +195,7 @@ begin_gfx_frame :: () {
     is_first_cmd_buffer_in_frame = true;
 }
 
-submit_gfx_frame :: () {
+present :: () {
     using context.graphics_context;
 
     cmd_buffer := cmd_queue.commandBuffer(cmd_queue);
@@ -217,7 +217,7 @@ get_last_frame_gpu_time :: () -> float {
     return xx (last_frame_gpu_end_time - last_frame_gpu_start_time);
 }
 
-get_gfx_caps :: () -> GFX_Capabilities {
+get_capabilities :: () -> GFX_Capabilities {
     using context.graphics_context;
 
     if capabilities.max_texture_size {
@@ -297,7 +297,7 @@ GFX_Command_Buffer :: struct {
     using handle: *MTLCommandBuffer;
 }
 
-create_gfx_command_buffer :: (name: string) -> GFX_Command_Buffer {
+create_command_buffer :: (name: string) -> GFX_Command_Buffer {
     using context.graphics_context;
 
     buffer := cmd_queue.commandBuffer(cmd_queue);
@@ -314,7 +314,7 @@ create_gfx_command_buffer :: (name: string) -> GFX_Command_Buffer {
     };
 }
 
-execute_gfx_command_buffer :: (cmd_buffer: *GFX_Command_Buffer) {
+submit_command_buffer :: (cmd_buffer: *GFX_Command_Buffer) {
     using context.graphics_context;
 
     cmd_buffer.commit(cmd_buffer.handle);
@@ -361,7 +361,7 @@ is_null :: (buffer: *GFX_Buffer) -> bool {
     return buffer == null || buffer.handle == null;
 }
 
-create_gfx_buffer :: (name: string, size: u64, stride: u32, data: *void, storage_flags: GFX_Storage_Flags, _: GFX_Bind_Flags) -> GFX_Buffer {
+create_buffer :: (name: string, size: u64, stride: u32, data: *void, storage_flags: GFX_Storage_Flags, _: GFX_Bind_Flags) -> GFX_Buffer {
     using context.graphics_context;
 
     options: MTLResourceOptions;
@@ -388,7 +388,7 @@ create_gfx_buffer :: (name: string, size: u64, stride: u32, data: *void, storage
     return .{handle=buffer, size=size};
 }
 
-destroy_gfx_buffer :: (using buffer: *GFX_Buffer) {
+destroy_buffer :: (using buffer: *GFX_Buffer) {
     release(handle);
     buffer.* = .{};
 }
@@ -405,11 +405,11 @@ unlock_buffer :: (buffer : *GFX_Buffer) {
     buffer.data_ptr = null;
 }
 
-gfx_storage_alignement :: inline () -> u64 {
+get_storage_alignment :: inline () -> u64 {
     return 16;
 }
 
-gfx_constant_alignment :: inline () -> u64 {
+get_constant_alignment :: inline () -> u64 {
     return 16;
 }
 
@@ -429,14 +429,14 @@ gfx_constant_alignment :: inline () -> u64 {
 
 GFX_Readback_Buffer :: GFX_Buffer;
 
-lock_resource :: (using resource: *GFX_Readback_Buffer, _: GFX_Map_Access_Flags) {
+lock_readbackbuffer :: (using resource: *GFX_Readback_Buffer, _: GFX_Map_Access_Flags) {
     assert(resource.locked == false, "GPU ReadbackBbuffer was already locked!");
 
     resource.locked   = true;
     resource.data_ptr = MTLBuffer.contents(resource.handle);
 }
 
-unlock_resource :: (resource : *GFX_Readback_Buffer) {
+unlock_readbackbuffer :: (resource : *GFX_Readback_Buffer) {
     resource.data_ptr = null;
     resource.locked   = false;
 }
@@ -458,15 +458,15 @@ copy_texture_to_readbackbuffer :: (using pass : *GFX_Copy_Pass, source : *GFX_Te
     );
 }
 
-gfx_create_readbackbuffer :: (name : string, desc: GFX_Texture_Desc) -> GFX_Readback_Buffer {
+create_readbackbuffer :: (name : string, desc: GFX_Texture_Desc) -> GFX_Readback_Buffer {
     size    := desc.width * desc.height * get_bytes_per_pixel(desc.pixel_format);
     stride  := cast(u32) get_bytes_per_pixel(desc.pixel_format);
 
-    return create_gfx_buffer(name, size, stride, null, desc.storage_flags, .NONE);
+    return create_buffer(name, size, stride, null, desc.storage_flags, .NONE);
 }
 
-gfx_destroy_readbackbuffer :: (buffer: *GFX_Readback_Buffer) {
-    destroy_gfx_buffer(buffer);
+destroy_readbackbuffer :: (buffer: *GFX_Readback_Buffer) {
+    destroy_buffer(buffer);
 }
 
 
@@ -506,7 +506,7 @@ get_desc :: (texture: *GFX_Texture) -> GFX_Texture_Desc {
     return texture.desc;
 }
 
-create_gfx_texture :: (name : string, desc : GFX_Texture_Desc, data : *void = null) -> GFX_Texture {
+create_texture :: (name : string, desc : GFX_Texture_Desc, data : *void = null) -> GFX_Texture {
     using context.graphics_context;
 
     // assert(desc.usage != .UNKNOWN, "desc.usage is %", desc.usage);
@@ -526,7 +526,7 @@ create_gfx_texture :: (name : string, desc : GFX_Texture_Desc, data : *void = nu
 
     storage_mode : MTLStorageMode;
     if (desc.storage_flags & .CPU_READ) || (desc.storage_flags & .CPU_WRITE) {
-        storage_mode = MTLStorageModeManaged;
+        storage_mode = MTLStorageModeShared;
     } else {
         storage_mode = MTLStorageModePrivate;
     }
@@ -562,7 +562,7 @@ create_gfx_texture :: (name : string, desc : GFX_Texture_Desc, data : *void = nu
     return result;
 }
 
-destroy_gfx_texture :: (using texture : *GFX_Texture) {
+destroy_texture :: (using texture : *GFX_Texture) {
     release(handle);
     if name then free(name);
     texture.* = .{};
@@ -612,7 +612,7 @@ replace_texture_region :: (using texture : *GFX_Texture, origin : Vector3u, size
 
 }
 
-create_gfx_texture_view :: (name : string, texture : GFX_Texture, desc : GFX_Texture_View_Desc) -> GFX_Texture {
+create_texture_view :: (name : string, texture : GFX_Texture, desc : GFX_Texture_View_Desc) -> GFX_Texture {
     view := cast(*MTLTexture, MTLTexture.newTextureViewWithPixelFormat_textureType_levels_slices(
         texture.handle,
         make_metal_pixel_format(desc.pixel_format),
@@ -648,7 +648,7 @@ create_texture_2d_rgba8 :: (name := "", data: *u8, width: s32, height: s32, mipm
         set_appropriate_num_mipmap_levels(*desc);
     }
 
-    result := create_gfx_texture(name, desc, data=data);
+    result := create_texture(name, desc, data=data);
 
     if is_null(*result) {
         return result;
@@ -766,7 +766,7 @@ is_null :: (sampler : *GFX_Sampler_State) -> bool {
     return sampler == null || sampler.handle == null;
 }
 
-create_gfx_sampler_state :: (name : string, desc : GFX_Sampler_State_Desc) -> GFX_Sampler_State {
+create_sampler_state :: (name : string, desc : GFX_Sampler_State_Desc) -> GFX_Sampler_State {
     using context.graphics_context;
 
     mtl_desc := objc_new(MTLSamplerDescriptor);
@@ -806,7 +806,7 @@ create_gfx_sampler_state :: (name : string, desc : GFX_Sampler_State_Desc) -> GF
     return .{result};
 }
 
-destroy_gfx_sampler_state :: (using sampler : *GFX_Sampler_State) {
+destroy_sampler_state :: (using sampler : *GFX_Sampler_State) {
     release(handle);
     handle = null;
 }
@@ -884,7 +884,7 @@ is_null :: (shader: *GFX_Shader) -> bool {
     return shader == null || shader.library == null || shader.function == null;
 }
 
-load_gfx_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage: GFX_Pipeline_Stage, source: string, bindings: []GFX_Pipeline_Binding) -> bool {
+load_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage: GFX_Pipeline_Stage, source: string, bindings: []GFX_Pipeline_Binding) -> bool {
     using context.graphics_context;
 
     stage_flag := cast(GFX_Pipeline_Stage_Flags, 1 << stage);
@@ -915,7 +915,7 @@ load_gfx_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage: GFX_Pipeline
 
     shader := ifx stage == .VERTEX then *vertex_shader else *fragment_shader;
     if !is_null(shader) {
-        destroy_gfx_shader(shader);
+        destroy_shader(shader);
     }
 
     shader.loaded_shader    = loaded_shader;
@@ -927,7 +927,7 @@ load_gfx_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage: GFX_Pipeline
     return true;
 }
 
-destroy_gfx_shader :: (shader: *GFX_Shader) {
+destroy_shader :: (shader: *GFX_Shader) {
     if shader.function {
         release(shader.function);
     }
@@ -967,7 +967,7 @@ GFX_Render_Pass :: struct {
 }
 
 
-begin_gfx_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_Command_Buffer, desc : GFX_Render_Pass_Desc) {
+begin_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_Command_Buffer, desc : GFX_Render_Pass_Desc) {
     pass.desc = desc;
 
     pass_desc := MTLRenderPassDescriptor.renderPassDescriptor();
@@ -1047,7 +1047,7 @@ begin_gfx_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *
     pass.encoder.setLabel(pass.encoder, NSString.getTempString(tprint("Render Pass '%'", name)));
 }
 
-end_gfx_render_pass :: (using pass : *GFX_Render_Pass) {
+end_render_pass :: (using pass : *GFX_Render_Pass) {
     encoder.endEncoding(encoder);
 }
 
@@ -1129,7 +1129,7 @@ set_sampler_state :: (using pass : *GFX_Render_Pass, binding : GFX_Pipeline_Bind
     }
 }
 
-draw_primitives :: (
+draw :: (
     using pass      : *GFX_Render_Pass,
     vertex_count    : u32,
     instance_count  : u32,
@@ -1150,7 +1150,7 @@ draw_primitives :: (
     );
 }
 
-draw_indexed_primitives :: (
+draw_indexed :: (
     using pass : *GFX_Render_Pass,
     index_buffer : *GFX_Buffer,
     index_count : u32,
@@ -1253,12 +1253,12 @@ GFX_Copy_Pass :: struct {
     encoder : *MTLBlitCommandEncoder;
 }
 
-begin_gfx_copy_pass :: (using pass : *GFX_Copy_Pass, name : string, cmd_buffer : *GFX_Command_Buffer) {
+begin_copy_pass :: (using pass : *GFX_Copy_Pass, name : string, cmd_buffer : *GFX_Command_Buffer) {
     encoder = cmd_buffer.blitCommandEncoder(cmd_buffer.handle);
     begin_debug_group(cmd_buffer, tprint("Copy Pass '%'", name));
 }
 
-end_gfx_copy_pass :: (using pass : *GFX_Copy_Pass) {
+end_copy_pass :: (using pass : *GFX_Copy_Pass) {
     MTLCommandEncoder.endEncoding(xx encoder);
 
     gfx_encoder := GFX_Command_Buffer.{ handle = xx pass.encoder };
@@ -1718,6 +1718,4 @@ make_metal_stencil_operation :: inline (op : GFX_Stencil_Operation) -> MTLStenci
 using, except(Category) OBJC :: #import "Objective_C";
 
 #import "Objective_C/AppKit";
-#import "stb_image";
 #import, dir "bindings/Metal";
-

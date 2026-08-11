@@ -4,6 +4,7 @@ Shader_Config :: struct {
 
     disable_slang_optimizations         := false;
     write_transpiled_shaders_to_disk    := false;
+    transpiled_folderpath               := "";
 };
 
 set_vertex_shader :: (shader_name: string) {
@@ -24,7 +25,7 @@ add_shader :: (shader_path: string) -> *GFX_Loaded_Shader {
 
     shader_buffer    := read_entire_file(filepath ,, temp);
 
-    success, shader  := load_shader(name, filepath, shader_buffer);
+    success, shader  := load_and_compile_shader(name, filepath, shader_buffer);
     assert(success == true);
 
     _, index := array_add_if_unique(*shaders, shader, (a, b) => a.filepath == b.filepath);
@@ -34,11 +35,15 @@ add_shader :: (shader_path: string) -> *GFX_Loaded_Shader {
 add_shader :: (name: string, filepath: string, shader_buffer: string) -> *GFX_Loaded_Shader {
     _, name          := path_decomp(filepath ,, temp);
 
-    success, shader  := load_shader(name, filepath, shader_buffer);
+    success, shader  := load_and_compile_shader(name, filepath, shader_buffer);
     assert(success == true);
 
     _, index := array_add_if_unique(*shaders, shader, (a, b) => a.filepath == b.filepath);
     return *shaders[index];
+}
+
+set_shader_config :: (conf: Shader_Config) {
+    shader_config = conf;
 }
 
 #scope_file;
@@ -48,11 +53,7 @@ slang_global_session : *Slang.IGlobalSession;
 using shader_config  : Shader_Config;
 shaders              : [..] GFX_Loaded_Shader;
 
-set_shader_config :: (conf: Shader_Config) {
-    shader_config = conf;
-}
-
-load_shader :: (name: string, filepath: string, buffer: string) -> success: bool, GFX_Loaded_Shader {
+load_and_compile_shader :: (name: string, filepath: string, buffer: string) -> success: bool, GFX_Loaded_Shader {
     using Slang;
 
     shader := GFX_Loaded_Shader.{
@@ -78,7 +79,7 @@ load_shader :: (name: string, filepath: string, buffer: string) -> success: bool
     total_time := slang_time + native_time;
 
     #if OS== {
-        case .MACOS;  COMPILER_NAME :: "Metal";
+        case .MACOS;    COMPILER_NAME :: "Metal";
         case .WINDOWS;  COMPILER_NAME :: "DirectX 11";
     }
 
@@ -276,6 +277,8 @@ transpile_shader_to_native :: (shader_name: string, slang_filepath: string, slan
     has_fragment_shader             = fragment_main != null;
     slang_time                      = to_float64_seconds(slang_time_end - slang_time_start);
 
+    shader_dependencies         = get_shader_dependencies(slang_filepath, slang_module);
+
     if has_vertex_shader {
         native_vertex_buffer    = copy_string(vertex_buffer);
         vertex_bindings         = get_slang_bindings(program, .VERTEX);
@@ -298,8 +301,15 @@ transpile_shader_to_native :: (shader_name: string, slang_filepath: string, slan
                 ext = "hlsl";
         }
 
-        transpiled_vertex_filename   := tprint("src/render/shaders/transpiled_%/%.vert.%", TARGET, shader_name, ext);
-        transpiled_fragment_filename := tprint("src/render/shaders/transpiled_%/%.frag.%", TARGET, shader_name, ext);
+
+        transpiled_filepath := path_strip_extension(slang_filepath);
+
+        if transpiled_folderpath {
+            transpiled_filepath = transpiled_folderpath;
+        }
+
+        transpiled_vertex_filename   := tprint("%/transpiled_%/%.vert.%", transpiled_filepath, TARGET, shader_name, ext);
+        transpiled_fragment_filename := tprint("%/transpiled_%/%.frag.%", transpiled_filepath, TARGET, shader_name, ext);
 
         make_directory_if_it_does_not_exist(path_strip_filename(transpiled_vertex_filename), recursive=true);
 
@@ -324,18 +334,18 @@ compile_native_shader :: (using loaded_shader: *GFX_Loaded_Shader,
     native_time_start := current_time_monotonic();
 
     if native_vertex_source.count > 0 {
-        ok := load_gfx_shader(loaded_shader, .VERTEX, native_vertex_source, vertex_bindings);
+        ok := load_shader(loaded_shader, .VERTEX, native_vertex_source, vertex_bindings);
         if !ok return false, 0.;
     } else {
-        if !is_null(*vertex_shader) then destroy_gfx_shader(*vertex_shader);
+        if !is_null(*vertex_shader) then destroy_shader(*vertex_shader);
         stages &= ~.VERTEX;
     }
 
     if native_fragment_source.count > 0 {
-        ok := load_gfx_shader(loaded_shader, .FRAGMENT, native_fragment_source, fragment_bindings);
+        ok := load_shader(loaded_shader, .FRAGMENT, native_fragment_source, fragment_bindings);
         if !ok return false, 0.;
     } else {
-        if !is_null(*fragment_shader) then destroy_gfx_shader(*fragment_shader);
+        if !is_null(*fragment_shader) then destroy_shader(*fragment_shader);
         stages &= ~.FRAGMENT;
     }
 
@@ -374,6 +384,37 @@ shader_log :: (shader_name: string, diagnostic_blob: *Slang.ISlangBlob) {
     }
 
     log_error("Could not load shader '%':\n%", shader_name, error_string);
+}
+
+get_shader_dependencies :: (shader_filename: string, module: *Slang.IModule) -> []string {
+    using Slang;
+
+    dependencies: [..] string;
+
+    for dependencies {
+        free(it.data);
+    }
+
+    array_reset_keeping_memory(*dependencies);
+
+    filename := copy_string(get_absolute_path(shader_filename ,, temp));
+
+    path_overwrite_separators(filename, #char "/");
+    array_add(*dependencies, filename);
+
+    if module {
+        num_dependencies := IModule_getDependencyFileCount(module);
+
+        for i : 0..num_dependencies - 1 {
+            dependency := to_string(IModule_getDependencyFilePath(module, i));
+            dependency = copy_string(dependency);
+            path_overwrite_separators(dependency, #char "/");
+
+            array_add(*dependencies, dependency);
+        }
+    }
+
+    return dependencies;
 }
 
 get_slang_bindings :: (program: *Slang.IComponentType, stage: GFX_Pipeline_Stage) -> [..] GFX_Pipeline_Binding {

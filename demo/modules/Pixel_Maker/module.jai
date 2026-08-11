@@ -2,18 +2,16 @@
 
     @todo:
 
-    - EXPLAIN EVERYTHING.
-    - Fix visual glitch on resize
-
+    - Explain a bit more.
+    - Fix visual glitch on resize.
 */
+
 #module_parameters(DEBUG_LAYER := false, MAX_FRAME_IN_FLIGHT := 3);
 
 gpu_frame_count : int;
 
-// @todo: new render version:
 Render_State :: struct {
-    // Nice for debugging.
-    name                : string;
+    name                : string; // Nice for debugging.
 
     vertex_shader       : *GFX_Shader;
     pixel_shader        : *GFX_Shader;
@@ -180,13 +178,6 @@ GFX_Capabilities :: struct {
     max_constant_buffer_size : u32;
 };
 
-
-
-
-
-
-
-
 GFX_Storage_Flags :: enum_flags u8 {
     CPU_WRITE;
     CPU_READ;
@@ -312,7 +303,7 @@ get_appropriate_num_mipmap_levels :: (w: int, h: int) -> int  {
         mipmap_level += 1;
     }
 
-    return clamp(MIN_MIPMAP_LEVEL, MAX_MIPMAP_LEVEL, mipmap_level);
+    return clamp(mipmap_level, MIN_MIPMAP_LEVEL, MAX_MIPMAP_LEVEL);
 }
 
 set_appropriate_num_mipmap_levels :: (desc : *GFX_Texture_Desc) {
@@ -882,61 +873,83 @@ VERTEX_BUFFER_INDEX : s32 : 10;
 
 #scope_file;
 
-
-// A check to ensure all necessary API procedures are implemented by the chosen
-// backend.
-
+// A check to ensure all necessary API procedures are implemented by the chosen backend.
 #run () {
     API :: struct {
-        create_gfx_context         : (window : *void) -> bool;
-        destroy_gfx_context        : ();
-        get_swapchain_texture      : () -> *GFX_Texture;
-        get_swapchain_pixel_format : () -> GFX_Pixel_Format;
+        // Context.
+        create_context          : (window : *void) -> bool;
+        destroy_context         : ();
+        get_capabilities        : () -> GFX_Capabilities;
+        get_storage_alignment   : () -> u64;
+        get_constant_alignment  : () -> u64;
 
-        get_display_swap_interval  : () -> s32;
-        set_display_swap_interval  : (interval : s32);
+        // Swapchain.
+        get_swapchain_texture       : () -> *GFX_Texture;
+        get_swapchain_pixel_format  : () -> GFX_Pixel_Format;
+        get_swapchain_interval      : () -> s32;
+        set_swapchain_interval      : (interval : s32);
 
-        begin_gfx_frame : ();
-        submit_gfx_frame : ();
-        get_backbuffer_index : () -> int;
+        // Frame.
+        begin_frame             : ();
+        present                 : ();
+        get_backbuffer_index    : () -> int;
         get_last_frame_gpu_time : () -> float;
 
-        gfx_storage_alignement : () -> u64;
-        gfx_constant_alignment : () -> u64;
 
-        get_gfx_caps : () -> GFX_Capabilities;
+        // Command buffer.
+        create_command_buffer : (name : string) -> GFX_Command_Buffer;
+        submit_command_buffer : (cmd_buffer : *GFX_Command_Buffer);
+        begin_debug_group     : (cmd_buffer : *GFX_Command_Buffer, name : string);
+        end_debug_group       : (cmd_buffer : *GFX_Command_Buffer);
 
-        create_gfx_command_buffer : (name : string) -> GFX_Command_Buffer;
-        execute_gfx_command_buffer : (cmd_buffer : *GFX_Command_Buffer);
-
-        begin_debug_group : (cmd_buffer : *GFX_Command_Buffer, name : string);
-        end_debug_group : (cmd_buffer : *GFX_Command_Buffer);
-
-        create_gfx_texture : (name : string, desc : GFX_Texture_Desc, data : *void = null) -> GFX_Texture;
-        destroy_gfx_texture : (texture : *GFX_Texture);
-        replace_texture_region : (texture : *GFX_Texture, origin : Vector3u, size : Vector3u, mipmap_level : u32, array_slice : u32, bytes : *void);
-
-        create_gfx_texture_view : (name : string, texture : GFX_Texture, desc : GFX_Texture_View_Desc) -> GFX_Texture;
-
+        // Textures.
+        create_texture          : (name : string, desc : GFX_Texture_Desc, data : *void = null) -> GFX_Texture;
+        create_texture_view     : (name : string, texture : GFX_Texture, desc : GFX_Texture_View_Desc) -> GFX_Texture;
+        destroy_texture         : (texture : *GFX_Texture);
+        replace_texture_region  : (texture : *GFX_Texture, origin : Vector3u, size : Vector3u, mipmap_level : u32, array_slice : u32, bytes : *void);
         create_texture_2d_rgba8 : (name: string, data: *u8, width: s32, height: s32, mipmapped := true) -> GFX_Texture;
 
         is_null : (texture: *GFX_Texture) -> bool;
         get_desc : (texture: *GFX_Texture) -> GFX_Texture_Desc;
 
-        begin_gfx_render_pass : (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_Command_Buffer, desc : GFX_Render_Pass_Desc);
+        // Samplers.
+        create_sampler_state    : (name : string, desc : GFX_Sampler_State_Desc) -> GFX_Sampler_State;
+        destroy_sampler_state   : (sampler : *GFX_Sampler_State);
 
-        end_gfx_render_pass : (pass : *GFX_Render_Pass);
+        // Buffers.
+        create_buffer   : (name: string, size: u64, stride: u32, data: *void, storage_flags: GFX_Storage_Flags, flags: GFX_Bind_Flags) -> GFX_Buffer;
+        destroy_buffer  : (using buffer: *GFX_Buffer);
+        lock_buffer     : (buffer : *GFX_Buffer, flags: GFX_Map_Access_Flags);
+        unlock_buffer   : (buffer : *GFX_Buffer);
 
-        set_viewport : (pass : *GFX_Render_Pass, viewport : GFX_Viewport);
-        set_viewports : (pass : *GFX_Render_Pass, viewports : []GFX_Viewport);
+        // Readback buffer.
+        create_readbackbuffer : (name : string, desc: GFX_Texture_Desc) -> GFX_Readback_Buffer;
+        destroy_readbackbuffer : (buffer: *GFX_Readback_Buffer);
+        lock_readbackbuffer : (resource: *GFX_Readback_Buffer, _: GFX_Map_Access_Flags);
+        unlock_readbackbuffer : (resource : *GFX_Readback_Buffer);
 
-        set_vertex_buffer       : (pass : *GFX_Render_Pass, index : s32, buffer : *GFX_Buffer, offset : u64, size : u64, stride : u64);
+        // Copy buffer.
+        begin_copy_pass : (pass : *GFX_Copy_Pass, name : string, cmd_buffer : *GFX_Command_Buffer);
+        end_copy_pass   : (pass : *GFX_Copy_Pass);
+        copy_texture : (pass : *GFX_Copy_Pass, source : *GFX_Texture, dest : *GFX_Texture);
+        generate_mipmaps    : (pass : *GFX_Copy_Pass, texture : Texture);
+        copy_texture_to_readbackbuffer : (pass : *GFX_Copy_Pass, source : *GFX_Texture, dest : *GFX_Readback_Buffer);
 
-        set_buffer : (pass : *GFX_Render_Pass, binding : GFX_Pipeline_Binding, buffer : *GFX_Buffer, offset : u64, size : u64);
-        set_texture : (pass : *GFX_Render_Pass, binding : GFX_Pipeline_Binding, texture : *GFX_Texture, fallback: *GFX_Texture = null);
-        set_sampler_state : (pass : *GFX_Render_Pass, binding : GFX_Pipeline_Binding, sampler : *GFX_Sampler_State);
 
-        draw_primitives : (
+        // Render pass.
+        begin_render_pass   : (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_Command_Buffer, desc : GFX_Render_Pass_Desc);
+        end_render_pass     : (pass : *GFX_Render_Pass);
+
+        set_buffer          : (pass : *GFX_Render_Pass, binding : GFX_Pipeline_Binding, buffer : *GFX_Buffer, offset : u64, size : u64);
+        set_viewport        : (pass : *GFX_Render_Pass, viewport : GFX_Viewport);
+        set_viewports       : (pass : *GFX_Render_Pass, viewports : []GFX_Viewport);
+
+        set_vertex_buffer   : (pass : *GFX_Render_Pass, index : s32, buffer : *GFX_Buffer, offset : u64, size : u64, stride : u64);
+
+        set_texture         : (pass : *GFX_Render_Pass, binding : GFX_Pipeline_Binding, texture : *GFX_Texture, fallback: *GFX_Texture = null);
+        set_sampler_state   : (pass : *GFX_Render_Pass, binding : GFX_Pipeline_Binding, sampler : *GFX_Sampler_State);
+
+        draw : (
             pass : *GFX_Render_Pass,
             vertex_count : u32,
             instance_count : u32,
@@ -945,7 +958,7 @@ VERTEX_BUFFER_INDEX : s32 : 10;
             primitive_type  : GFX_Draw_Primitive,
         );
 
-        draw_indexed_primitives : (
+        draw_indexed : (
             pass : *GFX_Render_Pass,
             index_buffer : *GFX_Buffer,
             index_count : u32,
@@ -957,39 +970,11 @@ VERTEX_BUFFER_INDEX : s32 : 10;
             primitive_type  : GFX_Draw_Primitive,
         );
 
-        begin_gfx_copy_pass : (pass : *GFX_Copy_Pass, name : string, cmd_buffer : *GFX_Command_Buffer);
-        end_gfx_copy_pass   : (pass : *GFX_Copy_Pass);
-
-        generate_mipmaps    : (pass : *GFX_Copy_Pass, texture : Texture);
-
-        copy_texture : (pass : *GFX_Copy_Pass, source : *GFX_Texture, dest : *GFX_Texture);
-
-
-        lock_resource : (resource: *GFX_Readback_Buffer, _: GFX_Map_Access_Flags);
-        unlock_resource : (resource : *GFX_Readback_Buffer);
-        copy_texture_to_readbackbuffer : (pass : *GFX_Copy_Pass, source : *GFX_Texture, dest : *GFX_Readback_Buffer);
-        gfx_create_readbackbuffer : (name : string, desc: GFX_Texture_Desc) -> GFX_Readback_Buffer;
-        gfx_destroy_readbackbuffer : (buffer: *GFX_Readback_Buffer);
-
-
-
-        load_gfx_shader         : (loaded_shader: *GFX_Loaded_Shader, stage: GFX_Pipeline_Stage, source: string,
-        bindings: []GFX_Pipeline_Binding) -> bool;
-
-        destroy_gfx_shader      : (shader: *GFX_Shader);
-        get_loaded_shader       : (shader: *GFX_Shader) -> *GFX_Loaded_Shader;
-
-        create_gfx_buffer : (name: string, size: u64, stride: u32, data: *void, storage_flags: GFX_Storage_Flags, flags: GFX_Bind_Flags) -> GFX_Buffer;
-        destroy_gfx_buffer : (using buffer: *GFX_Buffer);
-
-        lock_buffer : (buffer : *GFX_Buffer, flags: GFX_Map_Access_Flags);
-        unlock_buffer : (buffer : *GFX_Buffer);
-
-        create_gfx_sampler_state    : (name : string, desc : GFX_Sampler_State_Desc) -> GFX_Sampler_State;
-        destroy_gfx_sampler_state   : (sampler : *GFX_Sampler_State);
+        // Shaders.
+        load_shader         : (loaded_shader: *GFX_Loaded_Shader, stage: GFX_Pipeline_Stage, source: string, bindings: []GFX_Pipeline_Binding) -> bool;
+        destroy_shader      : (shader: *GFX_Shader);
+        get_loaded_shader   : (shader: *GFX_Shader) -> *GFX_Loaded_Shader;
     };
-
-
 
     #insert -> string {
         builder : String_Builder;

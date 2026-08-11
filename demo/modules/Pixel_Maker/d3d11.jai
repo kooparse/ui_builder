@@ -31,7 +31,7 @@ GFX_Context :: struct {
 
 
 
-create_gfx_context :: (hwnd: *void) -> bool {
+create_context :: (hwnd: *void) -> bool {
     assert(context.graphics_context == null);
 
     using ctx := New(GFX_Context);
@@ -105,7 +105,7 @@ create_gfx_context :: (hwnd: *void) -> bool {
     return true;
 }
 
-destroy_gfx_context :: () {
+destroy_context :: () {
     using context.graphics_context;
 
     ID3D11DeviceContext_ClearState(d3d_context);
@@ -133,7 +133,7 @@ get_swapchain_pixel_format :: () -> GFX_Pixel_Format {
     return d3d_pixel_format(desc.BufferDesc.Format);
 }
 
-get_display_swap_interval :: () -> s32 {
+get_swapchain_interval :: () -> s32 {
     return 0;
 
     // using context.graphics_context;
@@ -143,7 +143,7 @@ get_display_swap_interval :: () -> s32 {
     // return interval;
 }
 
-set_display_swap_interval :: (interval : s32) {
+set_swapchain_interval :: (interval : s32) {
     // using context.graphics_context;
     //
     // SDL_GL_SetSwapInterval(interval);
@@ -224,7 +224,7 @@ get_last_frame_gpu_time :: () -> float {
     return 0;
 }
 
-get_gfx_caps :: () -> GFX_Capabilities {
+get_capabilities :: () -> GFX_Capabilities {
     using context.graphics_context;
 
     if capabilities.max_texture_size {
@@ -250,11 +250,11 @@ GFX_Command_Buffer :: struct {
 }
 
 
-create_gfx_command_buffer :: (name : string) -> GFX_Command_Buffer {
+create_command_buffer :: (name : string) -> GFX_Command_Buffer {
     return .{};
 }
 
-execute_gfx_command_buffer :: (cmd_buffer : *GFX_Command_Buffer) {
+submit_command_buffer :: (cmd_buffer : *GFX_Command_Buffer) {
 }
 
 begin_debug_group :: (cmd_buffer : *GFX_Command_Buffer, name : string) {
@@ -325,7 +325,7 @@ get_hr_error_string :: (hr: HRESULT) -> string {
 
 GFX_Readback_Buffer :: GFX_Texture;
 
-lock_resource :: (using resource: *GFX_Readback_Buffer, map_access: GFX_Map_Access_Flags) {
+lock_readbackbuffer :: (using resource: *GFX_Readback_Buffer, map_access: GFX_Map_Access_Flags) {
     using context.graphics_context;
 
     assert(resource.locked == false, "GPU Readback Buffer was already locked!");
@@ -348,7 +348,7 @@ lock_resource :: (using resource: *GFX_Readback_Buffer, map_access: GFX_Map_Acce
     resource.data_ptr        = map_buffer.pData;
 }
 
-unlock_resource :: (resource : *GFX_Readback_Buffer) {
+unlock_readbackbuffer :: (resource : *GFX_Readback_Buffer) {
     using context.graphics_context;
 
     resource.locked = false;
@@ -359,12 +359,12 @@ copy_texture_to_readbackbuffer :: (using pass : *GFX_Copy_Pass, source : *GFX_Te
     copy_texture(pass, source = source, dest = dest);
 }
 
-gfx_create_readbackbuffer :: (name : string, desc: GFX_Texture_Desc) -> GFX_Readback_Buffer {
-    return create_gfx_texture(name, desc);
+create_readbackbuffer :: (name : string, desc: GFX_Texture_Desc) -> GFX_Readback_Buffer {
+    return create_texture(name, desc);
 }
 
-gfx_destroy_readbackbuffer :: (buffer: *GFX_Readback_Buffer) {
-    destroy_gfx_texture(buffer);
+destroy_readbackbuffer :: (buffer: *GFX_Readback_Buffer) {
+    destroy_texture(buffer);
 }
 
 
@@ -388,7 +388,7 @@ is_null :: (buffer : *GFX_Buffer) -> bool {
 }
 
 // gfx_create_buffer
-create_gfx_buffer :: (name : string, size : u64, stride: u32, data : *void, storage_flags : GFX_Storage_Flags, bind_flags: GFX_Bind_Flags) -> GFX_Buffer {
+create_buffer :: (name : string, size : u64, stride: u32, data : *void, storage_flags : GFX_Storage_Flags, bind_flags: GFX_Bind_Flags) -> GFX_Buffer {
     using context.graphics_context;
 
     hr  : HRESULT;
@@ -464,7 +464,7 @@ create_gfx_buffer :: (name : string, size : u64, stride: u32, data : *void, stor
 }
 
 // gfx_destroy_buffer
-destroy_gfx_buffer :: (buffer : *GFX_Buffer) {
+destroy_buffer :: (buffer : *GFX_Buffer) {
     if buffer == null || buffer.handle == null {
         return;
     }
@@ -506,11 +506,11 @@ unlock_buffer :: (using buffer : *GFX_Buffer) {
     ID3D11DeviceContext_Unmap(d3d_context, buffer.handle, 0);
 }
 
-gfx_storage_alignement :: inline () -> u64 {
+get_storage_alignment :: inline () -> u64 {
     return 16;
 }
 
-gfx_constant_alignment :: inline () -> u64 {
+get_constant_alignment :: inline () -> u64 {
     return 256;
 }
 
@@ -530,7 +530,7 @@ is_null :: (shader: *GFX_Shader) -> bool {
     return shader == null || shader.handle == null;
 }
 
-load_gfx_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage : GFX_Pipeline_Stage, source : string, bindings: []GFX_Pipeline_Binding) -> bool {
+load_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage : GFX_Pipeline_Stage, source : string, bindings: []GFX_Pipeline_Binding) -> bool {
     using context.graphics_context;
 
     hr : HRESULT;
@@ -597,7 +597,7 @@ load_gfx_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage : GFX_Pipelin
     shader := ifx stage == .VERTEX then *vertex_shader else *fragment_shader;
 
     if !is_null(shader) {
-        destroy_gfx_shader(shader);
+        destroy_shader(shader);
     }
 
     shader.loaded_shader    = loaded_shader;
@@ -610,7 +610,7 @@ load_gfx_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage : GFX_Pipelin
 }
 
 // @todo: destroy shader...
-destroy_gfx_shader :: (using shader : *GFX_Shader) {
+destroy_shader :: (using shader : *GFX_Shader) {
     for bindings {
         free(it.name.data);
     }
@@ -639,7 +639,7 @@ GFX_Render_Pass :: struct {
 };
 
 // @todo: I think we should return a GFX_Render_Pass, and remove passing it as args.
-begin_gfx_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_Command_Buffer, desc : GFX_Render_Pass_Desc) {
+begin_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_Command_Buffer, desc : GFX_Render_Pass_Desc) {
     begin_debug_group(cmd_buffer, name);
 
     using context.graphics_context;
@@ -687,7 +687,7 @@ begin_gfx_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *
 }
 
 // @note: No resolve_texture for depth tho...
-end_gfx_render_pass :: (using pass : *GFX_Render_Pass) {
+end_render_pass :: (using pass : *GFX_Render_Pass) {
     using context.graphics_context;
 
     for 0..GFX_MAX_COLOR_ATTACHMENTS - 1 {
@@ -842,7 +842,7 @@ set_sampler_state :: (pass : *GFX_Render_Pass, binding : GFX_Pipeline_Binding, s
     ID3D11DeviceContext_PSSetSamplers(d3d_context, cast(u32) binding.index, 1, *sampler.handle);
 }
 
-draw_primitives :: (
+draw :: (
     pass : *GFX_Render_Pass,
     vertex_count : u32,
     instance_count : u32,
@@ -863,7 +863,7 @@ draw_primitives :: (
     }
 }
 
-draw_indexed_primitives :: (
+draw_indexed :: (
     pass : *GFX_Render_Pass,
     index_buffer : *GFX_Buffer,
     index_count : u32,
@@ -1130,7 +1130,7 @@ get_desc :: (texture: *GFX_Texture) -> GFX_Texture_Desc {
     return texture.desc;
 }
 
-create_gfx_texture :: (name : string, desc : GFX_Texture_Desc, data : *void = null) -> GFX_Texture {
+create_texture :: (name : string, desc : GFX_Texture_Desc, data : *void = null) -> GFX_Texture {
     using context.graphics_context;
 
     // assert(desc.usage != .UNKNOWN, "desc.usage is %", desc.usage);
@@ -1268,7 +1268,7 @@ create_gfx_texture :: (name : string, desc : GFX_Texture_Desc, data : *void = nu
     return result;
 }
 
-destroy_gfx_texture :: (using texture : *GFX_Texture) {
+destroy_texture :: (using texture : *GFX_Texture) {
     IUnknown_Release(texture.handle);
     if name then free(name);
     texture.* = {};
@@ -1318,7 +1318,7 @@ replace_texture_region :: (using texture : *GFX_Texture, origin : Vector3u, size
     ID3D11DeviceContext_UpdateSubresource(d3d_context, handle, subresource, *box, bytes, row_pitch, depth_pitch);
 }
 
-create_gfx_texture_view :: (name : string, texture : GFX_Texture, desc : GFX_Texture_View_Desc) -> GFX_Texture {
+create_texture_view :: (name : string, texture : GFX_Texture, desc : GFX_Texture_View_Desc) -> GFX_Texture {
     using context.graphics_context;
 
     srv_desc: D3D11_SHADER_RESOURCE_VIEW_DESC;
@@ -1346,7 +1346,7 @@ create_gfx_texture_view :: (name : string, texture : GFX_Texture, desc : GFX_Tex
             srv_desc.TextureCube.MipLevels          = desc.num_mipmap_levels;
 
         case .INVALID;
-            crash("create_gfx_texture_view: Invalid texture type %", desc.type);
+            crash("create_texture_view: Invalid texture type %", desc.type);
     }
 
     srv : *ID3D11ShaderResourceView;
@@ -1379,7 +1379,7 @@ create_texture_2d_rgba8 :: (name := "", data : *u8, width: s32, height: s32, mip
         set_appropriate_num_mipmap_levels(*desc);
     }
 
-    result := create_gfx_texture(name, desc, data = data);
+    result := create_texture(name, desc, data = data);
     if is_null(*result) return result;
 
     return result;
@@ -1393,7 +1393,7 @@ is_null :: (sampler : *GFX_Sampler_State) -> bool {
     return sampler == null || sampler.handle == null;
 }
 
-create_gfx_sampler_state :: (name : string, desc : GFX_Sampler_State_Desc) -> GFX_Sampler_State {
+create_sampler_state :: (name : string, desc : GFX_Sampler_State_Desc) -> GFX_Sampler_State {
     using context.graphics_context;
 
     d3d_desc : D3D11_SAMPLER_DESC;
@@ -1426,7 +1426,7 @@ create_gfx_sampler_state :: (name : string, desc : GFX_Sampler_State_Desc) -> GF
     return .{ handle = sample_handle };
 }
 
-destroy_gfx_sampler_state :: (sampler : *GFX_Sampler_State) {
+destroy_sampler_state :: (sampler : *GFX_Sampler_State) {
     IUnknown_Release(sampler.handle);
     sampler.* = {};
 }
@@ -1442,12 +1442,12 @@ GFX_Copy_Pass :: struct {
     cmd_buffer : *GFX_Command_Buffer;
 }
 
-begin_gfx_copy_pass :: (pass : *GFX_Copy_Pass, name : string, cmd_buffer : *GFX_Command_Buffer) {
+begin_copy_pass :: (pass : *GFX_Copy_Pass, name : string, cmd_buffer : *GFX_Command_Buffer) {
     pass.cmd_buffer = cmd_buffer;
     begin_debug_group(cmd_buffer, name);
 }
 
-end_gfx_copy_pass :: (pass : *GFX_Copy_Pass) {
+end_copy_pass :: (pass : *GFX_Copy_Pass) {
     end_debug_group(pass.cmd_buffer);
 }
 

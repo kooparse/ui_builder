@@ -71,7 +71,7 @@ main :: () {
             platform_window = winfo.info.win.window;
     }
 
-    success := create_gfx_context(platform_window);
+    success := create_context(platform_window);
     assert(success == true);
 
     shader = add_shader("ui", "ui.slang", SHADER_SRC);
@@ -135,7 +135,7 @@ main :: () {
             // if dt * 1000 > 20 then log("SPIKE!");
         }
 
-        begin_gfx_frame();
+        begin_frame();
 
         ui_begin();
 
@@ -627,7 +627,7 @@ make_ui :: () -> UI_Draw_List {
 
 
 do_gpu_stuff :: (draw_list: UI_Draw_List) {
-    command_buffer := create_gfx_command_buffer("Frame");
+    command_buffer := create_command_buffer("Frame");
     screen_texture := get_swapchain_texture();
 
     update_gfx_buffers(draw_list.vertices);
@@ -639,7 +639,7 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
         clear_color(*pass_desc, 0, xyzw(0, 0, 0, 1));
 
         pass: GFX_Render_Pass;
-        begin_gfx_render_pass(*pass, "UI_Builder", *command_buffer, pass_desc);
+        begin_render_pass(*pass, "UI_Builder", *command_buffer, pass_desc);
         {
             reset_render_state();
 
@@ -671,7 +671,7 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
             {
                 set_vertex_buffer(*pass, 10, *quad_buffer, 0, quad_buffer.size, size_of(UI_Vertex));
                 set_texture(*pass, frag.immediate_texture, xx *background_texture);
-                draw_primitives(*pass, 6, 1, 0);
+                draw(*pass, 6, 1, 0);
             }
 
             vertex_buffer := *vertex_buffers[get_backbuffer_index()];
@@ -692,16 +692,16 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
                 };
 
                 set_scissor(true, clip);
-                draw_primitives(*pass, xx it.vertex_count, 1, base_vertex = xx it.vertex_start);
+                draw(*pass, xx it.vertex_count, 1, base_vertex = xx it.vertex_start);
             }
 
         }
-        end_gfx_render_pass(*pass);
+        end_render_pass(*pass);
 
     }
 
-    execute_gfx_command_buffer(*command_buffer);
-    submit_gfx_frame();
+    submit_command_buffer(*command_buffer);
+    present();
 }
 
 
@@ -712,17 +712,17 @@ init_gfx_buffers :: () {
     capacity     := cast(u64, stride * 84000);
 
     for 0..MAX_FRAME_IN_FLIGHT - 1 {
-        vertex_buffers[it] = create_gfx_buffer("UI Vertices", capacity, xx stride, null, .CPU_WRITE, .VERTEX_BUFFER);
+        vertex_buffers[it] = create_buffer("UI Vertices", capacity, xx stride, null, .CPU_WRITE, .VERTEX_BUFFER);
     }
 
-    frame_info_buffer = create_gfx_buffer("Frame Info", size_of(Matrix4), size_of(Matrix4), null, .CPU_WRITE, .CONSTANT_BUFFER);
+    frame_info_buffer = create_buffer("Frame Info", size_of(Matrix4), size_of(Matrix4), null, .CPU_WRITE, .CONSTANT_BUFFER);
 
-    quad_buffer = create_gfx_buffer("QUAD", 6 * size_of(UI_Vertex), size_of(UI_Vertex), null, .CPU_WRITE, .VERTEX_BUFFER);
+    quad_buffer = create_buffer("QUAD", 6 * size_of(UI_Vertex), size_of(UI_Vertex), null, .CPU_WRITE, .VERTEX_BUFFER);
 
     sampler_desc : GFX_Sampler_State_Desc;
     sampler_desc.min_filter = .LINEAR;
     sampler_desc.mag_filter = .LINEAR;
-    default_sampler = create_gfx_sampler_state("default_sampler", sampler_desc);
+    default_sampler = create_sampler_state("default_sampler", sampler_desc);
 }
 
 update_gfx_buffers :: (vertices: [] UI_Vertex) {
