@@ -871,63 +871,48 @@ make_metal_sampler_address_mode :: inline (mode : GFX_Sampler_Address_Mode) -> M
 */
 
 
+GFX_Platform_Shader :: struct {
+    library  : *MTLLibrary;
+    function : *MTLFunction;
+};
 
-GFX_Shader :: struct {
-    loaded_shader   : *GFX_Loaded_Shader;
-    library         : *MTLLibrary;
-    function        : *MTLFunction;
-    bindings        : [] GFX_Pipeline_Binding;
-}
-
-
-is_null :: (shader: *GFX_Shader) -> bool {
-    return shader == null || shader.library == null || shader.function == null;
-}
-
-load_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage: GFX_Pipeline_Stage, source: string, bindings: []GFX_Pipeline_Binding) -> bool {
+compile_shader :: (name: string, source: string, stage: GFX_Pipeline_Stage) -> bool, GFX_Platform_Shader {
     using context.graphics_context;
-
-    stage_flag := cast(GFX_Pipeline_Stage_Flags, 1 << stage);
-    stages &= ~stage_flag;
 
     options := objc_new(MTLCompileOptions);
     defer release(options);
 
     options.setLanguageVersion(options, MTLLanguageVersion4_0);
 
-    error: *NSError;
+    error   : *NSError;
     library := device.newLibraryWithSource_options_error(device, NSString.getTempString(source), options, *error);
+
     if !library {
         log_error("Could not load shader '%':\n%", name, to_string(error.localizedDescription(error)));
-        return false;
+        return false, .{};
     }
 
+    // @todo: use shader config instead.
     VERTEX_ENTRY_POINT      :: "vertex_main";
     FRAGMENT_ENTRY_POINT    :: "fragment_main";
 
     entry_point_name := ifx stage == .VERTEX then VERTEX_ENTRY_POINT else FRAGMENT_ENTRY_POINT;
+    function         := library.newFunctionWithName(library, NSString.getTempString(entry_point_name));
 
-    function := library.newFunctionWithName(library, NSString.getTempString(entry_point_name));
     if !function {
         log_error("Function '%' not found in shader '%'", entry_point_name, name);
-        return false;
+        return false, .{};
     }
 
-    shader := ifx stage == .VERTEX then *vertex_shader else *fragment_shader;
-    if !is_null(shader) {
-        destroy_shader(shader);
-    }
+    platform_shader := GFX_Platform_Shader.{
+        library          = library,
+        function         = xx function,
+    };
 
-    shader.loaded_shader    = loaded_shader;
-    shader.library          = library;
-    shader.function         = xx function;
-    shader.bindings         = bindings;
-    stages                 |= stage_flag;
-
-    return true;
+    return true, platform_shader;
 }
 
-destroy_shader :: (shader: *GFX_Shader) {
+destroy_shader :: (shader: *GFX_Platform_Shader) {
     if shader.function {
         release(shader.function);
     }
@@ -935,20 +920,7 @@ destroy_shader :: (shader: *GFX_Shader) {
     if shader.library {
         release(shader.library);
     }
-
-    for shader.bindings {
-        free(it.name.data);
-    }
-    free(shader.bindings.data);
-
-    shader.* = .{};
 }
-
-get_loaded_shader :: (shader: *GFX_Shader) -> *GFX_Loaded_Shader {
-    return shader.loaded_shader;
-}
-
-
 
 
 
@@ -1190,19 +1162,19 @@ submit_gfx_state_to_pass :: (encoder: *MTLRenderCommandEncoder) {
     if pso_newly_added {
         pso.* = make_metal_pso(*render_state);
 
-        callback            : GFX_Shader_Reload_Callback;
-        callback.pso_key    = pso_key;
-        callback.proc       = (shader, pso_key) => {
-            success, pso_removed := table_remove(*pso_table, pso_key);
-            if success then release(pso_removed);
-        };
-
-        if render_state.vertex_shader {
-            add_shader_reload_callback(render_state.vertex_shader.loaded_shader, callback);
-        }
-        if render_state.pixel_shader {
-            add_shader_reload_callback(render_state.pixel_shader.loaded_shader, callback);
-        }
+        // callback            : GFX_Shader_Reload_Callback;
+        // callback.pso_key    = pso_key;
+        // callback.proc       = (shader, pso_key) => {
+        //     success, pso_removed := table_remove(*pso_table, pso_key);
+        //     if success then release(pso_removed);
+        // };
+        //
+        // if render_state.vertex_shader {
+        //     add_shader_reload_callback(render_state.vertex_shader.loaded_shader, callback);
+        // }
+        // if render_state.pixel_shader {
+        //     add_shader_reload_callback(render_state.pixel_shader.loaded_shader, callback);
+        // }
     }
 
     if depth_newly_added {
@@ -1347,11 +1319,11 @@ make_metal_pso :: (using render_state: *Render_State) -> *MTLRenderPipelineState
     desc.setRasterSampleCount(desc, sample_count);
 
     if vertex_shader {
-        desc.setVertexFunction(desc, xx vertex_shader.function);
+        desc.setVertexFunction(desc, xx vertex_shader.shader.function);
     }
 
     if pixel_shader {
-        desc.setFragmentFunction(desc, xx pixel_shader.function);
+        desc.setFragmentFunction(desc, xx pixel_shader.shader.function);
     }
 
     color_attachments := MTLRenderPipelineDescriptor.colorAttachments(desc);
@@ -1512,11 +1484,11 @@ hash_pso_metal_data :: (key: Render_State) -> PSO_Key {
     hash: u64;
 
     if key.vertex_shader != null {
-        hash = fnv1a_hash(cast(u64) key.vertex_shader.function);
+        hash = fnv1a_hash(cast(u64) key.vertex_shader.shader.function);
     }
 
     if key.pixel_shader != null {
-        hash  = fnv1a_hash(cast(u64) key.pixel_shader.function, hash);
+        hash  = fnv1a_hash(cast(u64) key.pixel_shader.shader.function, hash);
     }
 
     hash  = fnv1a_hash(cast(u64) key.topology, hash);

@@ -149,7 +149,7 @@ set_swapchain_interval :: (interval : s32) {
     // SDL_GL_SetSwapInterval(interval);
 }
 
-begin_gfx_frame :: () {
+begin_frame :: () {
     using context.graphics_context;
 
     gpu_frame_count += 1;
@@ -204,7 +204,7 @@ begin_gfx_frame :: () {
     table_reset(*srv_offset_table);
 }
 
-submit_gfx_frame :: () {
+present :: () {
     using context.graphics_context;
 
     hr := IDXGISwapChain_Present(swapchain, 0, 0);
@@ -382,7 +382,6 @@ GFX_Buffer :: struct {
     size        : u64;
 };
 
-// gfx_is_null
 is_null :: (buffer : *GFX_Buffer) -> bool {
     return buffer == null || buffer.handle == null;
 }
@@ -463,7 +462,6 @@ create_buffer :: (name : string, size : u64, stride: u32, data : *void, storage_
     return .{ handle = buffer, srv = srv, size = size, stride = stride };
 }
 
-// gfx_destroy_buffer
 destroy_buffer :: (buffer : *GFX_Buffer) {
     if buffer == null || buffer.handle == null {
         return;
@@ -475,7 +473,6 @@ destroy_buffer :: (buffer : *GFX_Buffer) {
     buffer.* = .{};
 }
 
-// gfx_lock_buffer
 lock_buffer :: (using buffer : *GFX_Buffer, map_access: GFX_Map_Access_Flags) {
     using context.graphics_context;
 
@@ -498,7 +495,6 @@ lock_buffer :: (using buffer : *GFX_Buffer, map_access: GFX_Map_Access_Flags) {
     buffer.data_ptr = map_buffer.pData;
 }
 
-// gfx_unlock_buffer
 unlock_buffer :: (using buffer : *GFX_Buffer) {
     using context.graphics_context;
 
@@ -517,26 +513,15 @@ get_constant_alignment :: inline () -> u64 {
 
 
 
-
-
-GFX_Shader :: struct {
-    loaded_shader   : *GFX_Loaded_Shader;
-    handle          : *void;
-    bytecode        : string;
-    bindings        : [] GFX_Pipeline_Binding;
+GFX_Platform_Shader :: struct {
+    handle   : *void;
+    bytecode : string;
 };
 
-is_null :: (shader: *GFX_Shader) -> bool {
-    return shader == null || shader.handle == null;
-}
-
-load_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage : GFX_Pipeline_Stage, source : string, bindings: []GFX_Pipeline_Binding) -> bool {
+compile_shader :: (name: string, source: string, stage: GFX_Pipeline_Stage) -> bool, GFX_Platform_Shader {
     using context.graphics_context;
 
     hr : HRESULT;
-
-    stage_flag := cast(GFX_Pipeline_Stage_Flags, 1 << stage);
-    stages &= ~stage_flag;
 
     flags := D3DCOMPILE.ENABLE_STRICTNESS;
 
@@ -561,7 +546,7 @@ load_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage : GFX_Pipeline_St
     if FAILED(hr) {
         free(bytecode);
         if errors then log_error("Failed compiling: %\n", errors);
-        return false;
+        return false, .{};
     }
 
 
@@ -575,7 +560,7 @@ load_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage : GFX_Pipeline_St
             if FAILED(hr) {
                 log_error("CreateVertexShader failed: %", hr);
                 free(bytecode);
-                return false;
+                return false, .{};
             }
 
             handle = cast(*void) vertex_shader_handle;
@@ -587,44 +572,26 @@ load_shader :: (using loaded_shader: *GFX_Loaded_Shader, stage : GFX_Pipeline_St
             if FAILED(hr) {
                 log_error("CreatePixelShader failed: %", hr);
                 free(bytecode);
-                return false;
+                return false, .{};
             }
 
             handle = cast(*void) pixel_shader_handle;
     }
 
+    platform_shader := GFX_Platform_Shader.{
+        handle           = handle,
+        bytecode         = bytecode,
+    };
 
-    shader := ifx stage == .VERTEX then *vertex_shader else *fragment_shader;
-
-    if !is_null(shader) {
-        destroy_shader(shader);
-    }
-
-    shader.loaded_shader    = loaded_shader;
-    shader.handle           = handle;
-    shader.bytecode         = bytecode;
-    shader.bindings         = bindings;
-
-    stages |= stage_flag;
-    return true;
+    return true, platform_shader;
 }
 
-// @todo: destroy shader...
-destroy_shader :: (using shader : *GFX_Shader) {
-    for bindings {
-        free(it.name.data);
-    }
-
-    free(bindings.data);
+destroy_shader :: (shader : *GFX_Platform_Shader) {
+    IUnknown_Release(shader.handle);
+    free(shader.bytecode);
 
     shader.* = .{};
 }
-
-get_loaded_shader :: (shader: *GFX_Shader) -> *GFX_Loaded_Shader {
-    return shader.loaded_shader;
-}
-
-
 
 
 
@@ -1073,18 +1040,18 @@ submit_gfx_state_to_pass :: () {
     }
 
     if render_state.vertex_shader {
-        ID3D11DeviceContext_VSSetShader(d3d_context, cast(*ID3D11VertexShader) render_state.vertex_shader.handle, null, 0);
+        ID3D11DeviceContext_VSSetShader(d3d_context, cast(*ID3D11VertexShader) render_state.vertex_shader.shader.handle, null, 0);
     }
 
     if render_state.pixel_shader {
-        ID3D11DeviceContext_PSSetShader(d3d_context, cast(*ID3D11PixelShader) render_state.pixel_shader.handle, null, 0);
+        ID3D11DeviceContext_PSSetShader(d3d_context, cast(*ID3D11PixelShader) render_state.pixel_shader.shader.handle, null, 0);
     }
 
     if render_state.vertex_layout.count > 0 {
-        vertex_layout, vertex_layout_newly_added := find_or_add(*vertex_layout_catalog, cast(u64) render_state.vertex_shader.handle);
+        vertex_layout, vertex_layout_newly_added := find_or_add(*vertex_layout_catalog, cast(u64) render_state.vertex_shader.shader.handle);
 
         if vertex_layout_newly_added {
-            vertex_layout.* = to_d3d_input_layout(render_state.vertex_layout, render_state.vertex_shader.bytecode);
+            vertex_layout.* = to_d3d_input_layout(render_state.vertex_layout, render_state.vertex_shader.shader.bytecode);
         }
 
         ID3D11DeviceContext_IASetInputLayout(d3d_context, vertex_layout.*);

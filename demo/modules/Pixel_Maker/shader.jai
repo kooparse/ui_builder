@@ -15,31 +15,57 @@ set_pixel_shader :: (shader_name : string) {
     set_pixel_shader(get_fragment_shader(shader_name));
 }
 
-get_shader_list :: () -> [] GFX_Loaded_Shader {
+get_shader_list :: () -> [] GFX_Shader {
     return shaders;
 }
 
-add_shader :: (shader_path: string) -> *GFX_Loaded_Shader {
+add_shader :: (shader_path: string) -> *GFX_Shader, *GFX_Shader {
     filepath := copy_string(shader_path);
     _, name  := path_decomp(filepath);
 
     shader_buffer    := read_entire_file(filepath ,, temp);
 
-    success, shader  := load_and_compile_shader(name, filepath, shader_buffer);
+    success, compiled_shaders := load_and_compile_shader(name, filepath, shader_buffer);
     assert(success == true);
 
-    _, index := array_add_if_unique(*shaders, shader, (a, b) => a.filepath == b.filepath);
-    return *shaders[index];
+    vert_shader  : *GFX_Shader;
+    pixel_shader : *GFX_Shader;
+
+    for compiled_shaders {
+        if it.compiled {
+            _, index := array_add_if_unique(*shaders, it, (a, b) => a.filepath == b.filepath && a.stage == b.stage);
+
+            if #complete it.stage == {
+                case .VERTEX;   vert_shader  = *shaders[index];
+                case .FRAGMENT; pixel_shader = *shaders[index];
+            }
+        }
+    }
+
+    return vert_shader, pixel_shader;
 }
 
-add_shader :: (name: string, filepath: string, shader_buffer: string) -> *GFX_Loaded_Shader {
+add_shader :: (name: string, filepath: string, shader_buffer: string) -> *GFX_Shader, *GFX_Shader {
     _, name          := path_decomp(filepath ,, temp);
 
-    success, shader  := load_and_compile_shader(name, filepath, shader_buffer);
+    success, compiled_shaders := load_and_compile_shader(name, filepath, shader_buffer);
     assert(success == true);
 
-    _, index := array_add_if_unique(*shaders, shader, (a, b) => a.filepath == b.filepath);
-    return *shaders[index];
+    vert_shader  : *GFX_Shader;
+    pixel_shader : *GFX_Shader;
+
+    for compiled_shaders {
+        if it.compiled {
+            _, index := array_add_if_unique(*shaders, it, (a, b) => a.filepath == b.filepath && a.stage == b.stage);
+
+            if #complete it.stage == {
+                case .VERTEX;   vert_shader  = *shaders[index];
+                case .FRAGMENT; pixel_shader = *shaders[index];
+            }
+        }
+    }
+
+    return vert_shader, pixel_shader;
 }
 
 set_shader_config :: (conf: Shader_Config) {
@@ -51,48 +77,72 @@ set_shader_config :: (conf: Shader_Config) {
 slang_global_session : *Slang.IGlobalSession;
 
 using shader_config  : Shader_Config;
-shaders              : [..] GFX_Loaded_Shader;
+shaders              : [..] GFX_Shader;
 
-load_and_compile_shader :: (name: string, filepath: string, buffer: string) -> success: bool, GFX_Loaded_Shader {
+load_and_compile_shader :: (name: string, filepath: string, buffer: string) -> success: bool, [2] GFX_Shader {
     using Slang;
 
-    shader := GFX_Loaded_Shader.{
+    shader := GFX_Shader.{
         name             = copy_string(name),
         filepath         = copy_string(filepath),
-        failed_to_reload = true,
     };
 
-    success, result := transpile_shader_to_native(name, filepath, buffer);
-    if !success return false, shader;
+    // We first transpile the shader file native. (Metal or DX11, depending on
+    // underlying platform). Also, we get many information, like dependencies,
+    // bindings.
+    //
+    // @note: In one buffer, we could get only one vertex program, or only one
+    //        pixel program, but also (most common) one vertex and one pixel in the
+    //        same buffer.
+    success, slang_result := transpile_shader_to_native(name, filepath, buffer);
 
-    // Set shader dependencies.
-    // Tho, we don't do it when shader are packed.
-    array_reset(*shader.dependencies);
-    shader.dependencies = result.shader_dependencies;
+    using slang_result;
 
-    using result;
+    native_time : float64;
+    shaders     : [2] GFX_Shader;
 
-    success=, native_time: = compile_native_shader(*shader, native_vertex_buffer, native_fragment_buffer, vertex_bindings, fragment_bindings);
-    if !success return false, shader;
+    if has_vertex_shader {
+        success=, vertex_shader:, compile_time := compile_native_shader(name, native_vertex_buffer, .VERTEX);
+        shaders[0] = GFX_Shader.{
+            name             = copy_string(name),
+            filepath         = copy_string(filepath),
+            shader           = vertex_shader,
+            stage            = .VERTEX,
+            bindings         = vertex_bindings,
+            dependencies     = shader_dependencies,
+            compiled         = true,
+        };
 
+        native_time += compile_time;
+    }
 
-    total_time := slang_time + native_time;
+    if has_fragment_shader {
+        success=, pixel_shader:, compile_time := compile_native_shader(name, native_fragment_buffer, .FRAGMENT);
+        shaders[1] = GFX_Shader.{
+            name             = copy_string(name),
+            filepath         = copy_string(filepath),
+            shader           = pixel_shader,
+            stage            = .FRAGMENT,
+            bindings         = fragment_bindings,
+            dependencies     = shader_dependencies,
+            compiled         = true,
+        };
+
+        native_time += compile_time;
+    }
+
 
     #if OS== {
         case .MACOS;    COMPILER_NAME :: "Metal";
         case .WINDOWS;  COMPILER_NAME :: "DirectX 11";
     }
 
+    total_time  := slang_time + native_time;
+
     log("Loaded shader '%' (%) in % s", name, ifx has_vertex_shader && has_fragment_shader then "vertex and fragment" else ifx has_vertex_shader then "vertex only" else "fragment only", total_time);
     log("Timings for shader %: total: % s, Slang: % s, %: % s", name, total_time, slang_time, COMPILER_NAME, native_time, flags=.VERBOSE_ONLY);
 
-    for shader.reload_callbacks {
-        it.proc(*shader, it.pso_key);
-    }
-
-    shader.failed_to_reload = false;
-
-    return true, shader;
+    return true, shaders;
 }
 
 
@@ -327,32 +377,38 @@ transpile_shader_to_native :: (shader_name: string, slang_filepath: string, slan
     return true, result;
 }
 
-compile_native_shader :: (using loaded_shader: *GFX_Loaded_Shader,
-                          native_vertex_source: string, native_fragment_source: string,
-                          vertex_bindings: [] GFX_Pipeline_Binding, fragment_bindings: [] GFX_Pipeline_Binding) -> bool, float64 {
-
+compile_native_shader :: (name: string, source: string, stage: GFX_Pipeline_Stage) -> bool, GFX_Platform_Shader, float64 {
     native_time_start := current_time_monotonic();
+    success, shader   := compile_shader(name, source, stage);
+    native_time_end   := current_time_monotonic();
 
-    if native_vertex_source.count > 0 {
-        ok := load_shader(loaded_shader, .VERTEX, native_vertex_source, vertex_bindings);
-        if !ok return false, 0.;
-    } else {
-        if !is_null(*vertex_shader) then destroy_shader(*vertex_shader);
-        stages &= ~.VERTEX;
-    }
-
-    if native_fragment_source.count > 0 {
-        ok := load_shader(loaded_shader, .FRAGMENT, native_fragment_source, fragment_bindings);
-        if !ok return false, 0.;
-    } else {
-        if !is_null(*fragment_shader) then destroy_shader(*fragment_shader);
-        stages &= ~.FRAGMENT;
-    }
-
-    native_time_end := current_time_monotonic();
-
-    return true, to_float64_seconds(native_time_end - native_time_start);
+    return success, shader, to_float64_seconds(native_time_end - native_time_start);
 }
+
+// compile_native_shader :: (using shader: *GFX_Shader,
+//                           native_vertex_source: string, native_fragment_source: string,
+//                           vertex_bindings: [] GFX_Pipeline_Binding, fragment_bindings: [] GFX_Pipeline_Binding) -> bool, float64 {
+//
+//     native_time_start := current_time_monotonic();
+//
+//     if native_vertex_source.count > 0 {
+//         success := compile_shader(shader, .VERTEX, native_vertex_source, vertex_bindings);
+//         if !success return false, 0.;
+//     } else {
+//         if !is_null(*vertex_shader) then destroy_shader(*vertex_shader);
+//     }
+//
+//     if native_fragment_source.count > 0 {
+//         success := compile_shader(shader, .FRAGMENT, native_fragment_source, fragment_bindings);
+//         if !success return false, 0.;
+//     } else {
+//         if !is_null(*fragment_shader) then destroy_shader(*fragment_shader);
+//     }
+//
+//     native_time_end := current_time_monotonic();
+//
+//     return true, to_float64_seconds(native_time_end - native_time_start);
+// }
 
 safe_release :: (obj: *Slang.ISlangUnknown) {
     if obj then Slang.ISlangUnknown_release(obj);
@@ -494,27 +550,23 @@ get_slang_bindings :: (program: *Slang.IComponentType, stage: GFX_Pipeline_Stage
 
 get_vertex_shader :: (name: string) -> *GFX_Shader {
     for * shaders {
-        if it.name == name {
-            assert(!is_null(*it.vertex_shader), "Shader '%' has no vertex entry point", name);
-            return *it.vertex_shader;
+        if it.name == name && it.stage == .VERTEX {
+            return it;
         }
     }
 
-    crash("No shader named '%'", name);
-
+    crash("Shader '%' has no vertex entry point", name);
     return null;
 }
 
 get_fragment_shader :: (name: string) -> *GFX_Shader {
     for * shaders {
-        if it.name == name {
-            assert(!is_null(*it.fragment_shader), "Shader '%' has no fragment entry point", name);
-            return *it.fragment_shader;
+        if it.name == name && it.stage == .FRAGMENT {
+            return it;
         }
     }
 
-    crash("No shader named '%'", name);
-
+    crash("Shader '%' has no fragment entry point", name);
     return null;
 }
 

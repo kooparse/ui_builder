@@ -616,14 +616,6 @@ GFX_Pipeline_Binding_Type :: enum {
 }
 
 GFX_Pipeline_Stage :: enum {
-    NONE :: 0;
-
-    VERTEX;
-    FRAGMENT;
-}
-
-GFX_Pipeline_Stage_Flags :: enum u8 {
-    NONE :: 0;
     VERTEX;
     FRAGMENT;
 }
@@ -631,7 +623,7 @@ GFX_Pipeline_Stage_Flags :: enum u8 {
 GFX_Pipeline_Binding :: struct {
     name    : string;
     type    := GFX_Pipeline_Binding_Type.NONE;
-    stage   := GFX_Pipeline_Stage.NONE;
+    stage   : GFX_Pipeline_Stage;
     index   : s32 = -1;
 };
 
@@ -657,6 +649,7 @@ get_binding :: (shader: *GFX_Shader, $T: Type) -> T #modify {
 binding :: (shader: *GFX_Shader, param_name: string) -> GFX_Pipeline_Binding {
     binding_index := -1;
 
+
     for shader.bindings {
         if it.name == param_name {
             binding_index = it_index;
@@ -665,19 +658,15 @@ binding :: (shader: *GFX_Shader, param_name: string) -> GFX_Pipeline_Binding {
     }
 
     if binding_index < 0 {
-        return .{};
+        shader_param_list : [..] string;
+        shader_param_list.allocator = temp;
 
-        // @todo: We want to put that again!
+        for shader.bindings {
+            array_add(*shader_param_list, it.name);
+        }
 
-        // shader_param_list : [..] string;
-        // shader_param_list.allocator = temp;
-        //
-        // for shader.bindings array_add(*shader_param_list, it.name);
-        //
-        // shader_name := shader.loaded_shader.name;
-        //
-        // assert(binding_index >= 0, "Parameter '%' not found in shader %.\nShader params: %",
-        //        param_name, shader_name, shader_param_list);
+        assert(binding_index >= 0, "Parameter '%' not found in shader %.\nShader params: %",
+               param_name, shader.name, shader_param_list);
     }
 
     return shader.bindings[binding_index];
@@ -779,38 +768,29 @@ get_bytes_per_pixel :: (pixel_format: GFX_Pixel_Format) -> u64 {
     return bytes_per_pixel;
 }
 
-GFX_Shader_Reload_Callback :: struct {
-    pso_key     : u32;
-    proc        : #type (*GFX_Loaded_Shader, u32);
+GFX_Shader :: struct {
+    name            : string;
+    filepath        : string;     // Empty if packed?
+    dependencies    : [] string; // Empty as well.
+
+    bindings        : [] GFX_Pipeline_Binding;
+    stage           : GFX_Pipeline_Stage;
+    shader          : GFX_Platform_Shader;
+
+    compiled        : bool;
+};
+
+destroy_shader :: (shader: *GFX_Shader) {
+    destroy_shader(*shader.shader);
+
+    for shader.bindings {
+        free(it.name.data);
+    }
+
+    free(shader.bindings.data);
+
+    shader.* = .{};
 }
-
-GFX_Loaded_Shader :: struct {
-    name                : string;
-    filepath            : string;
-    dependencies        : [] string;
-    reload_callbacks    : [..] GFX_Shader_Reload_Callback;
-    failed_to_reload    : bool;
-
-    stages                  : GFX_Pipeline_Stage_Flags;
-    vertex_shader           : GFX_Shader;
-    fragment_shader         : GFX_Shader;
-}
-
-add_shader_reload_callback :: (shader: *GFX_Loaded_Shader, callback: GFX_Shader_Reload_Callback) {
-    // if !shader {
-    //     return;
-    // }
-    //
-    // for shader.reload_callbacks {
-    //     if it.pso_key == callback.pso_key && it.proc == callback.proc {
-    //         return;
-    //     }
-    // }
-    //
-    // array_add(*shader.reload_callbacks, callback);
-}
-
-
 
 mesh_draw_calls     : int;
 
@@ -971,9 +951,8 @@ VERTEX_BUFFER_INDEX : s32 : 10;
         );
 
         // Shaders.
-        load_shader         : (loaded_shader: *GFX_Loaded_Shader, stage: GFX_Pipeline_Stage, source: string, bindings: []GFX_Pipeline_Binding) -> bool;
-        destroy_shader      : (shader: *GFX_Shader);
-        get_loaded_shader   : (shader: *GFX_Shader) -> *GFX_Loaded_Shader;
+        compile_shader      : (name: string, source: string, stage: GFX_Pipeline_Stage) -> bool, GFX_Platform_Shader;
+        destroy_shader      : (platform_shader : *GFX_Platform_Shader);
     };
 
     #insert -> string {

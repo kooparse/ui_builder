@@ -31,7 +31,8 @@ white_texture       : GFX_Texture;
 playstation_icon    : GFX_Texture;
 xbox_icon           : GFX_Texture;
 
-shader: *GFX_Loaded_Shader;
+vertex_shader : *GFX_Shader;
+pixel_shader  : *GFX_Shader;
 
 main :: () {
     window_flags := SDL_WindowFlags.SDL_WINDOW_RESIZABLE;
@@ -74,7 +75,7 @@ main :: () {
     success := create_context(platform_window);
     assert(success == true);
 
-    shader = add_shader("ui", "ui.slang", SHADER_SRC);
+    vertex_shader, pixel_shader = add_shader("ui", "ui.slang", SHADER_SRC);
 
     init_gfx_buffers();
 
@@ -644,8 +645,8 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
             reset_render_state();
 
             set_pso_name("UI_Builder");
-            set_vertex_shader(*shader.vertex_shader);
-            set_pixel_shader(*shader.fragment_shader);
+            set_vertex_shader(vertex_shader);
+            set_pixel_shader(pixel_shader);
             set_color_format(get_swapchain_pixel_format());
             set_blend_mode(.ADDITIVE);
             set_vertex_layout(UI_Vertex, VERTEX_BIND_INDEX);
@@ -661,8 +662,8 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
                 default_sampler   : GFX_Pipeline_Binding;
             }
 
-            vert := get_binding(*shader.vertex_shader, Shader_Params);
-            frag := get_binding(*shader.fragment_shader, Shader_Params);
+            vert := get_binding(vertex_shader, Shader_Params);
+            frag := get_binding(pixel_shader, Shader_Params);
 
 
             set_buffer(*pass, vert.frame_info, *frame_info_buffer, 0, size_of(Matrix4));
