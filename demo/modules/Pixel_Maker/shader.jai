@@ -72,11 +72,13 @@ set_shader_config :: (conf: Shader_Config) {
     shader_config = conf;
 }
 
+#scope_module;
+
+using shader_config  : Shader_Config;
+
 #scope_file;
 
 slang_global_session : *Slang.IGlobalSession;
-
-using shader_config  : Shader_Config;
 shaders              : [..] GFX_Shader;
 
 load_and_compile_shader :: (name: string, filepath: string, buffer: string) -> success: bool, [2] GFX_Shader {

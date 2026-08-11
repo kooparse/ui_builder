@@ -1,9 +1,3 @@
-/*
-
-    Grep "GREP_[Texture, PSO, etc..] to easily get to a section.
-
-*/
-
 GFX_Context :: struct {
     swapchain   : *CAMetalLayer;
     device      : *MTLDevice;
@@ -473,7 +467,7 @@ destroy_readbackbuffer :: (buffer: *GFX_Readback_Buffer) {
 
 /*
 
-    GREP_Texture
+    Texture
 
 */
 
@@ -861,12 +855,10 @@ make_metal_sampler_address_mode :: inline (mode : GFX_Sampler_Address_Mode) -> M
 
 
 
-
-
 /*
 
 
-        GREP_Shader
+        Shaders.
 
 */
 
@@ -892,11 +884,7 @@ compile_shader :: (name: string, source: string, stage: GFX_Pipeline_Stage) -> b
         return false, .{};
     }
 
-    // @todo: use shader config instead.
-    VERTEX_ENTRY_POINT      :: "vertex_main";
-    FRAGMENT_ENTRY_POINT    :: "fragment_main";
-
-    entry_point_name := ifx stage == .VERTEX then VERTEX_ENTRY_POINT else FRAGMENT_ENTRY_POINT;
+    entry_point_name := ifx stage == .VERTEX then vertex_entry_point else fragment_entry_point;
     function         := library.newFunctionWithName(library, NSString.getTempString(entry_point_name));
 
     if !function {
@@ -1506,9 +1494,7 @@ hash_pso_metal_data :: (key: Render_State) -> PSO_Key {
 
     hash = fnv1a_hash(cast(u64) key.depth_stencil_format, hash);
 
-    for * key.vertex_layout {
-        hash = fnv1a_hash(it, size_of(GFX_Vertex_Input_Desc), hash);
-    }
+    hash = fnv1a_hash(key.vertex_layout_hash, hash);
 
     // A simple cast to 32-bit number would trash half of the hash.
     // Here, we split the 64-bit value into two 32-bit values

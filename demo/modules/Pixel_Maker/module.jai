@@ -56,6 +56,8 @@ Render_State :: struct {
     depth_stencil_format : GFX_Pixel_Format;
 
     vertex_layout       : [] GFX_Vertex_Input_Desc;
+    // This is used by metal only, we "hash" the vertex layout at comptime.
+    vertex_layout_hash  : u64;
 };
 
 render_state: Render_State;
@@ -115,8 +117,22 @@ set_scissor :: (enabled: bool, region := Recti.{}) {
     render_state.scissor_rect      = region;
 }
 
-set_vertex_layout :: ($T: Type, buffer_index : s32) {
-    render_state.vertex_layout = make_vertex_layout(T, buffer_index);
+set_vertex_layout :: ($T: Type, $buffer_index : s32) {
+    vertex_layout :: #run make_vertex_layout(T, buffer_index);
+    hash          :: #run hash_vertex_layout(vertex_layout);
+
+    render_state.vertex_layout      = vertex_layout;
+    render_state.vertex_layout_hash = hash;
+}
+
+hash_vertex_layout :: (vertex_layout: [] GFX_Vertex_Input_Desc) -> hash: u64 {
+    hash := FNV_64_OFFSET_BIAS;
+
+    for * vertex_layout {
+        hash = fnv1a_hash(it, size_of(GFX_Vertex_Input_Desc), hash);
+    }
+
+    return hash;
 }
 
 set_depth_stencil :: (depth_enabled: bool, stencil_enabled: bool) {

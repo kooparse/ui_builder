@@ -537,7 +537,7 @@ compile_shader :: (name: string, source: string, stage: GFX_Pipeline_Stage) -> b
     // }
 
     shader_model := ifx stage == .VERTEX "vs_5_0" else "ps_5_0";
-    entry_point  := ifx stage == .VERTEX "vertex_main" else "fragment_main";
+    entry_point  := ifx stage == .VERTEX vertex_entry_point else fragment_entry_point;
     defines      : [] string;
 
     bytecode:, errors:, hr = D3DCompile(source, name, defines, null, entry_point, shader_model, xx flags, 0);
