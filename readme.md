@@ -10,7 +10,6 @@ mechanisms and technical choices
 [there](https://fomenko.fr/devlogs/gui-programming/).
 
 <img width="2418" height="1674" alt="Screenshot" src="https://github.com/user-attachments/assets/e808bcf0-f700-4d83-ad9c-318a03731c0a" />
----------------------
 
 Here's a snippet to see the shape of the user code, for more complete example,
 see `demo/demo.jai`:
