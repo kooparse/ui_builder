@@ -286,7 +286,7 @@ BLACK   :: Vector4.{ 0, 0, 0, 1 };
 TABS :: enum {
     TAB_1;
     TAB_2;
-    LONG_TAB_NAME_TAB_3;
+    TAB_3;
     TAB_4;
 };
 current_tab := TABS.TAB_1;

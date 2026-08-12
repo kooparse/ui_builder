@@ -564,9 +564,9 @@ ui_begin :: () {
 
         // Reset occlusion and widget list.
         for * curr_layer_list {
-            array_reset(*it.vertices);
-            array_reset(*it.draw_markers);
-            array_reset(*it.clip_stack);
+            array_reset_keeping_memory(*it.vertices);
+            array_reset_keeping_memory(*it.draw_markers);
+            array_reset_keeping_memory(*it.clip_stack);
         }
 
         array_reset_keeping_memory(*curr_layer_list);
@@ -587,9 +587,9 @@ ui_begin :: () {
 
     // Reset and set background layer.
     {
-        array_reset(*background_layer.vertices);
-        array_reset(*background_layer.draw_markers);
-        array_reset(*background_layer.clip_stack);
+        array_reset_keeping_memory(*background_layer.vertices);
+        array_reset_keeping_memory(*background_layer.draw_markers);
+        array_reset_keeping_memory(*background_layer.clip_stack);
 
         rect := UI_Rect.{ 0, 0, FLOAT32_MAX, FLOAT32_MAX };
         push_layer(BG_LAYER_ID, rect);
@@ -1616,10 +1616,11 @@ slider :: (value: *$T, min: T, max: T, size := Vector2.{ -1, -1 }, rect := Rect.
     text: string;
 
     #if is_int {
-        text = tprint("%", value.*);
+        text = sprint("%", value.*);
     } else {
-        text = tprint("%", FormatFloat.{ value = value.*, trailing_width = trailing_width, zero_removal = .NO });
+        text = sprint("%", FormatFloat.{ value = value.*, trailing_width = trailing_width, zero_removal = .NO });
     }
+    defer free(text);
 
     text_size := get_em(0.9);
     text_width, text_height := get_text_size(font, text, text_size);
