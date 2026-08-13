@@ -564,9 +564,9 @@ ui_begin :: () {
 
         // Reset occlusion and widget list.
         for * curr_layer_list {
-            array_reset_keeping_memory(*it.vertices);
-            array_reset_keeping_memory(*it.draw_markers);
-            array_reset_keeping_memory(*it.clip_stack);
+            array_reset(*it.vertices);
+            array_reset(*it.draw_markers);
+            array_reset(*it.clip_stack);
         }
 
         array_reset_keeping_memory(*curr_layer_list);
