@@ -86,6 +86,8 @@ widget_states   : Table(UI_ID, *Widget_State);
 active_widget   : UI_ID = -1;
 hovered_layer   : UI_ID = -1;
 
+editing_text    := false;
+
 // @todo: explain that.
 context_ids     : [..] UI_ID;
 
@@ -403,8 +405,12 @@ unfreeze_io :: inline () {
     io_frozen = false;
 }
 
-io_captured :: () -> bool {
-    return hovered_layer != BG_LAYER_ID && (hovered_layer > 0 || active_widget > 0);
+io_mouse_captured :: () -> bool {
+    return hovered_layer != BG_LAYER_ID && (hovered_layer > -1 || active_widget > -1);
+}
+
+io_keyboard_captured :: () -> bool {
+    return editing_text == true;
 }
 
 set_modifiers :: (mod: UI_Modifiers) {
@@ -2013,6 +2019,7 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
 
     // We start the edit process if user click on the input.
     if !state.editing && (status & .PRESSED) {
+        editing_text             = true;
         state.editing            = true;
         state_changed_this_frame = true;
         state.texting_start_time = cast(float, seconds_since_init());
@@ -2030,6 +2037,7 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
         // When state_changed_this_frame is false, otherwise the keyboard
         // navigation will cancel itself.
         if is_pressed(.RETURN) && !state_changed_this_frame {
+            editing_text  = false;
             state.editing = false;
             modified      = state.text != user_str;
         }
@@ -2061,6 +2069,7 @@ text_input :: (user_str: string, size := Vector2.{ -1, -1 }, rect := Rect.{}, fl
         }
 
         if is_pressed(.ESCAPE) || click_outside {
+            editing_text     = false;
             state.editing    = false;
             modified         = state.text != user_str;
         }
