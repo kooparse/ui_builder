@@ -91,7 +91,9 @@ editing_text    := false;
 // @todo: explain that.
 context_ids     : [..] UI_ID;
 
-text_codepoint : string;
+text_codepoint         : string;
+text_codepoint_storage : [8] u8;
+
 
 draw_list       : UI_Draw_List;
 current_texture : *Texture_Type;
@@ -1682,12 +1684,17 @@ separator :: (text := "") {
     }
 }
 
-// perhaps we need two verrsion of the function, one when user send utf-8, and another when it's u32 codepoint.
+// Perhaps we need two version of the function, one when user send utf-8, and
+// another when it's u32 codepoint.
 send_text_codepoint :: (codepoint: string) {
     if !codepoint return;
 
-    if text_codepoint then free(text_codepoint);
-    text_codepoint = copy_string(codepoint);
+    // Let's use min, just to be sure.
+    count := min(codepoint.count, text_codepoint_storage.count);
+    memcpy(*text_codepoint_storage, codepoint.data, count);
+
+    text_codepoint.data  = xx *text_codepoint_storage;
+    text_codepoint.count = count;
 }
 
 hexa_input :: (color: *Vector4, loc := #caller_location) -> modified: bool {
