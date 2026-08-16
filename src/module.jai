@@ -1980,7 +1980,7 @@ hexa_validation :: (codepoint : string) -> bool {
 number_validation :: (codepoint : string) -> bool {
     valid := true;
     for char: codepoint {
-        if !is_digit(char) && char != #char "." {
+        if !is_digit(char) && char != #char "." && char != #char "-" {
             valid = false;
             break;
         }
