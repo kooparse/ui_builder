@@ -34,6 +34,10 @@ xbox_icon           : GFX_Texture;
 vertex_shader : *GFX_Shader;
 pixel_shader  : *GFX_Shader;
 
+CURSOR_COUNT :: #run enum_names(Cursor_Icon).count;
+cursors      :  [CURSOR_COUNT] *SDL_Cursor;
+curr_cursor  := Cursor_Icon.ARROW;
+
 main :: () {
     window_flags := SDL_WindowFlags.SDL_WINDOW_RESIZABLE;
 
@@ -70,6 +74,15 @@ main :: () {
         case .WINDOWS;
             assert(winfo.subsystem == .SDL_SYSWM_WINDOWS);
             platform_window = winfo.info.win.window;
+    }
+
+    for 0..CURSOR_COUNT - 1 {
+        if #complete cast(Cursor_Icon, it) == {
+            case .ARROW;        cursors[it] = SDL_CreateSystemCursor(SDL_SystemCursor.ARROW);
+            case .RESIZE_ARROW; cursors[it] = SDL_CreateSystemCursor(SDL_SystemCursor.SIZENWSE);
+            case .HAND;         cursors[it] = SDL_CreateSystemCursor(SDL_SystemCursor.HAND);
+            case .TEXT_EDIT;    cursors[it] = SDL_CreateSystemCursor(SDL_SystemCursor.IBEAM);
+        }
     }
 
     success := create_context(platform_window);
@@ -141,16 +154,15 @@ main :: () {
         ui_begin();
 
 
-        cursor : *SDL_SystemCursor;
 
-        if get_cursor_icon() == {
-            case .ARROW;        cursor = SDL_CreateSystemCursor(SDL_SystemCursor.ARROW);
-            case .RESIZE_ARROW; cursor = SDL_CreateSystemCursor(SDL_SystemCursor.SIZENWSE);
-            case .HAND;         cursor = SDL_CreateSystemCursor(SDL_SystemCursor.HAND);
-            case .TEXT_EDIT;    cursor = SDL_CreateSystemCursor(SDL_SystemCursor.IBEAM);
+        {
+            next_cursor := get_cursor_icon();
+
+            if next_cursor != curr_cursor {
+                SDL_SetCursor(cursors[next_cursor]);
+                curr_cursor = next_cursor;
+            }
         }
-
-        SDL_SetCursor(cursor);
 
         event: SDL_Event;
         while SDL_PollEvent(*event) {

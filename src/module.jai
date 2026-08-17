@@ -115,13 +115,6 @@ next_nav_focused_index  := -1;
 
 
 
-Cursor_Icon :: enum {
-    ARROW;
-    RESIZE_ARROW;
-    HAND;
-    TEXT_EDIT;
-}
-
 prev_cursor_icon := Cursor_Icon.ARROW;
 curr_cursor_icon := Cursor_Icon.ARROW;
 
@@ -363,6 +356,13 @@ UI_Vertex :: struct {
     position : Vector2; @TEXCOORD;
     uv       : Vector2; @TEXCOORD;
     color    : Vector4; @TEXCOORD;
+};
+
+Cursor_Icon :: enum {
+    ARROW;
+    RESIZE_ARROW;
+    HAND;
+    TEXT_EDIT;
 };
 
 push_id :: inline (id: int) {
