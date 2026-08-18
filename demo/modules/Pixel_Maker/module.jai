@@ -6,9 +6,10 @@
     - Fix visual glitch on resize.
 */
 
-#module_parameters(DEBUG_LAYER := false, MAX_FRAME_IN_FLIGHT := 3);
+#module_parameters(DEBUG_LAYER := false, MAX_FRAME_IN_FLIGHT := 3, DISPLAY_SYNC := true);
 
 gpu_frame_count : int;
+render_state    : Render_State;
 
 Render_State :: struct {
     name                : string; // Nice for debugging.
@@ -59,8 +60,6 @@ Render_State :: struct {
     // This is used by metal only, we "hash" the vertex layout at comptime.
     vertex_layout_hash  : u64;
 };
-
-render_state: Render_State;
 
 reset_render_state :: () {
     render_state = Render_State.{};
@@ -643,6 +642,10 @@ GFX_Pipeline_Binding :: struct {
     index   : s32 = -1;
 };
 
+get_bindings :: ($vertex_bindings: Type, $pixel_bindings: Type) -> vertex_bindings, pixel_bindings {
+    return get_binding(render_state.vertex_shader, vertex_bindings), get_binding(render_state.pixel_shader, pixel_bindings);
+}
+
 get_binding :: (shader: *GFX_Shader, $T: Type) -> T #modify {
     return (cast(*Type_Info) T).type == .STRUCT;
 } {
@@ -893,10 +896,8 @@ VERTEX_BUFFER_INDEX : s32 : 10;
 
 
         // Command buffer.
-        create_command_buffer : (name : string) -> GFX_Command_Buffer;
-        submit_command_buffer : (cmd_buffer : *GFX_Command_Buffer);
-        begin_debug_group     : (cmd_buffer : *GFX_Command_Buffer, name : string);
-        end_debug_group       : (cmd_buffer : *GFX_Command_Buffer);
+        begin_debug_group     : (name : string);
+        end_debug_group       : ();
 
         // Textures.
         create_texture          : (name : string, desc : GFX_Texture_Desc, data : *void = null) -> GFX_Texture;
@@ -925,7 +926,7 @@ VERTEX_BUFFER_INDEX : s32 : 10;
         unlock_readbackbuffer : (resource : *GFX_Readback_Buffer);
 
         // Copy buffer.
-        begin_copy_pass : (pass : *GFX_Copy_Pass, name : string, cmd_buffer : *GFX_Command_Buffer);
+        begin_copy_pass : (pass : *GFX_Copy_Pass, name : string);
         end_copy_pass   : (pass : *GFX_Copy_Pass);
         copy_texture : (pass : *GFX_Copy_Pass, source : *GFX_Texture, dest : *GFX_Texture);
         generate_mipmaps    : (pass : *GFX_Copy_Pass, texture : Texture);
@@ -933,7 +934,7 @@ VERTEX_BUFFER_INDEX : s32 : 10;
 
 
         // Render pass.
-        begin_render_pass   : (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_Command_Buffer, desc : GFX_Render_Pass_Desc);
+        begin_render_pass   : (name : string, desc: GFX_Render_Pass_Desc) -> GFX_Render_Pass;
         end_render_pass     : (pass : *GFX_Render_Pass);
 
         set_buffer          : (pass : *GFX_Render_Pass, binding : GFX_Pipeline_Binding, buffer : *GFX_Buffer, offset : u64, size : u64);

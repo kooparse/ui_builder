@@ -19,6 +19,17 @@ get_shader_list :: () -> [] GFX_Shader {
     return shaders;
 }
 
+add_shader_if_unique :: (shader: GFX_Shader) -> index: s64 {
+    for shaders {
+        if it.filepath == shader.filepath && it.stage == shader.stage {
+            return it_index;
+        }
+    }
+
+    array_add(*shaders, shader);
+    return shaders.count - 1;
+}
+
 add_shader :: (shader_path: string) -> *GFX_Shader, *GFX_Shader {
     filepath := copy_string(shader_path);
     _, name  := path_decomp(filepath);
@@ -33,7 +44,7 @@ add_shader :: (shader_path: string) -> *GFX_Shader, *GFX_Shader {
 
     for compiled_shaders {
         if it.compiled {
-            _, index := array_add_if_unique(*shaders, it, (a, b) => a.filepath == b.filepath && a.stage == b.stage);
+            index := add_shader_if_unique(it);
 
             if #complete it.stage == {
                 case .VERTEX;   vert_shader  = *shaders[index];
@@ -56,7 +67,7 @@ add_shader :: (name: string, filepath: string, shader_buffer: string) -> *GFX_Sh
 
     for compiled_shaders {
         if it.compiled {
-            _, index := array_add_if_unique(*shaders, it, (a, b) => a.filepath == b.filepath && a.stage == b.stage);
+            index := add_shader_if_unique(it);
 
             if #complete it.stage == {
                 case .VERTEX;   vert_shader  = *shaders[index];

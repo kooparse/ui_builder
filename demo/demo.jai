@@ -643,7 +643,6 @@ make_ui :: () -> UI_Draw_List {
 
 
 do_gpu_stuff :: (draw_list: UI_Draw_List) {
-    command_buffer := create_command_buffer("Frame");
     screen_texture := get_swapchain_texture();
 
     update_gfx_buffers(draw_list.vertices);
@@ -654,8 +653,7 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
         set_color_attachment(*pass_desc, 0, screen_texture);
         clear_color(*pass_desc, 0, xyzw(0, 0, 0, 1));
 
-        pass: GFX_Render_Pass;
-        begin_render_pass(*pass, "UI_Builder", *command_buffer, pass_desc);
+        pass := begin_render_pass("UI_Builder", pass_desc);
         {
             reset_render_state();
 
@@ -716,7 +714,6 @@ do_gpu_stuff :: (draw_list: UI_Draw_List) {
 
     }
 
-    submit_command_buffer(*command_buffer);
     present();
 }
 

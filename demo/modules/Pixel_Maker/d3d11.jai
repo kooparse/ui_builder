@@ -12,11 +12,7 @@ GFX_Context :: struct {
 
     capabilities : GFX_Capabilities;
 
-    // frame_time_queries  : [MAX_FRAME_IN_FLIGHT][2]GLuint;
-    // last_frame_time     : float;
-
     feature_level   : D3D_FEATURE_LEVEL;
-
 
     window: HWND;
 
@@ -28,7 +24,6 @@ GFX_Context :: struct {
 
 
 #add_context graphics_context: *GFX_Context;
-
 
 
 create_context :: (hwnd: *void) -> bool {
@@ -245,26 +240,15 @@ get_capabilities :: () -> GFX_Capabilities {
 }
 
 
-GFX_Command_Buffer :: struct {
-    handle: *void;
-}
-
-
-create_command_buffer :: (name : string) -> GFX_Command_Buffer {
-    return .{};
-}
-
-submit_command_buffer :: (cmd_buffer : *GFX_Command_Buffer) {
-}
-
-begin_debug_group :: (cmd_buffer : *GFX_Command_Buffer, name : string) {
+begin_debug_group :: (name : string) {
+    auto_release_temp();
     using context.graphics_context;
 
     wide_string := Utf8.utf8_to_wide(name ,, temp);
     ID3DUserDefinedAnnotation_BeginEvent(d3d_annotation, cast(*s16) wide_string);
 }
 
-end_debug_group :: (cmd_buffer : *GFX_Command_Buffer) {
+end_debug_group :: () {
     using context.graphics_context;
     ID3DUserDefinedAnnotation_EndEvent(d3d_annotation);
 }
@@ -386,8 +370,8 @@ is_null :: (buffer : *GFX_Buffer) -> bool {
     return buffer == null || buffer.handle == null;
 }
 
-// gfx_create_buffer
 create_buffer :: (name : string, size : u64, stride: u32, data : *void, storage_flags : GFX_Storage_Flags, bind_flags: GFX_Bind_Flags) -> GFX_Buffer {
+    auto_release_temp();
     using context.graphics_context;
 
     hr  : HRESULT;
@@ -599,19 +583,18 @@ destroy_shader :: (shader : *GFX_Platform_Shader) {
 
 
 GFX_Render_Pass :: struct {
-    cmd_buffer              : *GFX_Command_Buffer; // @note Not really used... to remove?
     desc                    : GFX_Render_Pass_Desc;
     name                    : string;
     current_index_buffer    : *GFX_Buffer;
 };
 
-// @todo: I think we should return a GFX_Render_Pass, and remove passing it as args.
-begin_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_Command_Buffer, desc : GFX_Render_Pass_Desc) {
-    begin_debug_group(cmd_buffer, name);
+begin_render_pass :: (name : string, desc: GFX_Render_Pass_Desc) -> GFX_Render_Pass {
+    begin_debug_group(name);
 
     using context.graphics_context;
 
-    pass.cmd_buffer = cmd_buffer;
+    pass : GFX_Render_Pass;
+
     pass.desc       = desc;
     pass.name       = name;
 
@@ -651,6 +634,8 @@ begin_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_
     }
 
     ID3D11DeviceContext_OMSetRenderTargets(d3d_context, render_target_count, rtv_array.data, dsv);
+
+    return pass;
 }
 
 // @note: No resolve_texture for depth tho...
@@ -666,7 +651,7 @@ end_render_pass :: (using pass : *GFX_Render_Pass) {
         }
     }
 
-    end_debug_group(cmd_buffer);
+    end_debug_group();
 }
 
 set_viewport :: (pass : *GFX_Render_Pass, viewport : GFX_Viewport) {
@@ -685,6 +670,7 @@ set_viewport :: (pass : *GFX_Render_Pass, viewport : GFX_Viewport) {
 }
 
 set_viewports :: (pass : *GFX_Render_Pass, viewports : []GFX_Viewport) {
+    auto_release_temp();
     using context.graphics_context;
 
     d3d_viewports := NewArray(viewports.count, D3D11_VIEWPORT ,, temp);
@@ -1098,6 +1084,7 @@ get_desc :: (texture: *GFX_Texture) -> GFX_Texture_Desc {
 }
 
 create_texture :: (name : string, desc : GFX_Texture_Desc, data : *void = null) -> GFX_Texture {
+    auto_release_temp();
     using context.graphics_context;
 
     // assert(desc.usage != .UNKNOWN, "desc.usage is %", desc.usage);
@@ -1286,6 +1273,7 @@ replace_texture_region :: (using texture : *GFX_Texture, origin : Vector3u, size
 }
 
 create_texture_view :: (name : string, texture : GFX_Texture, desc : GFX_Texture_View_Desc) -> GFX_Texture {
+    auto_release_temp();
     using context.graphics_context;
 
     srv_desc: D3D11_SHADER_RESOURCE_VIEW_DESC;
@@ -1361,6 +1349,7 @@ is_null :: (sampler : *GFX_Sampler_State) -> bool {
 }
 
 create_sampler_state :: (name : string, desc : GFX_Sampler_State_Desc) -> GFX_Sampler_State {
+    auto_release_temp();
     using context.graphics_context;
 
     d3d_desc : D3D11_SAMPLER_DESC;
@@ -1400,22 +1389,14 @@ destroy_sampler_state :: (sampler : *GFX_Sampler_State) {
 
 
 
+GFX_Copy_Pass :: struct {}
 
-
-
-
-
-GFX_Copy_Pass :: struct {
-    cmd_buffer : *GFX_Command_Buffer;
-}
-
-begin_copy_pass :: (pass : *GFX_Copy_Pass, name : string, cmd_buffer : *GFX_Command_Buffer) {
-    pass.cmd_buffer = cmd_buffer;
-    begin_debug_group(cmd_buffer, name);
+begin_copy_pass :: (pass : *GFX_Copy_Pass, name : string) {
+    begin_debug_group(name);
 }
 
 end_copy_pass :: (pass : *GFX_Copy_Pass) {
-    end_debug_group(pass.cmd_buffer);
+    end_debug_group();
 }
 
 generate_mipmaps :: (using pass : *GFX_Copy_Pass, texture : Texture) {
@@ -1519,6 +1500,7 @@ to_d3d_sampler_filter :: (desc: GFX_Sampler_State_Desc) -> D3D11_FILTER {
 }
 
 to_d3d_input_layout :: (vertex_layout: [] GFX_Vertex_Input_Desc, vertex_bytecode: string) -> *ID3D11InputLayout {
+    auto_release_temp();
     using context.graphics_context;
 
     layout          : *ID3D11InputLayout;

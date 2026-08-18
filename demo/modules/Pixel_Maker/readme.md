@@ -1,11 +1,11 @@
 # Pixel Maker
 
 _I'm not accepting pull requests, but the code is available publicly as I think
-it is valuable information for people who are looking to own the graphical
-stack of their software._
+it is valuable information for people who are looking make their abstraction
+layer on top of gfx APIs._
 
 This code is a thin layer on top of Metal and DirectX 11 APIs. The goal of this
-module, is to let us write graphics code once, while keeping some sort of
+module, is to let write graphics code once, while keeping some sort of
 simplicity in the API. Currently it powered all my projects that plays with
 graphics.
 
@@ -21,7 +21,7 @@ find the name of bindings, slot numbers, and types.
 
 # How to
 
-- explain libslang etc should sit next to executable.
+- libslang should be sit next to your executable.
 - add Slang LICENSE as well.
 
 

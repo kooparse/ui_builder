@@ -5,24 +5,25 @@ GFX_Context :: struct {
 
     window      : *NSWindow;
 
+    // @note: We create one command buffer per frame. It's a limitation which
+    // forced us to be single threaded for sending draw commands to the GPU.
+    // Once we move to d3d12, we're going to change that.
+    main_command_buffer : *MTLCommandBuffer;
+
     frame_semaphore     : dispatch_semaphore_t;
     backbuffer_index    : int;
 
     frame_completed_block_desc : Objective_C_Block_Basic_Descriptor;
     frame_completed_block      : Objective_C_Block_Basic;
 
-    first_cmd_buffer_completed_block_desc : Objective_C_Block_Basic_Descriptor;
-    first_cmd_buffer_completed_block      : Objective_C_Block_Basic;
-
     frame_autorelease_pool      : *NSAutoreleasePool;
     current_drawable            : *CAMetalDrawable;
     current_drawable_texture    : GFX_Texture;
 
-    is_first_cmd_buffer_in_frame    := true;
-    last_frame_gpu_start_time       : float64;
-    last_frame_gpu_end_time         : float64;
+    last_frame_gpu_time         : float64;
 
     capabilities : GFX_Capabilities;
+
 }
 
 #add_context graphics_context : *GFX_Context;
@@ -68,7 +69,7 @@ create_context :: (ns_window: *void) -> bool {
     CAMetalLayer.setDevice(swapchain, device);
     CAMetalLayer.setPixelFormat(swapchain, MTLPixelFormatBGRA8Unorm);
     CAMetalLayer.setMaximumDrawableCount(swapchain, MAX_FRAME_IN_FLIGHT);
-    CAMetalLayer.setDisplaySyncEnabled(swapchain, YES);
+    CAMetalLayer.setDisplaySyncEnabled(swapchain, cast(BOOL) DISPLAY_SYNC);
 
     view := NSWindow.contentView(window);
     NSView.setWantsLayer(view, YES);
@@ -93,11 +94,6 @@ create_context :: (ns_window: *void) -> bool {
     frame_completed_block.isa        = xx _NSConcreteGlobalBlock;
     frame_completed_block.invoke     = xx frame_completed_handler;
     frame_completed_block.descriptor = *frame_completed_block_desc;
-
-    first_cmd_buffer_completed_block_desc.size = size_of(Objective_C_Block_Basic);
-    first_cmd_buffer_completed_block.isa        = xx _NSConcreteGlobalBlock;
-    first_cmd_buffer_completed_block.invoke     = xx first_command_buffer_completed_handler;
-    first_cmd_buffer_completed_block.descriptor = *first_cmd_buffer_completed_block_desc;
 
     context.graphics_context = ctx;
     global_context = ctx;
@@ -186,20 +182,16 @@ begin_frame :: () {
     current_drawable_texture.width = xx current_drawable_texture.handle.width(current_drawable_texture.handle);
     current_drawable_texture.height = xx current_drawable_texture.handle.height(current_drawable_texture.handle);
 
-    is_first_cmd_buffer_in_frame = true;
+    main_command_buffer = MTLCommandQueue.commandBuffer(cmd_queue);
+    MTLCommandBuffer.setLabel(main_command_buffer, NSString.getTempString(("Frame")));
+    MTLCommandBuffer.addCompletedHandler(main_command_buffer, *frame_completed_block);
 }
 
 present :: () {
     using context.graphics_context;
 
-    cmd_buffer := cmd_queue.commandBuffer(cmd_queue);
-
-    cmd_buffer.setLabel(cmd_buffer, NSString.getTempString("Command Buffer 'submit_gfx_frame'"));
-
-    cmd_buffer.addCompletedHandler(cmd_buffer, *frame_completed_block);
-
-    cmd_buffer.presentDrawable(cmd_buffer, xx current_drawable);
-    cmd_buffer.commit(cmd_buffer);
+    MTLCommandBuffer.presentDrawable(main_command_buffer, xx current_drawable);
+    MTLCommandBuffer.commit(main_command_buffer);
 
     current_drawable = null;
     current_drawable_texture.handle = null;
@@ -207,8 +199,7 @@ present :: () {
 
 get_last_frame_gpu_time :: () -> float {
     using context.graphics_context;
-
-    return xx (last_frame_gpu_end_time - last_frame_gpu_start_time);
+    return xx last_frame_gpu_time;
 }
 
 get_capabilities :: () -> GFX_Capabilities {
@@ -272,7 +263,11 @@ frame_completed_handler :: (block : *Objective_C_Block_Basic, cmd_buffer : *MTLC
     using global_context;
 
     dispatch_semaphore_signal(frame_semaphore);
-    last_frame_gpu_end_time = cmd_buffer.GPUEndTime(cmd_buffer);
+
+    start_time := MTLCommandBuffer.GPUStartTime(cmd_buffer);
+    end_time   := MTLCommandBuffer.GPUEndTime(cmd_buffer);
+
+    last_frame_gpu_time = end_time - start_time;
 }
 
 first_command_buffer_completed_handler :: (block : *Objective_C_Block_Basic, cmd_buffer : *MTLCommandBuffer) #c_call {
@@ -287,39 +282,14 @@ first_command_buffer_completed_handler :: (block : *Objective_C_Block_Basic, cmd
     last_frame_gpu_start_time = cmd_buffer.GPUStartTime(cmd_buffer);
 }
 
-GFX_Command_Buffer :: struct {
-    using handle: *MTLCommandBuffer;
-}
-
-create_command_buffer :: (name: string) -> GFX_Command_Buffer {
+begin_debug_group :: (name: string) {
     using context.graphics_context;
-
-    buffer := cmd_queue.commandBuffer(cmd_queue);
-    buffer.setLabel(buffer, NSString.getTempString(tprint("Command Buffer '%'", name)));
-
-    if is_first_cmd_buffer_in_frame {
-        buffer.addCompletedHandler(buffer, *first_cmd_buffer_completed_block);
-    }
-
-    is_first_cmd_buffer_in_frame = false;
-
-    return .{
-        buffer,
-    };
+    MTLCommandBuffer.pushDebugGroup(main_command_buffer, NSString.getTempString(name));
 }
 
-submit_command_buffer :: (cmd_buffer: *GFX_Command_Buffer) {
+end_debug_group :: () {
     using context.graphics_context;
-
-    cmd_buffer.commit(cmd_buffer.handle);
-}
-
-begin_debug_group :: (cmd_buffer: *GFX_Command_Buffer, name: string) {
-    cmd_buffer.pushDebugGroup(cmd_buffer.handle, NSString.getTempString(name));
-}
-
-end_debug_group :: (cmd_buffer: *GFX_Command_Buffer) {
-    cmd_buffer.popDebugGroup(cmd_buffer.handle);
+    MTLCommandBuffer.popDebugGroup(main_command_buffer);
 }
 
 
@@ -356,6 +326,7 @@ is_null :: (buffer: *GFX_Buffer) -> bool {
 }
 
 create_buffer :: (name: string, size: u64, stride: u32, data: *void, storage_flags: GFX_Storage_Flags, _: GFX_Bind_Flags) -> GFX_Buffer {
+    auto_release_temp();
     using context.graphics_context;
 
     options: MTLResourceOptions;
@@ -501,6 +472,7 @@ get_desc :: (texture: *GFX_Texture) -> GFX_Texture_Desc {
 }
 
 create_texture :: (name : string, desc : GFX_Texture_Desc, data : *void = null) -> GFX_Texture {
+    auto_release_temp();
     using context.graphics_context;
 
     // assert(desc.usage != .UNKNOWN, "desc.usage is %", desc.usage);
@@ -607,6 +579,7 @@ replace_texture_region :: (using texture : *GFX_Texture, origin : Vector3u, size
 }
 
 create_texture_view :: (name : string, texture : GFX_Texture, desc : GFX_Texture_View_Desc) -> GFX_Texture {
+    auto_release_temp();
     view := cast(*MTLTexture, MTLTexture.newTextureViewWithPixelFormat_textureType_levels_slices(
         texture.handle,
         make_metal_pixel_format(desc.pixel_format),
@@ -922,12 +895,15 @@ GFX_Render_Pass :: struct {
     encoder : *MTLRenderCommandEncoder;
     desc    : GFX_Render_Pass_Desc;
     name    : string;
-
-    current_primitive_type : MTLPrimitiveType;
 }
 
 
-begin_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_Command_Buffer, desc : GFX_Render_Pass_Desc) {
+begin_render_pass :: (name : string, desc: GFX_Render_Pass_Desc) -> GFX_Render_Pass {
+    using context.graphics_context;
+
+    auto_release_temp();
+
+    pass : GFX_Render_Pass;
     pass.desc = desc;
 
     pass_desc := MTLRenderPassDescriptor.renderPassDescriptor();
@@ -1001,10 +977,12 @@ begin_render_pass :: (pass : *GFX_Render_Pass, name : string, cmd_buffer : *GFX_
         attachment.setStoreAction(attachment, MTLStoreActionStore);
     }
 
-    pass.encoder = cmd_buffer.renderCommandEncoderWithDescriptor(cmd_buffer.handle, pass_desc);
+    pass.encoder = MTLCommandBuffer.renderCommandEncoderWithDescriptor(main_command_buffer, pass_desc);
 
     pass.name = name;
     pass.encoder.setLabel(pass.encoder, NSString.getTempString(tprint("Render Pass '%'", name)));
+
+    return pass;
 }
 
 end_render_pass :: (using pass : *GFX_Render_Pass) {
@@ -1023,6 +1001,8 @@ set_viewport :: (using pass : *GFX_Render_Pass, viewport : GFX_Viewport) {
 }
 
 set_viewports :: (using pass : *GFX_Render_Pass, viewports : []GFX_Viewport) {
+    auto_release_temp();
+
     mtl_viewports := NewArray(viewports.count, MTLViewport ,, temp);
     for viewports {
         mtl_viewports[it_index] = .{
@@ -1208,21 +1188,22 @@ submit_gfx_state_to_pass :: (encoder: *MTLRenderCommandEncoder) {
 
 // Copy pass:
 
-
 GFX_Copy_Pass :: struct {
     encoder : *MTLBlitCommandEncoder;
 }
 
-begin_copy_pass :: (using pass : *GFX_Copy_Pass, name : string, cmd_buffer : *GFX_Command_Buffer) {
-    encoder = cmd_buffer.blitCommandEncoder(cmd_buffer.handle);
-    begin_debug_group(cmd_buffer, tprint("Copy Pass '%'", name));
+begin_copy_pass :: (using pass : *GFX_Copy_Pass, name : string) {
+    using context.graphics_context;
+
+    auto_release_temp();
+
+    encoder = MTLCommandBuffer.blitCommandEncoder(main_command_buffer);
+    begin_debug_group(tprint("Copy Pass '%'", name));
 }
 
 end_copy_pass :: (using pass : *GFX_Copy_Pass) {
     MTLCommandEncoder.endEncoding(xx encoder);
-
-    gfx_encoder := GFX_Command_Buffer.{ handle = xx pass.encoder };
-    end_debug_group(*gfx_encoder);
+    end_debug_group();
 }
 
 generate_mipmaps :: (using pass : *GFX_Copy_Pass, texture : Texture) {
@@ -1296,6 +1277,8 @@ make_metal_depth_stencil_state :: (using render_state: *Render_State) -> *MTLDep
 }
 
 make_metal_pso :: (using render_state: *Render_State) -> *MTLRenderPipelineState {
+    auto_release_temp();
+
     using context.graphics_context;
 
     error : *NSError;
